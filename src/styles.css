@@ -2955,68 +2955,6 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
    Mobile Responsiveness for Official Quotation Document & Modal
    ========================================================================== */
 
-.pdf-terms-summary-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 12px;
-  padding: 6px 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  font-size: 9.5px;
-  color: #334155;
-  box-sizing: border-box;
-}
-
-.pdf-sign-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-top: 22px;
-  padding-top: 12px;
-  border-top: 1px dashed #cbd5e1;
-}
-
-.pdf-sign-box {
-  width: 46%;
-}
-
-.pdf-sign-box.company {
-  text-align: right;
-}
-
-.pdf-sign-box .sign-title {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #0f172a;
-  letter-spacing: 0.3px;
-}
-
-.pdf-sign-box .sign-sub {
-  font-size: 8.5px;
-  color: #64748b;
-  margin-top: 2px;
-}
-
-.pdf-sign-box .sign-line {
-  margin-top: 36px;
-  border-top: 1px solid #94a3b8;
-  padding-top: 4px;
-  font-size: 8.5px;
-  font-weight: 600;
-  color: #334155;
-}
-
-.pdf-sign-box.company .sign-line {
-  margin-left: auto;
-  width: 170px;
-}
-
-.pdf-sign-box.customer .sign-line {
-  width: 170px;
-}
-
 @media (max-width: 900px) {
   .official-quotation-modal-overlay {
     flex-direction: column !important;
@@ -3115,21 +3053,6 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
     align-items: center;
     justify-content: center;
   }
-
-  .mobile-zoom-toolbar {
-    display: flex !important;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(30, 41, 59, 0.9);
-    color: #e2e8f0;
-    padding: 6px 12px;
-    border-radius: 8px;
-    margin-bottom: 8px;
-    width: 100%;
-    max-width: 794px;
-    box-sizing: border-box;
-    font-size: 11px;
-  }
 }
 
 @media (min-width: 901px) {
@@ -3137,9 +3060,6 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
     display: none !important;
   }
   .official-mobile-bottom-bar {
-    display: none !important;
-  }
-  .mobile-zoom-toolbar {
     display: none !important;
   }
 }

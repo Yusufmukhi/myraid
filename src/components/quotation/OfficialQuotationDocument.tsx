@@ -1660,9 +1660,8 @@ export function OfficialQuotationDocument({
 
   const totalPages = includeFullProposal ? 5 : 2
 
-  // Responsive mobile view & zoom modes
+  // Responsive mobile view
   const [mobileView, setMobileView] = useState<'document' | 'sidebar'>('document')
-  const [zoomMode, setZoomMode] = useState<'fit' | '100%'>('fit')
 
   useEffect(() => {
     document.body.classList.add('official-quotation-open')
@@ -1857,65 +1856,43 @@ export function OfficialQuotationDocument({
   const handleDirectDownload = async () => {
     setIsGeneratingPdf(true)
     const fileName = getQuotationFileName()
+    const element = document.getElementById('official-quotation-pages')
+    if (!element) {
+      handlePrint()
+      return
+    }
+
+    const prevHeight = element.style.height
+    const prevOverflow = element.style.overflow
+    const prevScrollTop = element.scrollTop
+    const prevGap = element.style.gap
+    const prevPadding = element.style.padding
+
     try {
-      const element = document.getElementById('official-quotation-pages')
-      if (!element) {
-        handlePrint()
-        return
+      element.scrollTop = 0
+      element.style.height = 'auto'
+      element.style.overflow = 'visible'
+      element.style.gap = '0px'
+      element.style.padding = '0px'
+
+      const html2pdfModule = (await import('html2pdf.js')).default
+      const opt = {
+        margin: 0,
+        filename: `${fileName}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollY: 0,
+          ignoreElements: (el: Element) => el.classList?.contains('no-print'),
+        },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
+        pagebreak: { mode: ['css', 'legacy'] as const, after: '.official-pdf-page' },
       }
 
-      const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
-      if (!pages || pages.length === 0) {
-        handlePrint()
-        return
-      }
-
-      const { default: jsPDF } = await import('jspdf')
-      const { default: html2canvas } = await import('html2canvas')
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true,
-      })
-
-      const prevScrollTop = element.scrollTop
-
-      try {
-        for (let idx = 0; idx < pages.length; idx++) {
-          const page = pages[idx]
-          page.scrollIntoView({ behavior: 'instant' as any, block: 'start' })
-          await new Promise((resolve) => setTimeout(resolve, 80))
-
-          const canvas = await html2canvas(page, {
-            scale: 3,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff',
-            imageTimeout: 15000,
-            onclone: (clonedDoc) => {
-              const container = clonedDoc.getElementById('official-quotation-pages')
-              if (container) {
-                container.style.height = 'auto'
-                container.style.maxHeight = 'none'
-                container.style.overflow = 'visible'
-              }
-            },
-          })
-
-          const imgData = canvas.toDataURL('image/png')
-          if (idx > 0) {
-            pdf.addPage('a4', 'portrait')
-          }
-          pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW')
-        }
-
-        pdf.save(`${fileName}.pdf`)
-        toast(`Downloaded "${fileName}.pdf" (${pages.length} pages) directly!`)
-      } finally {
-        element.scrollTop = prevScrollTop
-      }
+      await html2pdfModule().set(opt).from(element).save()
+      toast(`Downloaded "${fileName}.pdf" directly!`)
 
       // Record in Activity Log
       const token = tokenStore.get()
@@ -1933,6 +1910,11 @@ export function OfficialQuotationDocument({
       console.warn('Direct PDF download failed, falling back to print dialog:', e)
       handlePrint()
     } finally {
+      element.style.height = prevHeight
+      element.style.overflow = prevOverflow
+      element.style.gap = prevGap
+      element.style.padding = prevPadding
+      element.scrollTop = prevScrollTop
       setIsGeneratingPdf(false)
     }
   }
@@ -2296,50 +2278,12 @@ export function OfficialQuotationDocument({
           THE EXACT OFFICIAL 5-PAGE PROPOSAL DOCUMENT
           ========================================================================= */}
       <div className={`official-document-scroll-container ${mobileView === 'sidebar' ? 'mobile-hidden' : ''}`} id="official-quotation-pages">
-        {/* Mobile Zoom & Quick Share Bar */}
-        <div className="mobile-zoom-toolbar no-print">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontWeight: 600 }}>Zoom:</span>
-            <button
-              type="button"
-              className={`chip sm ${zoomMode === 'fit' ? 'primary' : 'secondary'}`}
-              style={{ fontSize: '10.5px', padding: '2px 8px', cursor: 'pointer' }}
-              onClick={() => setZoomMode('fit')}
-            >
-              Fit Screen
-            </button>
-            <button
-              type="button"
-              className={`chip sm ${zoomMode === '100%' ? 'primary' : 'secondary'}`}
-              style={{ fontSize: '10.5px', padding: '2px 8px', cursor: 'pointer' }}
-              onClick={() => setZoomMode('100%')}
-            >
-              100%
-            </button>
-          </div>
-          <button
-            type="button"
-            className="chip success sm"
-            style={{ fontSize: '10.5px', padding: '2px 8px', cursor: 'pointer', background: '#16a34a', color: '#fff', border: 'none' }}
-            onClick={handleWhatsAppShare}
-          >
-            💬 WhatsApp
-          </button>
-        </div>
-
         {isUnsavedWarning && (
-          <div style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '8px 14px', fontSize: '12px', borderRadius: '6px', margin: '0 auto 12px auto', maxWidth: '210mm', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="no-print" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '8px 14px', fontSize: '12px', borderRadius: '6px', margin: '0 auto 12px auto', maxWidth: '210mm', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>⚠️</span>
             <span><strong>Showing saved quotation data.</strong> Click <strong>Save</strong> in the calculator to apply unsaved edits.</span>
           </div>
         )}
-
-        <div
-          className={`official-pages-wrapper ${zoomMode === 'fit' ? 'fit-screen' : ''}`}
-          style={zoomMode === 'fit' && typeof window !== 'undefined' && window.innerWidth <= 900 ? {
-            zoom: Math.min(1, Math.max(0.35, (window.innerWidth - 20) / 794)),
-          } : undefined}
-        >
 
         {/* ============================== PAGE 1: COMMERCIAL QUOTATION ============================== */}
         <div className="official-pdf-page">
@@ -2732,31 +2676,6 @@ export function OfficialQuotationDocument({
             </ol>
           </div>
 
-          {/* Commercial Summary Bar & Customer Acceptance on Page 2 */}
-          <div className="pdf-terms-summary-bar">
-            <div><strong>Price Validity:</strong> 30 Days</div>
-            <div><strong>Warranty:</strong> 12 Months Comprehensive Free Service</div>
-            <div><strong>GST:</strong> 18% as Applicable</div>
-          </div>
-
-          {/* Customer Acceptance & Authorized Signatory Block */}
-          <div className="pdf-sign-row">
-            <div className="pdf-sign-box customer">
-              <div className="sign-title">CUSTOMER ACCEPTANCE / P.O. CONFIRMATION</div>
-              <div className="sign-sub">We hereby confirm acceptance of pricing, specifications &amp; terms.</div>
-              <div className="sign-line">
-                <span>Authorized Signature &amp; Company Stamp</span>
-              </div>
-            </div>
-            <div className="pdf-sign-box company">
-              <div className="sign-title">FOR {businessProfile.company_name || 'MYRIAD STORAGE SYSTEM LLP'}</div>
-              <div className="sign-sub">Manufacturer of Heavy &amp; Mobile Compactor Storage Systems</div>
-              <div className="sign-line">
-                <span>{businessProfile.signatory_title || 'Authorized Signatory'}</span>
-              </div>
-            </div>
-          </div>
-
           <div className="pdf-footer">
             2 of {totalPages}
           </div>
@@ -3014,7 +2933,6 @@ export function OfficialQuotationDocument({
             </div>
           </>
         )}
-        </div>
       </div>
 
       {/* =========================================================================
