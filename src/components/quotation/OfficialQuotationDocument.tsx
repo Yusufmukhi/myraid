@@ -216,7 +216,7 @@ export function computeUnitWiseBreakdown(
     const ht = rawHt >= 500 ? rawHt : 3000
     const rawW = wb ? (wb.num(m.code, 'D3') || wb.num('Total cal', 'D3') || 1830) : 1830
     const w = rawW >= 500 ? rawW : 1830
-    const rawD = wb ? (wb.num('Total cal', m.code === 'SFMU' ? 'E7' : m.code === 'SFFU' ? 'E11' : 'E3') || defaultDepth) : defaultDepth
+    const rawD = wb ? (wb.num('Total cal', m.code === 'SFMU' ? 'E7' : m.code === 'SFFU' ? 'E11' : (m.code === 'DFMU-D' || m.code === 'DFFU-D') ? 'E19' : (m.code === 'DFFU' ? 'E15' : 'E3')) || defaultDepth) : defaultDepth
     const d = rawD >= 200 ? rawD : defaultDepth
     const cols = wb ? (wb.num('Total cal', 'B3') || 7) : 7
 
@@ -722,7 +722,7 @@ export function OfficialQuotationDocument({
 
   const { toast } = useUI()
   const [clientInfo, setClientInfo] = useState<QuotationClientInfo>(initialClientInfo)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'options' | 'breakdown' | 'client' | 'terms' | 'sets' | 'body'>('options')
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'options' | 'breakdown' | 'client' | 'terms' | 'body'>('options')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Business Profile & PDF Branding State (dynamic organisation details)
@@ -1454,16 +1454,8 @@ export function OfficialQuotationDocument({
 
   const [sets, setSets] = useState<QuotationSet[]>(defaultSets)
 
-  // 3. Dynamic Unit-Wise Line Items (Default Single Calculator Matrix - NO SYSTEMS)
-  const defaultItems = useMemo<QuotationLineItem[]>(() => {
-    if (!isUnsavedWarning && project.summary?.quotation_items && Array.isArray(project.summary.quotation_items)) {
-      const savedItems = project.summary.quotation_items as QuotationLineItem[]
-      const hasDummyValues = savedItems.some((it) => it.rate === 1843257 || (it.rate === 0 && it.quantity > 0))
-      const hasSystemPrefix = savedItems.some((it) => it.model_name?.includes('SYSTEM'))
-      if (!hasDummyValues && !hasSystemPrefix && savedItems.length > 0) {
-        return savedItems
-      }
-    }
+  // 3. Dynamic Unit-Wise Line Items (Directly derived from live breakdownResult — reflects all calculator changes)
+  const lineItems = useMemo<QuotationLineItem[]>(() => {
     return breakdownResult.rows.map((r, idx) => ({
       id: String(idx + 1),
       model_code: r.model_code,
@@ -1476,64 +1468,7 @@ export function OfficialQuotationDocument({
       rate: r.final_unit_rate,
       amount: r.final_amount,
     }))
-  }, [project, breakdownResult, isUnsavedWarning])
-
-  const [lineItems, setLineItems] = useState<QuotationLineItem[]>(defaultItems)
-
-  // Live update lineItems from live breakdownResult (single calculator matrix)
-  useEffect(() => {
-    if (isUnsavedWarning || defaultItems.length === 0) {
-      setLineItems(
-        breakdownResult.rows.map((r, idx) => ({
-          id: String(idx + 1),
-          model_code: r.model_code,
-          model_name: r.model_name,
-          dimensions: r.dimensions,
-          quantity: r.qty,
-          unit_base_rate: r.unit_rate,
-          extra_charges: r.transportation,
-          total_unit_rate: r.total_unit_rate,
-          rate: r.final_unit_rate,
-          amount: r.final_amount,
-        }))
-      )
-      return
-    }
-    setLineItems((prev) => {
-      if (prev.length === 0) {
-        return breakdownResult.rows.map((r, idx) => ({
-          id: String(idx + 1),
-          model_code: r.model_code,
-          model_name: r.model_name,
-          dimensions: r.dimensions,
-          quantity: r.qty,
-          unit_base_rate: r.unit_rate,
-          extra_charges: r.transportation,
-          total_unit_rate: r.total_unit_rate,
-          rate: r.final_unit_rate,
-          amount: r.final_amount,
-        }))
-      }
-      return prev.map((item) => {
-        const match = breakdownResult.rows.find(
-          (r) => r.model_code === item.model_code || r.model_name === item.model_name
-        )
-        if (match) {
-          const qty = match.qty !== undefined ? match.qty : (item.quantity || 1)
-          return {
-            ...item,
-            dimensions: match.dimensions || item.dimensions,
-            unit_base_rate: match.unit_rate,
-            extra_charges: match.transportation,
-            total_unit_rate: match.total_unit_rate,
-            rate: match.final_unit_rate,
-            amount: Math.round(match.final_unit_rate * qty * 100) / 100,
-          }
-        }
-        return item
-      })
-    })
-  }, [breakdownResult, isUnsavedWarning])
+  }, [breakdownResult])
 
   // Live update sets from initialSets (multi-system calculator sync)
   useEffect(() => {
@@ -1554,10 +1489,19 @@ export function OfficialQuotationDocument({
             s.amount !== undefined
               ? Number(s.amount)
               : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0)),
+          items: s.items && s.items.length > 0 ? s.items : breakdownResult.rows.map((r, rIdx) => ({
+            id: String(rIdx + 1),
+            model_name: r.model_name,
+            model_code: r.model_code,
+            dimensions: r.dimensions,
+            unit_qty: r.qty,
+            rate: r.unit_rate_with_profit,
+            amount: r.total_price_with_profit,
+          })),
         }))
       )
     }
-  }, [initialSets])
+  }, [initialSets, breakdownResult])
 
   // Live update bodyItems from initialSets
   useEffect(() => {
@@ -1578,25 +1522,26 @@ export function OfficialQuotationDocument({
       const newRate = Math.round(newTotal)
       return [
         {
-          ...(prev[0] || {
-            id: '1',
-            system_title: 'SYSTEM A',
-            set_label: `${qty} SET`,
-            unit: 'SET',
-            items: breakdownResult.rows.map((r, idx) => ({
-              id: String(idx + 1),
-              model_name: r.model_name,
-              dimensions: r.dimensions,
-              unit_qty: r.qty,
-            })),
-          }),
+          id: '1',
+          system_title: isMultiSystem ? 'SYSTEM A' : '',
+          set_label: `${qty} SET`,
+          unit: 'SET',
+          items: breakdownResult.rows.map((r, idx) => ({
+            id: String(idx + 1),
+            model_name: r.model_name,
+            model_code: r.model_code,
+            dimensions: r.dimensions,
+            unit_qty: r.qty,
+            rate: r.unit_rate_with_profit,
+            amount: r.total_price_with_profit,
+          })),
           quantity: qty,
           rate: newRate,
           amount: Math.round(newRate * qty),
         },
       ]
     })
-  }, [breakdownResult, initialSets])
+  }, [breakdownResult, initialSets, isMultiSystem])
 
   // Live update rates if profitPct is changed locally inside quotation document
   useEffect(() => {
@@ -1618,22 +1563,9 @@ export function OfficialQuotationDocument({
     )
   }, [profitPct])
 
-  // Helper to re-sync line items from live unit breakdown
+  // Helper to re-sync line items (live dynamic sync is active by default)
   const handleSyncBreakdownToLineItems = () => {
-    const fresh = breakdownResult.rows.map((r, idx) => ({
-      id: String(idx + 1),
-      model_code: r.model_code,
-      model_name: r.model_name,
-      dimensions: r.dimensions,
-      quantity: r.qty,
-      unit_base_rate: r.unit_rate,
-      extra_charges: r.transportation,
-      total_unit_rate: r.total_unit_rate,
-      rate: r.final_unit_rate,
-      amount: r.final_amount,
-    }))
-    setLineItems(fresh)
-    toast('Unit rates synchronized')
+    toast('Unit rates are automatically synchronized with calculator')
   }
 
   // 5. Intelligent Page 1 Space Check: Fits on Page 1 if total commercial rows <= 4
@@ -1862,37 +1794,50 @@ export function OfficialQuotationDocument({
       return
     }
 
-    const prevHeight = element.style.height
-    const prevOverflow = element.style.overflow
-    const prevScrollTop = element.scrollTop
-    const prevGap = element.style.gap
-    const prevPadding = element.style.padding
-
     try {
-      element.scrollTop = 0
-      element.style.height = 'auto'
-      element.style.overflow = 'visible'
-      element.style.gap = '0px'
-      element.style.padding = '0px'
-
-      const html2pdfModule = (await import('html2pdf.js')).default
-      const opt = {
-        margin: 0,
-        filename: `${fileName}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          scrollY: 0,
-          ignoreElements: (el: Element) => el.classList?.contains('no-print'),
-        },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
-        pagebreak: { mode: ['css', 'legacy'] as const, after: '.official-pdf-page' },
+      const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
+      if (!pages || pages.length === 0) {
+        handlePrint()
+        return
       }
 
-      await html2pdfModule().set(opt).from(element).save()
-      toast(`Downloaded "${fileName}.pdf" directly!`)
+      const { default: jsPDF } = await import('jspdf')
+      const { default: html2canvas } = await import('html2canvas')
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      })
+
+      const prevScrollTop = element.scrollTop
+
+      try {
+        for (let idx = 0; idx < pages.length; idx++) {
+          const page = pages[idx]
+          const canvas = await html2canvas(page, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            imageTimeout: 15000,
+            scrollY: 0,
+            ignoreElements: (el: Element) => el.classList?.contains('no-print'),
+          })
+
+          const imgData = canvas.toDataURL('image/jpeg', 0.98)
+          if (idx > 0) {
+            pdf.addPage('a4', 'portrait')
+          }
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST')
+        }
+
+        pdf.save(`${fileName}.pdf`)
+        toast(`Downloaded "${fileName}.pdf" (${pages.length} pages) directly!`)
+      } finally {
+        element.scrollTop = prevScrollTop
+      }
 
       // Record in Activity Log
       const token = tokenStore.get()
@@ -1910,11 +1855,6 @@ export function OfficialQuotationDocument({
       console.warn('Direct PDF download failed, falling back to print dialog:', e)
       handlePrint()
     } finally {
-      element.style.height = prevHeight
-      element.style.overflow = prevOverflow
-      element.style.gap = prevGap
-      element.style.padding = prevPadding
-      element.scrollTop = prevScrollTop
       setIsGeneratingPdf(false)
     }
   }
@@ -1942,36 +1882,6 @@ export function OfficialQuotationDocument({
     setTimeout(() => {
       document.title = prevTitle
     }, 2000)
-  }
-
-  const handleWhatsAppShare = () => {
-    const qtnNo = clientInfo.qtn_no || 'DRAFT'
-    const buyer = clientInfo.buyer_name || 'Valued Client'
-    const totalFormatted = grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
-    const itemsSummary = sets.map((s) => `• ${s.system_title || s.set_label}: ${s.quantity} ${s.unit || 'SET'}`).join('\n')
-
-    let text = `*OFFICIAL QUOTATION*\n`
-    text += `*${businessProfile.company_name || 'MYRIAD STORAGE SYSTEM LLP'}*\n`
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`
-    text += `📄 *Quotation No:* ${qtnNo}\n`
-    text += `🏢 *Client / Buyer:* ${buyer}\n`
-    text += `📅 *Date:* ${clientInfo.date || new Date().toLocaleDateString('en-IN')}\n\n`
-    if (itemsSummary) {
-      text += `*Scope / Systems:*\n${itemsSummary}\n\n`
-    }
-    if (hasDiscount) {
-      text += `💰 *Subtotal:* ₹${totalBeforeDiscount.toFixed(2)}\n`
-      text += `🏷️ *Discount (${effectiveDiscountPct}%):* -₹${totalDiscountAmount.toFixed(2)}\n`
-      text += `💵 *Net Before GST:* ₹${subtotal.toFixed(2)}\n`
-    }
-    text += `💳 *Grand Total:* ${totalFormatted} (incl. 18% GST)\n`
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`
-    text += `📞 Contact: ${businessProfile.contact_phone || '9769377043'}\n`
-    text += `✉️ Email: ${businessProfile.sales_email || businessProfile.info_email || 'sales@myriadstoragesystem.com'}\n`
-    text += `🌐 Web: ${businessProfile.website || 'www.myriadstoragesystem.com'}`
-
-    const encoded = encodeURIComponent(text)
-    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank')
   }
 
   const handleSave = () => {
@@ -2013,111 +1923,6 @@ export function OfficialQuotationDocument({
         }, project.id).catch(() => {})
       }
     }
-  }
-
-  // System / Set management helpers
-  const handleAddSet = () => {
-    const nextIdx = sets.length
-    const nextChar = String.fromCharCode(65 + nextIdx)
-    const newSet: QuotationSet = {
-      id: String(Date.now()),
-      system_title: `SYSTEM ${nextChar}`,
-      set_label: `1 SET`,
-      quantity: 1,
-      unit: 'SET',
-      rate: 0,
-      amount: 0,
-      items: [
-        {
-          id: String(Date.now() + 1),
-          model_name: 'DOUBLE FACE MOVABLE UNIT (DFMU)',
-          dimensions: '2200 (HT) X 1830 (W) X 610 (D) MM 5 Compartments',
-          unit_qty: 4,
-        },
-        {
-          id: String(Date.now() + 2),
-          model_name: 'SINGLE FACE MOVABLE UNIT (SFMU)',
-          dimensions: '2200 (HT) X 1830 (W) X 475 (D) MM 5 Compartments',
-          unit_qty: 1,
-        },
-        {
-          id: String(Date.now() + 3),
-          model_name: 'SINGLE FACE FIX UNIT (SFFU)',
-          dimensions: '2200 (HT) X 1830 (W) X 330 (D) MM 5 Compartments',
-          unit_qty: 1,
-        },
-      ],
-    }
-    setSets([...sets, newSet])
-  }
-
-  const handleDuplicateSet = (idx: number) => {
-    const src = sets[idx]
-    const nextIdx = sets.length
-    const nextChar = String.fromCharCode(65 + nextIdx)
-    const cloned: QuotationSet = {
-      ...src,
-      id: String(Date.now()),
-      system_title: `SYSTEM ${nextChar}`,
-      set_label: src.set_label || `${src.quantity || 1} SET`,
-      items: src.items.map((it, i) => ({
-        ...it,
-        id: String(Date.now() + i + 1),
-      })),
-    }
-    setSets([...sets, cloned])
-  }
-
-  const handleRemoveSet = (idx: number) => {
-    if (sets.length <= 1) return
-    setSets(sets.filter((_, i) => i !== idx))
-  }
-
-  const handleUpdateSet = (idx: number, patch: Partial<QuotationSet>) => {
-    setSets(
-      sets.map((s, i) => {
-        if (i !== idx) return s
-        const next = { ...s, ...patch }
-        if (patch.rate !== undefined || patch.quantity !== undefined) {
-          next.amount = Math.round((next.quantity || 1) * (next.rate || 0) * 100) / 100
-        }
-        return next
-      })
-    )
-  }
-
-  const handleAddSetItem = (setIdx: number) => {
-    const targetSet = sets[setIdx]
-    const newItem: SetUnitItem = {
-      id: String(Date.now()),
-      model_name: 'DOUBLE FACE MOVABLE UNIT (DFMU)',
-      dimensions: '2200 (HT) X 1830 (W) X 610 (D) MM 5 Compartments',
-      unit_qty: 1,
-    }
-    const updated = {
-      ...targetSet,
-      items: [...targetSet.items, newItem],
-    }
-    setSets(sets.map((s, i) => (i === setIdx ? updated : s)))
-  }
-
-  const handleRemoveSetItem = (setIdx: number, itemIdx: number) => {
-    const targetSet = sets[setIdx]
-    if (targetSet.items.length <= 1) return
-    const updated = {
-      ...targetSet,
-      items: targetSet.items.filter((_, i) => i !== itemIdx),
-    }
-    setSets(sets.map((s, i) => (i === setIdx ? updated : s)))
-  }
-
-  const handleUpdateSetItem = (setIdx: number, itemIdx: number, patch: Partial<SetUnitItem>) => {
-    const targetSet = sets[setIdx]
-    const updated = {
-      ...targetSet,
-      items: targetSet.items.map((it, i) => (i === itemIdx ? { ...it, ...patch } : it)),
-    }
-    setSets(sets.map((s, i) => (i === setIdx ? updated : s)))
   }
 
   // PDF Watermark Overlay Component
@@ -3030,24 +2835,15 @@ export function OfficialQuotationDocument({
                   {Icon.check} Save
                 </button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
+              <div style={{ marginBottom: '10px' }}>
                 <button
                   type="button"
                   className="btn ghost sm"
                   onClick={handlePrint}
                   title="Open Browser Print Dialog (Physical Printer or Save as PDF)"
-                  style={{ fontSize: '11px', padding: '4px 6px', justifyContent: 'center', color: '#475569' }}
+                  style={{ width: '100%', fontSize: '11px', padding: '4px 8px', justifyContent: 'center', color: '#475569' }}
                 >
                   🖨️ Print / Vector
-                </button>
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  onClick={handleWhatsAppShare}
-                  title="Share quotation summary via WhatsApp"
-                  style={{ fontSize: '11px', padding: '4px 6px', justifyContent: 'center', color: '#16a34a', borderColor: '#bbf7d0', background: '#f0fdf4' }}
-                >
-                  💬 WhatsApp
                 </button>
               </div>
 
@@ -3082,13 +2878,6 @@ export function OfficialQuotationDocument({
                   onClick={() => setActiveSidebarTab('terms')}
                 >
                   📋 Terms
-                </button>
-                <button
-                  type="button"
-                  className={`sidebar-tab-btn ${activeSidebarTab === 'sets' ? 'active' : ''}`}
-                  onClick={() => setActiveSidebarTab('sets')}
-                >
-                  📦 {effectiveQuotationMode === 'unit_wise' ? 'Items' : 'Systems'}
                 </button>
                 {!isMultiSystem && (
                   <button
@@ -4635,324 +4424,6 @@ export function OfficialQuotationDocument({
                 </div>
               )}
 
-              {/* TAB: SETS & ITEMS */}
-              {activeSidebarTab === 'sets' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {effectiveQuotationMode === 'unit_wise' ? (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span className="tiny font-bold">Individual Line Items ({lineItems.length})</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            type="button"
-                            className="btn ghost sm"
-                            onClick={handleSyncBreakdownToLineItems}
-                            style={{ fontSize: '10.5px', padding: '3px 7px' }}
-                            title="Reset all lines to calculated unit rates"
-                          >
-                            🔄 Reset
-                          </button>
-                          <button
-                            type="button"
-                            className="btn primary sm"
-                            onClick={() => {
-                              const newId = String(Date.now())
-                              setLineItems((prev) => [
-                                ...prev,
-                                {
-                                  id: newId,
-                                  model_name: 'CUSTOM UNIT / ACCESSORY',
-                                  dimensions: 'STANDARD SPECIFICATION',
-                                  quantity: 1,
-                                  rate: 10000,
-                                  amount: 10000,
-                                },
-                              ])
-                            }}
-                            style={{ fontSize: '10.5px', padding: '3px 7px' }}
-                          >
-                            + Add Row
-                          </button>
-                        </div>
-                      </div>
-
-                      {lineItems.map((item, idx) => (
-                        <div
-                          key={item.id}
-                          style={{
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '6px',
-                            padding: '8px',
-                            background: '#f8fafc',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                            <span className="tiny font-bold text-muted">Item #{idx + 1}</span>
-                            {lineItems.length > 1 && (
-                              <button
-                                type="button"
-                                className="icon-btn sm"
-                                onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))}
-                                style={{ color: '#ef4444' }}
-                                title="Delete item"
-                              >
-                                {Icon.trash}
-                              </button>
-                            )}
-                          </div>
-                          <div style={{ marginBottom: '6px' }}>
-                            <label className="tiny muted" style={{ display: 'block', marginBottom: '2px' }}>
-                              Model &amp; Description
-                            </label>
-                            <input
-                              type="text"
-                              value={item.model_name}
-                              onChange={(e) => {
-                                const val = e.target.value
-                                setLineItems((prev) =>
-                                  prev.map((it, i) => (i === idx ? { ...it, model_name: val } : it))
-                                )
-                              }}
-                              style={{ width: '100%', fontSize: '11px', fontWeight: 600, padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', boxSizing: 'border-box' }}
-                            />
-                          </div>
-                          <div style={{ marginBottom: '6px' }}>
-                            <label className="tiny muted" style={{ display: 'block', marginBottom: '2px' }}>
-                              Dimensions
-                            </label>
-                            <input
-                              type="text"
-                              value={item.dimensions}
-                              onChange={(e) => {
-                                const val = e.target.value
-                                setLineItems((prev) =>
-                                  prev.map((it, i) => (i === idx ? { ...it, dimensions: val } : it))
-                                )
-                              }}
-                              style={{ width: '100%', fontSize: '10.5px', padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', boxSizing: 'border-box' }}
-                            />
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                            <div>
-                              <label className="tiny muted">Qty</label>
-                              <input
-                                type="number"
-                                value={item.quantity}
-                                onChange={(e) => {
-                                  const q = parseInt(e.target.value) || 1
-                                  setLineItems((prev) =>
-                                    prev.map((it, i) =>
-                                      i === idx
-                                        ? { ...it, quantity: q, amount: Math.round(q * (it.rate || 0) * 100) / 100 }
-                                        : it
-                                    )
-                                  )
-                                }}
-                                className="option-input-field"
-                              />
-                            </div>
-                            <div>
-                              <label className="tiny muted">Rate (₹)</label>
-                              <input
-                                type="number"
-                                value={item.rate}
-                                onChange={(e) => {
-                                  const r = parseFloat(e.target.value) || 0
-                                  setLineItems((prev) =>
-                                    prev.map((it, i) =>
-                                      i === idx
-                                        ? { ...it, rate: r, amount: Math.round((it.quantity || 1) * r * 100) / 100 }
-                                        : it
-                                    )
-                                  )
-                                }}
-                                className="option-input-field"
-                              />
-                            </div>
-                            <div>
-                              <label className="tiny muted">Amount (₹)</label>
-                              <input
-                                type="number"
-                                value={item.amount}
-                                onChange={(e) => {
-                                  const a = parseFloat(e.target.value) || 0
-                                  setLineItems((prev) =>
-                                    prev.map((it, i) => (i === idx ? { ...it, amount: a } : it))
-                                  )
-                                }}
-                                className="option-input-field"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="tiny font-bold">Quotation Systems ({sets.length})</span>
-                        <button type="button" className="btn ghost sm" onClick={handleAddSet} style={{ fontSize: '11px', padding: '3px 8px' }}>
-                          + Add System
-                        </button>
-                      </div>
-                      {sets.map((s, sIdx) => {
-                        const nextChar = String.fromCharCode(65 + sIdx)
-                        const currentTitle = s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)
-
-                        return (
-                          <div key={s.id} style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', background: '#f8fafc' }}>
-                            {/* System Header Bar */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '6px' }}>
-                              <input
-                                type="text"
-                                value={currentTitle}
-                                onChange={(e) => handleUpdateSet(sIdx, { system_title: e.target.value, set_label: e.target.value })}
-                                placeholder={`SYSTEM ${nextChar}`}
-                                style={{ fontWeight: 700, flex: 1, fontSize: '12px', padding: '3px 6px', border: '1px solid #94a3b8', borderRadius: '4px', background: '#ffffff', color: '#0f172a' }}
-                                title="System Title (e.g. SYSTEM A, SYSTEM B, SYSTEM C)"
-                              />
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <button
-                                  type="button"
-                                  className="btn ghost sm"
-                                  onClick={() => handleDuplicateSet(sIdx)}
-                                  title="Duplicate system structure to next system"
-                                  style={{ fontSize: '10px', padding: '2px 6px' }}
-                                >
-                                  Duplicate
-                                </button>
-                                {sets.length > 1 && (
-                                  <button
-                                    type="button"
-                                    className="icon-btn sm"
-                                    onClick={() => handleRemoveSet(sIdx)}
-                                    title="Delete System"
-                                    style={{ color: '#ef4444' }}
-                                  >
-                                    {Icon.trash}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Commercial Rates: Qty, Unit, Rate, Amount */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '48px 50px 1fr 1fr', gap: '6px', marginBottom: '8px' }}>
-                              <div>
-                                <label className="tiny muted">Qty</label>
-                                <input
-                                  type="number"
-                                  value={s.quantity}
-                                  onChange={(e) => {
-                                    const qty = parseInt(e.target.value) || 1
-                                    handleUpdateSet(sIdx, { quantity: qty, amount: qty * (s.rate || 0) })
-                                  }}
-                                  className="option-input-field"
-                                  style={{ textAlign: 'center' }}
-                                />
-                              </div>
-                              <div>
-                                <label className="tiny muted">Unit</label>
-                                <input
-                                  type="text"
-                                  value={s.unit || 'SET'}
-                                  onChange={(e) => handleUpdateSet(sIdx, { unit: e.target.value })}
-                                  className="option-input-field"
-                                  style={{ textAlign: 'center' }}
-                                />
-                              </div>
-                              <div>
-                                <label className="tiny muted">Rate (₹)</label>
-                                <input
-                                  type="number"
-                                  value={s.rate}
-                                  onChange={(e) => {
-                                    const r = parseFloat(e.target.value) || 0
-                                    handleUpdateSet(sIdx, { rate: r, amount: (s.quantity || 1) * r })
-                                  }}
-                                  className="option-input-field font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="tiny muted">Amount (₹)</label>
-                                <input
-                                  type="number"
-                                  value={s.amount}
-                                  onChange={(e) => handleUpdateSet(sIdx, { amount: parseFloat(e.target.value) || 0 })}
-                                  className="option-input-field font-mono font-bold"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Units / Models inside this System */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <span className="tiny font-bold text-muted">System Models ({s.items.length}):</span>
-                              <button
-                                type="button"
-                                className="btn ghost sm"
-                                onClick={() => handleAddSetItem(sIdx)}
-                                style={{ fontSize: '10px', padding: '2px 6px' }}
-                              >
-                                + Add Unit
-                              </button>
-                            </div>
-
-                            {(s.items || []).map((it, itIdx) => (
-                              <div key={it.id} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '6px', marginBottom: '6px' }}>
-                                <div style={{ display: 'flex', gap: '4px', marginBottom: '4px', alignItems: 'center' }}>
-                                  <span className="tiny font-bold font-mono" style={{ color: '#64748b', width: '16px' }}>{itIdx + 1}.</span>
-                                  <input
-                                    type="text"
-                                    value={it.model_name}
-                                    onChange={(e) => handleUpdateSetItem(sIdx, itIdx, { model_name: e.target.value })}
-                                    style={{ flex: 1, fontSize: '11px', fontWeight: 600, padding: '2px 4px', border: '1px solid #cbd5e1', borderRadius: '3px' }}
-                                    placeholder="Model Name"
-                                  />
-                                  <input
-                                    type="number"
-                                    value={it.unit_qty}
-                                    onChange={(e) => handleUpdateSetItem(sIdx, itIdx, { unit_qty: parseInt(e.target.value) || 1 })}
-                                    style={{ width: '45px', textAlign: 'center', fontSize: '11px', fontWeight: 700, padding: '2px', border: '1px solid #cbd5e1', borderRadius: '3px' }}
-                                    title="Unit Quantity"
-                                  />
-                                  {s.items.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveSetItem(sIdx, itIdx)}
-                                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 700, padding: '0 4px', fontSize: '12px' }}
-                                      title="Remove unit from this system"
-                                    >
-                                      ✕
-                                    </button>
-                                  )}
-                                </div>
-                                <input
-                                  type="text"
-                                  value={it.dimensions}
-                                  onChange={(e) => handleUpdateSetItem(sIdx, itIdx, { dimensions: e.target.value })}
-                                  style={{ width: '100%', fontSize: '10.5px', padding: '2px 4px', border: '1px solid #cbd5e1', borderRadius: '3px', boxSizing: 'border-box' }}
-                                  placeholder="Dimensions & Compartments"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )
-                      })}
-
-                      <button
-                        type="button"
-                        className="btn primary sm"
-                        onClick={handleAddSet}
-                        style={{ width: '100%', justifyContent: 'center', fontSize: '11.5px', padding: '6px', marginTop: '4px' }}
-                      >
-                        + Add System ({`SYSTEM ${String.fromCharCode(65 + sets.length)}`})
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-
               {/* TAB: INSTALLATION BODIES */}
               {activeSidebarTab === 'body' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -5106,7 +4577,7 @@ export function OfficialQuotationDocument({
           className="btn primary sm"
           onClick={handleDirectDownload}
           disabled={isGeneratingPdf}
-          style={{ background: '#2563eb', flex: 1.2 }}
+          style={{ background: '#2563eb', flex: 1 }}
         >
           {isGeneratingPdf ? <Spinner size={14} /> : Icon.fileText} Download PDF
         </button>
@@ -5117,15 +4588,6 @@ export function OfficialQuotationDocument({
           style={{ flex: 1 }}
         >
           🖨️ Print / Save
-        </button>
-        <button
-          type="button"
-          className="btn success sm"
-          onClick={handleWhatsAppShare}
-          style={{ flex: 0.8, background: '#16a34a', borderColor: '#16a34a', color: '#fff' }}
-          title="Share quotation via WhatsApp"
-        >
-          💬 WhatsApp
         </button>
       </div>
 
