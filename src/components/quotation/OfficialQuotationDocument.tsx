@@ -1660,6 +1660,10 @@ export function OfficialQuotationDocument({
 
   const totalPages = includeFullProposal ? 5 : 2
 
+  // Responsive mobile view & zoom modes
+  const [mobileView, setMobileView] = useState<'document' | 'sidebar'>('document')
+  const [zoomMode, setZoomMode] = useState<'fit' | '100%'>('fit')
+
   useEffect(() => {
     document.body.classList.add('official-quotation-open')
     return () => {
@@ -1958,6 +1962,36 @@ export function OfficialQuotationDocument({
     }, 2000)
   }
 
+  const handleWhatsAppShare = () => {
+    const qtnNo = clientInfo.qtn_no || 'DRAFT'
+    const buyer = clientInfo.buyer_name || 'Valued Client'
+    const totalFormatted = grandTotal.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
+    const itemsSummary = sets.map((s) => `• ${s.system_title || s.set_label}: ${s.quantity} ${s.unit || 'SET'}`).join('\n')
+
+    let text = `*OFFICIAL QUOTATION*\n`
+    text += `*${businessProfile.company_name || 'MYRIAD STORAGE SYSTEM LLP'}*\n`
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`
+    text += `📄 *Quotation No:* ${qtnNo}\n`
+    text += `🏢 *Client / Buyer:* ${buyer}\n`
+    text += `📅 *Date:* ${clientInfo.date || new Date().toLocaleDateString('en-IN')}\n\n`
+    if (itemsSummary) {
+      text += `*Scope / Systems:*\n${itemsSummary}\n\n`
+    }
+    if (hasDiscount) {
+      text += `💰 *Subtotal:* ₹${totalBeforeDiscount.toFixed(2)}\n`
+      text += `🏷️ *Discount (${effectiveDiscountPct}%):* -₹${totalDiscountAmount.toFixed(2)}\n`
+      text += `💵 *Net Before GST:* ₹${subtotal.toFixed(2)}\n`
+    }
+    text += `💳 *Grand Total:* ${totalFormatted} (incl. 18% GST)\n`
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`
+    text += `📞 Contact: ${businessProfile.contact_phone || '9769377043'}\n`
+    text += `✉️ Email: ${businessProfile.sales_email || businessProfile.info_email || 'sales@myriadstoragesystem.com'}\n`
+    text += `🌐 Web: ${businessProfile.website || 'www.myriadstoragesystem.com'}`
+
+    const encoded = encodeURIComponent(text)
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank')
+  }
+
   const handleSave = () => {
     if (onSaveClientInfo) {
       const cleanTerms = termsList.map((t) => {
@@ -2151,7 +2185,7 @@ export function OfficialQuotationDocument({
           <div className="pdf-company-info">
             <div>{regLine1}</div>
             <div>{regLine2}</div>
-            <div>Contact : {contactPhone}{altPhone}</div>
+            <div>Contact : <a href={`tel:${contactPhone}`}>{contactPhone}</a>{altPhone}</div>
             <div>GST NO :{gstNo}{panNo}</div>
             {infoMail && <div><a href={`mailto:${infoMail}`}>{infoMail}</a></div>}
             {salesMail && <div><a href={`mailto:${salesMail}`}>{salesMail}</a></div>}
@@ -2218,16 +2252,94 @@ export function OfficialQuotationDocument({
   return createPortal(
     <div className="official-quotation-modal-overlay">
 
+      {/* Mobile Top Header Navigation */}
+      <div className="official-modal-mobile-header no-print">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            className="icon-btn xs"
+            onClick={onClose}
+            style={{ color: '#fff', background: '#334155', borderRadius: '4px', border: 'none', padding: '4px 8px' }}
+            title="Close"
+          >
+            ✕
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+              {clientInfo.qtn_no || 'Quotation'}
+            </span>
+            <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
+              A4 • {totalPages} Pages
+            </span>
+          </div>
+        </div>
+
+        <div className="mobile-nav-toggle">
+          <button
+            type="button"
+            className={`mobile-toggle-btn ${mobileView === 'document' ? 'active' : ''}`}
+            onClick={() => setMobileView('document')}
+          >
+            📄 Document
+          </button>
+          <button
+            type="button"
+            className={`mobile-toggle-btn ${mobileView === 'sidebar' ? 'active' : ''}`}
+            onClick={() => setMobileView('sidebar')}
+          >
+            ⚙️ Edit &amp; Options
+          </button>
+        </div>
+      </div>
+
       {/* =========================================================================
           THE EXACT OFFICIAL 5-PAGE PROPOSAL DOCUMENT
           ========================================================================= */}
-      <div className="official-document-scroll-container" id="official-quotation-pages">
+      <div className={`official-document-scroll-container ${mobileView === 'sidebar' ? 'mobile-hidden' : ''}`} id="official-quotation-pages">
+        {/* Mobile Zoom & Quick Share Bar */}
+        <div className="mobile-zoom-toolbar no-print">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontWeight: 600 }}>Zoom:</span>
+            <button
+              type="button"
+              className={`chip sm ${zoomMode === 'fit' ? 'primary' : 'secondary'}`}
+              style={{ fontSize: '10.5px', padding: '2px 8px', cursor: 'pointer' }}
+              onClick={() => setZoomMode('fit')}
+            >
+              Fit Screen
+            </button>
+            <button
+              type="button"
+              className={`chip sm ${zoomMode === '100%' ? 'primary' : 'secondary'}`}
+              style={{ fontSize: '10.5px', padding: '2px 8px', cursor: 'pointer' }}
+              onClick={() => setZoomMode('100%')}
+            >
+              100%
+            </button>
+          </div>
+          <button
+            type="button"
+            className="chip success sm"
+            style={{ fontSize: '10.5px', padding: '2px 8px', cursor: 'pointer', background: '#16a34a', color: '#fff', border: 'none' }}
+            onClick={handleWhatsAppShare}
+          >
+            💬 WhatsApp
+          </button>
+        </div>
+
         {isUnsavedWarning && (
           <div style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '8px 14px', fontSize: '12px', borderRadius: '6px', margin: '0 auto 12px auto', maxWidth: '210mm', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>⚠️</span>
             <span><strong>Showing saved quotation data.</strong> Click <strong>Save</strong> in the calculator to apply unsaved edits.</span>
           </div>
         )}
+
+        <div
+          className={`official-pages-wrapper ${zoomMode === 'fit' ? 'fit-screen' : ''}`}
+          style={zoomMode === 'fit' && typeof window !== 'undefined' && window.innerWidth <= 900 ? {
+            zoom: Math.min(1, Math.max(0.35, (window.innerWidth - 20) / 794)),
+          } : undefined}
+        >
 
         {/* ============================== PAGE 1: COMMERCIAL QUOTATION ============================== */}
         <div className="official-pdf-page">
@@ -2620,6 +2732,31 @@ export function OfficialQuotationDocument({
             </ol>
           </div>
 
+          {/* Commercial Summary Bar & Customer Acceptance on Page 2 */}
+          <div className="pdf-terms-summary-bar">
+            <div><strong>Price Validity:</strong> 30 Days</div>
+            <div><strong>Warranty:</strong> 12 Months Comprehensive Free Service</div>
+            <div><strong>GST:</strong> 18% as Applicable</div>
+          </div>
+
+          {/* Customer Acceptance & Authorized Signatory Block */}
+          <div className="pdf-sign-row">
+            <div className="pdf-sign-box customer">
+              <div className="sign-title">CUSTOMER ACCEPTANCE / P.O. CONFIRMATION</div>
+              <div className="sign-sub">We hereby confirm acceptance of pricing, specifications &amp; terms.</div>
+              <div className="sign-line">
+                <span>Authorized Signature &amp; Company Stamp</span>
+              </div>
+            </div>
+            <div className="pdf-sign-box company">
+              <div className="sign-title">FOR {businessProfile.company_name || 'MYRIAD STORAGE SYSTEM LLP'}</div>
+              <div className="sign-sub">Manufacturer of Heavy &amp; Mobile Compactor Storage Systems</div>
+              <div className="sign-line">
+                <span>{businessProfile.signatory_title || 'Authorized Signatory'}</span>
+              </div>
+            </div>
+          </div>
+
           <div className="pdf-footer">
             2 of {totalPages}
           </div>
@@ -2877,12 +3014,13 @@ export function OfficialQuotationDocument({
             </div>
           </>
         )}
+        </div>
       </div>
 
       {/* =========================================================================
           VERTICAL OPTIONS SIDEBAR (Right-hand Side of Page)
           ========================================================================= */}
-      <aside className={`official-right-sidebar no-print ${sidebarCollapsed ? 'collapsed' : ''}`}>
+      <aside className={`official-right-sidebar no-print ${sidebarCollapsed ? 'collapsed' : ''} ${mobileView === 'document' ? 'mobile-hidden' : ''}`}>
         {sidebarCollapsed ? (
           <div style={{ padding: '16px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
             <button
@@ -2974,15 +3112,24 @@ export function OfficialQuotationDocument({
                   {Icon.check} Save
                 </button>
               </div>
-              <div style={{ marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
                 <button
                   type="button"
                   className="btn ghost sm"
                   onClick={handlePrint}
                   title="Open Browser Print Dialog (Physical Printer or Save as PDF)"
-                  style={{ width: '100%', fontSize: '11px', padding: '4px 8px', justifyContent: 'center', color: '#475569' }}
+                  style={{ fontSize: '11px', padding: '4px 6px', justifyContent: 'center', color: '#475569' }}
                 >
-                  🖨️ Print Dialog / Browser Print
+                  🖨️ Print / Vector
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={handleWhatsAppShare}
+                  title="Share quotation summary via WhatsApp"
+                  style={{ fontSize: '11px', padding: '4px 6px', justifyContent: 'center', color: '#16a34a', borderColor: '#bbf7d0', background: '#f0fdf4' }}
+                >
+                  💬 WhatsApp
                 </button>
               </div>
 
@@ -5021,10 +5168,48 @@ export function OfficialQuotationDocument({
               >
                 {Icon.check} Save &amp; Apply Changes
               </button>
+              <button
+                type="button"
+                className="btn secondary sm no-print"
+                style={{ width: '100%', justifyContent: 'center', marginTop: '8px' }}
+                onClick={() => setMobileView('document')}
+              >
+                📄 Return to Document View
+              </button>
             </div>
           </>
         )}
       </aside>
+
+      {/* Mobile Floating Action Bar */}
+      <div className="official-mobile-bottom-bar no-print">
+        <button
+          type="button"
+          className="btn primary sm"
+          onClick={handleDirectDownload}
+          disabled={isGeneratingPdf}
+          style={{ background: '#2563eb', flex: 1.2 }}
+        >
+          {isGeneratingPdf ? <Spinner size={14} /> : Icon.fileText} Download PDF
+        </button>
+        <button
+          type="button"
+          className="btn secondary sm"
+          onClick={handlePrint}
+          style={{ flex: 1 }}
+        >
+          🖨️ Print / Save
+        </button>
+        <button
+          type="button"
+          className="btn success sm"
+          onClick={handleWhatsAppShare}
+          style={{ flex: 0.8, background: '#16a34a', borderColor: '#16a34a', color: '#fff' }}
+          title="Share quotation via WhatsApp"
+        >
+          💬 WhatsApp
+        </button>
+      </div>
 
       {/* Add New Client Modal (Available to Staff, Admin, and Owner) */}
       {showAddClientModal && (
