@@ -1866,56 +1866,50 @@ export function OfficialQuotationDocument({
         return
       }
 
-      // Detached print container so html2canvas captures all pages cleanly
-      const printContainer = document.createElement('div')
-      printContainer.style.width = '210mm'
-      printContainer.style.margin = '0'
-      printContainer.style.padding = '0'
-      printContainer.style.background = '#ffffff'
-      printContainer.style.position = 'fixed'
-      printContainer.style.top = '0'
-      printContainer.style.left = '0'
-      printContainer.style.zIndex = '999999'
-      printContainer.style.pointerEvents = 'none'
-      document.body.appendChild(printContainer)
+      const { default: jsPDF } = await import('jspdf')
+      const { default: html2canvas } = await import('html2canvas')
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      })
+
+      const prevScrollTop = element.scrollTop
 
       try {
-        pages.forEach((page, idx) => {
-          const clone = page.cloneNode(true) as HTMLElement
-          clone.style.width = '210mm'
-          clone.style.height = '297mm'
-          clone.style.minHeight = '297mm'
-          clone.style.maxHeight = '297mm'
-          clone.style.boxSizing = 'border-box'
-          clone.style.boxShadow = 'none'
-          clone.style.margin = '0'
-          clone.style.overflow = 'hidden'
-          clone.style.pageBreakAfter = idx === pages.length - 1 ? 'avoid' : 'always'
-          clone.style.breakAfter = idx === pages.length - 1 ? 'avoid' : 'page'
-          printContainer.appendChild(clone)
-        })
+        for (let idx = 0; idx < pages.length; idx++) {
+          const page = pages[idx]
+          page.scrollIntoView({ behavior: 'instant' as any, block: 'start' })
+          await new Promise((resolve) => setTimeout(resolve, 80))
 
-        const html2pdfModule = (await import('html2pdf.js')).default
-        const opt = {
-          margin: 0,
-          filename: `${fileName}.pdf`,
-          image: { type: 'jpeg' as const, quality: 0.98 },
-          html2canvas: {
+          const canvas = await html2canvas(page, {
             scale: 2,
             useCORS: true,
             logging: false,
-            scrollY: 0,
-            windowWidth: 794,
-          },
-          jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
-          pagebreak: { mode: ['css', 'legacy'] as const, after: '.official-pdf-page' },
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc) => {
+              const container = clonedDoc.getElementById('official-quotation-pages')
+              if (container) {
+                container.style.height = 'auto'
+                container.style.maxHeight = 'none'
+                container.style.overflow = 'visible'
+              }
+            },
+          })
+
+          const imgData = canvas.toDataURL('image/jpeg', 0.98)
+          if (idx > 0) {
+            pdf.addPage('a4', 'portrait')
+          }
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST')
         }
-        await html2pdfModule().set(opt).from(printContainer).save()
+
+        pdf.save(`${fileName}.pdf`)
         toast(`Downloaded "${fileName}.pdf" (${pages.length} pages) directly!`)
       } finally {
-        if (printContainer.parentNode) {
-          printContainer.parentNode.removeChild(printContainer)
-        }
+        element.scrollTop = prevScrollTop
       }
 
       // Record in Activity Log
