@@ -305,6 +305,8 @@ export interface QuotationSet {
   unit: string // "SET"
   rate: number
   amount: number
+  pre_discount_rate?: number
+  pre_discount_amount?: number
   items: SetUnitItem[]
   summary?: any
   breakdown?: any
@@ -1361,6 +1363,8 @@ export function OfficialQuotationDocument({
         unit: s.unit || 'SET',
         rate: Number(s.rate) || 0,
         amount: s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0)),
+        pre_discount_rate: s.pre_discount_rate !== undefined ? Number(s.pre_discount_rate) : Number(s.rate) || 0,
+        pre_discount_amount: s.pre_discount_amount !== undefined ? Number(s.pre_discount_amount) : (s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0))),
       }))
     }
 
@@ -1418,6 +1422,8 @@ export function OfficialQuotationDocument({
         unit: s.unit || 'SET',
         rate: Number(s.rate) || 0,
         amount: s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0)),
+        pre_discount_rate: s.pre_discount_rate !== undefined ? Number(s.pre_discount_rate) : Number(s.rate) || 0,
+        pre_discount_amount: s.pre_discount_amount !== undefined ? Number(s.pre_discount_amount) : (s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0))),
       }))
     }
 
@@ -1695,19 +1701,33 @@ export function OfficialQuotationDocument({
   }, [breakdownResult, summary, project])
 
   const hasDiscount = effectiveDiscountPct > 0
+  const [showDiscountBreakdown, setShowDiscountBreakdown] = useState<boolean>(false)
+  const showDiscount = hasDiscount && showDiscountBreakdown
 
   const { totalBeforeDiscount, totalDiscountAmount } = useMemo(() => {
-    if (!hasDiscount) {
+    if (!hasDiscount || !showDiscountBreakdown) {
       return { totalBeforeDiscount: subtotal, totalDiscountAmount: 0 }
     }
-    const factor = 1 - (effectiveDiscountPct / 100)
-    const beforeDisc = factor > 0 ? (subtotal / factor) : subtotal
+    let beforeDisc = 0
+    if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
+      beforeDisc = sets.reduce((acc, s) => {
+        const preAmount = s.pre_discount_amount !== undefined
+          ? Number(s.pre_discount_amount)
+          : (Number(s.amount) / Math.max(0.01, 1 - (effectiveDiscountPct / 100)))
+        return acc + preAmount
+      }, 0)
+    } else if (effectiveQuotationMode === 'unit_breakdown') {
+      beforeDisc = breakdownResult.totalPriceWithProfit || subtotal
+    } else {
+      const factor = 1 - (effectiveDiscountPct / 100)
+      beforeDisc = factor > 0 ? (subtotal / factor) : subtotal
+    }
     const discAmt = beforeDisc - subtotal
     return {
       totalBeforeDiscount: beforeDisc,
       totalDiscountAmount: discAmt,
     }
-  }, [hasDiscount, effectiveDiscountPct, subtotal])
+  }, [hasDiscount, showDiscountBreakdown, effectiveDiscountPct, subtotal, effectiveQuotationMode, sets, breakdownResult])
 
   // Check if compactor width is >= 3000 mm for DOUBLE DRIVE WITH REDUCTION WHEEL in red specs
   const hasDoubleDrive = useMemo(() => {
@@ -2304,6 +2324,12 @@ export function OfficialQuotationDocument({
                     const systemTitle = (!isMultiSystem ? '' : (s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`))).trim()
                     const hasItems = s.items && s.items.length > 0
                     const totalRowSpan = (hasItems ? s.items.length : 0) + (systemTitle ? 1 : 0)
+                    const displaySetRate = showDiscount
+                      ? (s.pre_discount_rate !== undefined ? s.pre_discount_rate : Math.round(Number(s.rate) / Math.max(0.01, 1 - (effectiveDiscountPct / 100))))
+                      : Number(s.rate)
+                    const displaySetAmount = showDiscount
+                      ? (s.pre_discount_amount !== undefined ? s.pre_discount_amount : (displaySetRate * (s.quantity || 1)))
+                      : Number(s.amount)
 
                     return (
                       <React.Fragment key={s.id}>
@@ -2330,8 +2356,8 @@ export function OfficialQuotationDocument({
                               rowSpan={totalRowSpan}
                               style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                             >
-                              {Number(s.rate).toLocaleString('en-IN', {
-                                minimumFractionDigits: Number(s.rate) % 1 === 0 ? 0 : 2,
+                              {Number(displaySetRate).toLocaleString('en-IN', {
+                                minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
                                 maximumFractionDigits: 2,
                                 useGrouping: false,
                               })}
@@ -2341,7 +2367,7 @@ export function OfficialQuotationDocument({
                               rowSpan={totalRowSpan}
                               style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                             >
-                              {Number(s.amount).toFixed(2)}
+                              {Number(displaySetAmount).toFixed(2)}
                             </td>
                           </tr>
                         ) : null}
@@ -2355,10 +2381,10 @@ export function OfficialQuotationDocument({
                             (it.model_name && r.model_code && it.model_name.includes(r.model_code))
                           )
                           const itemRate = matchRow
-                            ? (hasDiscount ? matchRow.final_unit_rate : matchRow.unit_rate_with_profit)
+                            ? (showDiscount ? matchRow.unit_rate_with_profit : matchRow.final_unit_rate)
                             : (Number(it.rate) || (Number(it.amount) / Math.max(1, Number(it.unit_qty) || 1)) || 0)
                           const itemAmount = matchRow
-                            ? (hasDiscount ? matchRow.final_amount : matchRow.total_price_with_profit)
+                            ? (showDiscount ? matchRow.total_price_with_profit : matchRow.final_amount)
                             : (Number(it.amount) || (itemRate * (Number(it.unit_qty) || 1)) || 0)
 
                           return (
@@ -2388,8 +2414,8 @@ export function OfficialQuotationDocument({
                                     rowSpan={s.items.length}
                                     style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
-                                    {Number(s.rate).toLocaleString('en-IN', {
-                                      minimumFractionDigits: Number(s.rate) % 1 === 0 ? 0 : 2,
+                                    {Number(displaySetRate).toLocaleString('en-IN', {
+                                      minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
                                       maximumFractionDigits: 2,
                                       useGrouping: false,
                                     })}
@@ -2399,7 +2425,7 @@ export function OfficialQuotationDocument({
                                     rowSpan={s.items.length}
                                     style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
-                                    {Number(s.amount).toFixed(2)}
+                                    {Number(displaySetAmount).toFixed(2)}
                                   </td>
                                 </>
                               )}
@@ -2417,7 +2443,7 @@ export function OfficialQuotationDocument({
               <tr className="summary-split-row">
                 <td
                   colSpan={effectiveQuotationMode === 'unit_breakdown' ? 5 : 3}
-                  rowSpan={hasDiscount ? 6 : 4}
+                  rowSpan={showDiscount ? 6 : 4}
                   className="td-red-specs"
                   title="Click to edit Description of Goods Specifications"
                   onClick={() => setActiveSidebarTab('options')}
@@ -2429,9 +2455,9 @@ export function OfficialQuotationDocument({
                   </div>
                 </td>
                 <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">TOTAL</td>
-                <td className="td-sum-val">{totalBeforeDiscount.toFixed(2)}</td>
+                <td className="td-sum-val">{(showDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
               </tr>
-              {hasDiscount && (
+              {showDiscount && (
                 <>
                   <tr className="summary-split-row">
                     <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">DISCOUNT</td>
@@ -2996,6 +3022,17 @@ export function OfficialQuotationDocument({
                       />
                       <span style={{ fontSize: '12px' }}>Include Full 5-Page Technical Proposal</span>
                     </label>
+
+                    {hasDiscount && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px', padding: '6px 8px', background: '#f8fafc', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                        <input
+                          type="checkbox"
+                          checked={showDiscountBreakdown}
+                          onChange={(e) => setShowDiscountBreakdown(e.target.checked)}
+                        />
+                        <span style={{ fontSize: '11.5px', fontWeight: 600 }}>Show Discount Line Item ({effectiveDiscountPct}%)</span>
+                      </label>
+                    )}
                   </div>
                   {/* 2. DESCRIPTION OF GOODS (RED SPECIFICATIONS) */}
                   <div className="option-group-card" style={{ borderLeft: '3px solid #dc2626' }}>

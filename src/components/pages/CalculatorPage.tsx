@@ -1570,6 +1570,9 @@ export function CalculatorPage({
 
       const rate = Math.round(sysBreakdown?.finalBeforeGst || sysSummary?.beforeGst || 0)
       const amount = Math.round(rate * (sys.quantity || 1))
+      const preDiscTotal = sysBreakdown?.totalPriceWithProfit || sysSummary?.subtotalWithProfit || (rate / Math.max(0.01, 1 - (discountPct / 100)))
+      const preDiscRate = Math.round(preDiscTotal / Math.max(1, sys.quantity || 1))
+      const preDiscAmount = Math.round(preDiscRate * (sys.quantity || 1))
       const activeRows = sysBreakdown?.rows && sysBreakdown.rows.length > 0 ? sysBreakdown.rows : []
 
       return {
@@ -1580,6 +1583,8 @@ export function CalculatorPage({
         unit: sys.unit || 'SET',
         rate,
         amount,
+        pre_discount_rate: preDiscRate,
+        pre_discount_amount: preDiscAmount,
         summary: sysSummary,
         breakdown: sysBreakdown,
         items: activeRows.map((r: any, rIdx: number) => ({
@@ -1590,6 +1595,8 @@ export function CalculatorPage({
           unit_qty: r.qty,
           rate: r.unit_rate_with_profit,
           amount: r.total_price_with_profit,
+          final_unit_rate: r.final_unit_rate,
+          final_amount: r.final_amount,
         })),
       }
     })
