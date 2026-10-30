@@ -337,6 +337,43 @@ export const api = {
       throw err
     }
   },
+  templateUpdate: async (
+    token: string,
+    org: string,
+    templateId: string,
+    name: string,
+    description: string,
+    definition: any
+  ) => {
+    try {
+      return await rpc<{ id: string; version_num: number; status: string; is_default: boolean }>('template_update', {
+        p_token: token,
+        p_org: org,
+        p_template_id: templateId,
+        p_name: name,
+        p_description: description,
+        p_definition: definition,
+      })
+    } catch (err) {
+      if (client) {
+        const { data, error } = await client
+          .from('templates')
+          .update({
+            name,
+            description,
+            definition,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', templateId)
+          .eq('org_id', org)
+          .select('id, version_num, status, is_default')
+          .single()
+        if (error) throw error
+        return data as { id: string; version_num: number; status: string; is_default: boolean }
+      }
+      throw err
+    }
+  },
 
   // ---- Projects
   projectList: (token: string, org: string, includeArchived = false) =>

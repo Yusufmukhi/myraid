@@ -52,6 +52,21 @@ export async function publishTemplate(
 }
 
 /**
+ * Updates an existing template version in-place without creating a new version.
+ */
+export async function updateTemplate(
+  session: Session,
+  org: Org,
+  templateId: string,
+  name: string,
+  description: string,
+  definition: any
+): Promise<{ id: string; version_num: number; status: string; is_default: boolean }> {
+  assertPermission(org.role, ['owner', 'admin'], 'updateTemplate')
+  return await api.templateUpdate(session.token, org.id, templateId, name, description, definition)
+}
+
+/**
  * Rolls back or switches the default template version with client-side role check.
  */
 export async function rollbackTemplateToVersion(

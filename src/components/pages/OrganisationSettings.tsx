@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import data from '../../lib/clientWorkbook.json'
 import { api, Org, Session, Template } from '../../lib/api'
-import { deleteTemplate, publishTemplate, rollbackTemplateToVersion } from '../../lib/permissions'
+import { deleteTemplate, publishTemplate, rollbackTemplateToVersion, updateTemplate } from '../../lib/permissions'
 import { Overrides, SheetData, Workbook } from '../../lib/engine'
 import { inr, timeAgo } from '../../lib/format'
 import { INPUT_GROUPS } from '../../lib/inputs'
@@ -100,6 +100,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   // Dedicated workbook instances for template draft calculation
   const [diffModalTemplate, setDiffModalTemplate] = useState<Template | null>(null)
   const [diffComparisonMode, setDiffComparisonMode] = useState<'prev' | 'initial'>('prev')
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
 
   // Dedicated workbook instances for template draft calculation (all 15 sheets initialized)
   const draftWb = useMemo(() => new Workbook(data as unknown as { sheets: SheetData[] }), [])
@@ -880,7 +881,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                               onClick={() => handleOpenStudio(t, (t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut')) ? 'c2c' : 'actual')}
                               title="Create new draft version based on this template"
                             >
-                              {Icon.edit} Fork Version
+                              ✏️ Edit Version
                             </button>
                           </div>
                         </td>

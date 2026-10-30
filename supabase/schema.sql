@@ -1326,6 +1326,40 @@ begin
   return json_build_object('id', t.id, 'version_num', t.version_num, 'deleted', true);
 end $$;
 
+create or replace function public.template_update(
+  p_token uuid,
+  p_org uuid,
+  p_template_id uuid,
+  p_name text,
+  p_description text,
+  p_definition jsonb
+)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  uid uuid := public._require_user(p_token);
+  t public.templates;
+begin
+  perform public._require_admin(uid, p_org);
+  select * into t from public.templates where id = p_template_id and org_id = p_org;
+  if t.id is null then raise exception 'Template not found.' using errcode='P0001'; end if;
+
+  update public.templates
+  set name = coalesce(nullif(trim(p_name), ''), t.name),
+      description = coalesce(p_description, t.description),
+      definition = coalesce(p_definition, t.definition),
+      updated_at = now()
+  where id = p_template_id and org_id = p_org
+  returning * into t;
+
+  perform public._log_activity(p_org, null, uid, 'template_updated', json_build_object(
+    'version', t.version_num,
+    'name', t.name,
+    'description', t.description
+  ));
+
+  return json_build_object('id', t.id, 'version_num', t.version_num, 'status', t.status, 'is_default', t.is_default);
+end $$;
+
 -- ------------------------------------------------------------- 7. Projects
 create or replace function public.project_list(p_token uuid, p_org uuid, p_include_archived boolean default false)
 returns json language plpgsql stable security definer set search_path = public as $$
@@ -2675,11 +2709,8 @@ begin
   if tg_op = 'DELETE' and old.is_default then
     raise exception 'Cannot delete active default template version. Please switch the default to another version first.' using errcode='P0001';
   end if;
-  if tg_op = 'UPDATE' and old.status = 'published' then
-    if new.definition <> old.definition or new.version_num <> old.version_num or new.name <> old.name then
-      raise exception 'Published template versions are immutable and cannot be altered. Publish a new version instead.' using errcode='P0001';
-    end if;
-  end if;
+  -- Updates to template definition, name, or description by admin are permitted in-place
+  
   return new;
 end $$;
 
