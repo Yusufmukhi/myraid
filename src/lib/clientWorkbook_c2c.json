@@ -1,0 +1,1275 @@
+{
+  "sheets": [
+    {
+      "name": "Total cal",
+      "rows": 54,
+      "cols": 19,
+      "cells": [
+        [
+          "DFMU"
+        ],
+        [
+          "ROW",
+          "CLOUM",
+          "HT",
+          "W",
+          "D",
+          "body G",
+          "shelf G",
+          "RATE",
+          "TRACK",
+          "shelf stiffner",
+          null,
+          "trolly G",
+          "trolly RATE"
+        ],
+        [
+          4,
+          5,
+          2200,
+          1830,
+          610,
+          0.8,
+          0.8,
+          79,
+          2,
+          0,
+          null,
+          2.5,
+          69,
+          null,
+          null,
+          8802793833
+        ],
+        [
+          null,
+          "AMOUNT",
+          null,
+          26549.46647,
+          null,
+          "QTY",
+          8,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=G4*D4"
+        ],
+        [
+          "SFMU",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "LABOUR",
+          "=N50"
+        ],
+        [
+          "ROW",
+          "CLOUM",
+          "HT",
+          "W",
+          "D",
+          "Body G",
+          "Self G",
+          "Rate",
+          "track",
+          "shelf stiffner",
+          null,
+          null,
+          null,
+          null,
+          null,
+          "SP TOTAL",
+          "=J36"
+        ],
+        [
+          "=(A3/2)",
+          "=B3",
+          "=C3",
+          "=D3",
+          475,
+          "=F3",
+          "=G3",
+          "=H3",
+          "=I3",
+          "=J3",
+          null,
+          null,
+          null,
+          null,
+          null,
+          "TROLLY ",
+          "=J42"
+        ],
+        [
+          null,
+          "AMOUNT",
+          null,
+          23113.129658,
+          null,
+          "QTY",
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=G8*D8",
+          null,
+          "=H45",
+          "=J45"
+        ],
+        [
+          "SFFU",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "PC",
+          "=E39"
+        ],
+        [
+          "ROW",
+          "CLOUM",
+          "HT",
+          "W",
+          "D",
+          "Body G",
+          "Self G",
+          "Rate",
+          "Track",
+          "shelf stiffner"
+        ],
+        [
+          "=(A3/2)",
+          "=B3",
+          "=C3",
+          "=D3",
+          330,
+          "=F3",
+          "=G3",
+          "=H3",
+          "=I3",
+          "=J3",
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=A43",
+          "=B43"
+        ],
+        [
+          null,
+          "AMOUNT",
+          null,
+          13403.81857,
+          null,
+          "QTY",
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=G12*D12",
+          null,
+          "=A44",
+          "=B44"
+        ],
+        [
+          "DFFU",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=A45",
+          "=B45"
+        ],
+        [
+          "ROW",
+          "CLOUM",
+          "HT",
+          "W",
+          "D",
+          "body G",
+          "shelf G",
+          "RATE",
+          "TRACK",
+          "shelf stiffner",
+          null,
+          "trolly G",
+          null,
+          null,
+          null,
+          "=A46",
+          "=B46"
+        ],
+        [
+          "=A3",
+          "=B3",
+          "=C3",
+          "=D3",
+          "=E3",
+          "=F3",
+          "=G3",
+          "=H3",
+          "=I3",
+          "=J3",
+          null,
+          "=L3",
+          null,
+          null,
+          null,
+          "=A47",
+          "=B47"
+        ],
+        [
+          null,
+          "AMOUNT",
+          null,
+          19649.891244,
+          null,
+          "QTY",
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=G16*D16",
+          null,
+          "=A48",
+          "=B48",
+          null,
+          "=D48"
+        ],
+        [
+          "DFMU WITH DOOR",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=A49",
+          "=B49"
+        ],
+        [
+          "ROW",
+          "CLOUM",
+          "HT",
+          "W",
+          "D",
+          "body G",
+          "shelf G",
+          "RATE",
+          "TRACK",
+          "shelf stiffner",
+          null,
+          "trolly G",
+          "trolly RATE",
+          null,
+          null,
+          null,
+          "=B50"
+        ],
+        [
+          "=A3",
+          "=B3",
+          "=C3",
+          "=D3",
+          "=E3+30",
+          "=F3",
+          "=G3",
+          "=H3",
+          "=I3",
+          "=J3",
+          null,
+          "=L3"
+        ],
+        [
+          null,
+          "=D20-D4",
+          "=B20/A11",
+          33672.889657,
+          null,
+          null,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=D20*G20"
+        ],
+        [],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "TOTAL",
+          null,
+          "=SUM(N4:N20)"
+        ],
+        [
+          null,
+          null,
+          null,
+          "DOOR",
+          "PER DOOR",
+          null,
+          null,
+          null,
+          "PER DOOR LABOUR",
+          null,
+          null,
+          null,
+          "INSTALLATION ",
+          "=B50"
+        ],
+        [
+          null,
+          null,
+          "RATE",
+          7009.563906,
+          3504.781953,
+          53.920133,
+          15,
+          "=F24*G24",
+          404.401001,
+          null,
+          null,
+          null,
+          "TRANSPORT"
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "ACC"
+        ],
+        [
+          null,
+          "Profit",
+          25,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "PF",
+          "=N22*20%"
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "BEFORE GST",
+          "=SUM(N22:N26)"
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "18% GST",
+          "=N27*18%"
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "SALES",
+          "=SUM(N27:N28)"
+        ],
+        [],
+        [],
+        [
+          null,
+          null,
+          "POWDER COATING",
+          null,
+          null,
+          null,
+          null,
+          null,
+          "steel",
+          null,
+          "Rate",
+          null,
+          "labour rate",
+          "Lipson Labour"
+        ],
+        [],
+        [
+          null,
+          "DFMU",
+          "=G4",
+          4405.637423,
+          "=C34*D34",
+          null,
+          null,
+          null,
+          "SP",
+          1177.489114
+        ],
+        [
+          null,
+          "SFMU",
+          "=G8",
+          3940.111166,
+          "=C35*D35",
+          null,
+          null,
+          null,
+          "WASTAGE 7%",
+          117.748911
+        ],
+        [
+          null,
+          "SSFU",
+          "=G12",
+          3128.475293,
+          "=C36*D36",
+          null,
+          null,
+          null,
+          "TOTAL",
+          1295.238025,
+          "=H3",
+          "=J36*K36",
+          15,
+          "=J36*M36"
+        ],
+        [
+          null,
+          "DFFU",
+          "=G16",
+          4368.452229,
+          "=C37*D37"
+        ],
+        [
+          null,
+          "DFM-D",
+          "=G20",
+          5728.86267,
+          "=C38*D38",
+          null,
+          null,
+          null,
+          "TROLLY"
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          "=SUM(E34:E38)"
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "TOTAL",
+          223.972333
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "WASTAGE 7%",
+          22.397233
+        ],
+        [
+          null,
+          "total body",
+          null,
+          "shevles",
+          null,
+          null,
+          null,
+          null,
+          "TOTAL",
+          246.369566,
+          "=M3",
+          "=J42*K42",
+          25,
+          "=J42*M42"
+        ],
+        [
+          "dfmu",
+          "=A3*G4"
+        ],
+        [
+          "sfmu",
+          "=A7*G8",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "TOTAL WT",
+          "=J36+J42",
+          "steel",
+          "=SUM(L36:L42)",
+          null,
+          "=SUM(N36:N42)",
+          "SS AND TROLLY LABOUR CHARGES"
+        ],
+        [
+          "sffu",
+          "=A11*G12",
+          null,
+          null,
+          null,
+          null,
+          null,
+          "total wt with mac",
+          null,
+          1891.159815
+        ],
+        [
+          "DFFU",
+          "=A15*G16"
+        ],
+        [
+          "DFMU-D",
+          "=G20*A19",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "trolly fitting lipson charges",
+          null,
+          null,
+          null,
+          3600
+        ],
+        [
+          null,
+          "=SUM(B43:B47)",
+          null,
+          "=B48*B3"
+        ],
+        [
+          "PER BODY LABOUR",
+          250
+        ],
+        [
+          null,
+          "=B49*B48",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=SUM(N44:N48)"
+        ],
+        [],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "CLIP",
+          576,
+          3,
+          "=L52*M52"
+        ],
+        [],
+        [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "=SUM(N50:N52)"
+        ]
+      ],
+      "merges": [
+        "J3:K3",
+        "L22:M22",
+        "C32:D32",
+        "J11:K11",
+        "J6:K6",
+        "I32:J32",
+        "J2:K2",
+        "J14:K14",
+        "J15:K15",
+        "J10:K10",
+        "J7:K7",
+        "A1:K1",
+        "J18:K18",
+        "J19:K19",
+        "A13:K13",
+        "A5:K5",
+        "A17:K17",
+        "A9:K9"
+      ],
+      "styles": {
+        "A1": {
+          "al": "c"
+        },
+        "A2": {
+          "al": "c"
+        },
+        "B2": {
+          "al": "c"
+        },
+        "C2": {
+          "al": "c"
+        },
+        "D2": {
+          "al": "c"
+        },
+        "E2": {
+          "al": "c"
+        },
+        "F2": {
+          "al": "c"
+        },
+        "H2": {
+          "al": "c"
+        },
+        "I2": {
+          "al": "c"
+        },
+        "J2": {
+          "al": "c"
+        },
+        "L2": {
+          "al": "c"
+        },
+        "M2": {
+          "al": "c"
+        },
+        "A3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "B3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "C3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "E3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "F3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "G3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "H3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "I3": {
+          "bg": "FFFF00"
+        },
+        "J3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "L3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "M3": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D4": {
+          "bg": "92D050"
+        },
+        "G4": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "N4": {
+          "bg": "FF0000",
+          "al": "c"
+        },
+        "A5": {
+          "al": "c"
+        },
+        "A6": {
+          "al": "c"
+        },
+        "B6": {
+          "al": "c"
+        },
+        "C6": {
+          "al": "c"
+        },
+        "D6": {
+          "al": "c"
+        },
+        "E6": {
+          "al": "c"
+        },
+        "F6": {
+          "al": "c"
+        },
+        "G6": {
+          "al": "c"
+        },
+        "H6": {
+          "al": "c"
+        },
+        "I6": {
+          "al": "c"
+        },
+        "J6": {
+          "al": "c"
+        },
+        "A7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "B7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "C7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "E7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "F7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "G7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "H7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "I7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "J7": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D8": {
+          "bg": "92D050"
+        },
+        "G8": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "N8": {
+          "bg": "FF0000",
+          "al": "c"
+        },
+        "A9": {
+          "al": "c"
+        },
+        "A10": {
+          "al": "c"
+        },
+        "B10": {
+          "al": "c"
+        },
+        "C10": {
+          "al": "c"
+        },
+        "D10": {
+          "al": "c"
+        },
+        "E10": {
+          "al": "c"
+        },
+        "F10": {
+          "al": "c"
+        },
+        "G10": {
+          "al": "c"
+        },
+        "H10": {
+          "al": "c"
+        },
+        "I10": {
+          "al": "c"
+        },
+        "J10": {
+          "al": "c"
+        },
+        "A11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "B11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "C11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "E11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "F11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "G11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "H11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "I11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "J11": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D12": {
+          "bg": "92D050"
+        },
+        "G12": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "N12": {
+          "bg": "FF0000",
+          "al": "c"
+        },
+        "A13": {
+          "al": "c"
+        },
+        "A14": {
+          "al": "c"
+        },
+        "B14": {
+          "al": "c"
+        },
+        "C14": {
+          "al": "c"
+        },
+        "D14": {
+          "al": "c"
+        },
+        "E14": {
+          "al": "c"
+        },
+        "F14": {
+          "al": "c"
+        },
+        "H14": {
+          "al": "c"
+        },
+        "I14": {
+          "al": "c"
+        },
+        "J14": {
+          "al": "c"
+        },
+        "L14": {
+          "al": "c"
+        },
+        "A15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "B15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "C15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "E15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "F15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "G15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "H15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "I15": {
+          "bg": "FFFF00"
+        },
+        "J15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "L15": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D16": {
+          "bg": "92D050"
+        },
+        "G16": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "N16": {
+          "bg": "FF0000",
+          "al": "c"
+        },
+        "A17": {
+          "al": "c"
+        },
+        "A18": {
+          "al": "c"
+        },
+        "B18": {
+          "al": "c"
+        },
+        "C18": {
+          "al": "c"
+        },
+        "D18": {
+          "al": "c"
+        },
+        "E18": {
+          "al": "c"
+        },
+        "F18": {
+          "al": "c"
+        },
+        "H18": {
+          "al": "c"
+        },
+        "I18": {
+          "al": "c"
+        },
+        "J18": {
+          "al": "c"
+        },
+        "L18": {
+          "al": "c"
+        },
+        "M18": {
+          "al": "c"
+        },
+        "A19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "B19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "C19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "E19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "F19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "G19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "H19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "I19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "J19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "L19": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "D20": {
+          "bg": "92D050"
+        },
+        "G20": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "N20": {
+          "bg": "FF0000",
+          "al": "c"
+        },
+        "L22": {
+          "al": "c"
+        },
+        "N22": {
+          "bg": "00B0F0",
+          "al": "c"
+        },
+        "C32": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "I32": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "M32": {
+          "bg": "FFFF00"
+        },
+        "N32": {
+          "bg": "FFFF00"
+        },
+        "J34": {
+          "al": "c"
+        },
+        "J35": {
+          "al": "c"
+        },
+        "J36": {
+          "al": "c"
+        },
+        "K36": {
+          "al": "c"
+        },
+        "L36": {
+          "al": "c"
+        },
+        "M36": {
+          "al": "c"
+        },
+        "N36": {
+          "al": "c"
+        },
+        "I38": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "J40": {
+          "al": "c"
+        },
+        "J41": {
+          "al": "c"
+        },
+        "J42": {
+          "al": "c"
+        },
+        "K42": {
+          "al": "c"
+        },
+        "L42": {
+          "al": "c"
+        },
+        "M42": {
+          "al": "c"
+        },
+        "N42": {
+          "al": "c"
+        },
+        "J44": {
+          "al": "c"
+        },
+        "K44": {
+          "al": "c"
+        },
+        "L44": {
+          "al": "c"
+        },
+        "N44": {
+          "al": "c"
+        },
+        "J45": {
+          "bg": "FFFF00",
+          "al": "c"
+        },
+        "N47": {
+          "al": "c"
+        },
+        "N50": {
+          "al": "c"
+        },
+        "N52": {
+          "al": "c"
+        },
+        "N54": {
+          "al": "c"
+        }
+      }
+    }
+  ]
+}
