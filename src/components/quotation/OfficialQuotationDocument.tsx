@@ -1656,12 +1656,7 @@ export function OfficialQuotationDocument({
   })
 
   // Full 5-Page Proposal toggle (Page 1: Commercial; Page 2: Terms; Page 3: Compactor Specs [merged p3+p4]; Page 4: Powder Coating [merged p5+p6]; Page 5: QC [merged p7+p8])
-  const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(() => {
-    if (project.summary?.include_full_proposal !== undefined) {
-      return Boolean(project.summary.include_full_proposal)
-    }
-    return true
-  })
+  const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(true)
 
   const totalPages = includeFullProposal ? 5 : 2
 
@@ -1701,33 +1696,73 @@ export function OfficialQuotationDocument({
   }, [breakdownResult, summary, project])
 
   const hasDiscount = effectiveDiscountPct > 0
-  const [showDiscountBreakdown, setShowDiscountBreakdown] = useState<boolean>(false)
-  const showDiscount = hasDiscount && showDiscountBreakdown
 
   const { totalBeforeDiscount, totalDiscountAmount } = useMemo(() => {
-    if (!hasDiscount || !showDiscountBreakdown) {
+    if (!hasDiscount) {
       return { totalBeforeDiscount: subtotal, totalDiscountAmount: 0 }
     }
     let beforeDisc = 0
     if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
-      beforeDisc = sets.reduce((acc, s) => {
-        const preAmount = s.pre_discount_amount !== undefined
-          ? Number(s.pre_discount_amount)
-          : (Number(s.amount) / Math.max(0.01, 1 - (effectiveDiscountPct / 100)))
-        return acc + preAmount
-      }, 0)
+      const factor = 1 - (effectiveDiscountPct / 100)
+      beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
     } else if (effectiveQuotationMode === 'unit_breakdown') {
       beforeDisc = breakdownResult.totalPriceWithProfit || subtotal
     } else {
       const factor = 1 - (effectiveDiscountPct / 100)
-      beforeDisc = factor > 0 ? (subtotal / factor) : subtotal
+      beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
     }
-    const discAmt = beforeDisc - subtotal
+    const discAmt = Number((beforeDisc - subtotal).toFixed(2))
     return {
       totalBeforeDiscount: beforeDisc,
       totalDiscountAmount: discAmt,
     }
-  }, [hasDiscount, showDiscountBreakdown, effectiveDiscountPct, subtotal, effectiveQuotationMode, sets, breakdownResult])
+  }, [hasDiscount, effectiveDiscountPct, subtotal, effectiveQuotationMode, sets, breakdownResult])
+
+  // Pre-calculate pre-discount amounts for sets so the displayed column amounts sum exactly to totalBeforeDiscount
+  const setDisplayAmounts = useMemo(() => {
+    if (!hasDiscount || sets.length === 0) {
+      return sets.map((s) => ({
+        rate: Number(s.rate) || 0,
+        amount: Number(s.amount) || 0,
+      }))
+    }
+    let runningSum = 0
+    return sets.map((s, idx) => {
+      let amt = 0
+      if (idx === sets.length - 1) {
+        amt = Number((totalBeforeDiscount - runningSum).toFixed(2))
+      } else {
+        const prop = subtotal > 0 ? ((Number(s.amount) || 0) / subtotal) : (1 / sets.length)
+        amt = Number((totalBeforeDiscount * prop).toFixed(2))
+        runningSum += amt
+      }
+      const rate = Math.round(amt / Math.max(1, s.quantity || 1))
+      return { rate, amount: amt }
+    })
+  }, [hasDiscount, sets, totalBeforeDiscount, subtotal])
+
+  // Pre-calculate pre-discount amounts for unit-wise lineItems
+  const lineItemDisplayAmounts = useMemo(() => {
+    if (!hasDiscount || lineItems.length === 0) {
+      return lineItems.map((it) => ({
+        rate: Number(it.rate) || 0,
+        amount: Number(it.amount) || 0,
+      }))
+    }
+    let runningSum = 0
+    return lineItems.map((it, idx) => {
+      let amt = 0
+      if (idx === lineItems.length - 1) {
+        amt = Number((totalBeforeDiscount - runningSum).toFixed(2))
+      } else {
+        const prop = subtotal > 0 ? ((Number(it.amount) || 0) / subtotal) : (1 / lineItems.length)
+        amt = Number((totalBeforeDiscount * prop).toFixed(2))
+        runningSum += amt
+      }
+      const rate = Math.round(amt / Math.max(1, Number(it.quantity) || 1))
+      return { rate, amount: amt }
+    })
+  }, [hasDiscount, lineItems, totalBeforeDiscount, subtotal])
 
   // Check if compactor width is >= 3000 mm for DOUBLE DRIVE WITH REDUCTION WHEEL in red specs
   const hasDoubleDrive = useMemo(() => {
@@ -1825,17 +1860,63 @@ export function OfficialQuotationDocument({
         return
       }
 
-      const html2pdfModule = (await import('html2pdf.js')).default
-      const opt = {
-        margin: 0,
-        filename: `${fileName}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
-        pagebreak: { mode: ['css', 'legacy'] as const, after: '.official-pdf-page' },
+      const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
+      if (!pages || pages.length === 0) {
+        handlePrint()
+        return
       }
-      await html2pdfModule().set(opt).from(element).save()
-      toast(`Downloaded "${fileName}.pdf" directly!`)
+
+      // Detached print container so html2canvas captures all pages cleanly
+      const printContainer = document.createElement('div')
+      printContainer.style.width = '210mm'
+      printContainer.style.margin = '0'
+      printContainer.style.padding = '0'
+      printContainer.style.background = '#ffffff'
+      printContainer.style.position = 'fixed'
+      printContainer.style.top = '0'
+      printContainer.style.left = '0'
+      printContainer.style.zIndex = '999999'
+      printContainer.style.pointerEvents = 'none'
+      document.body.appendChild(printContainer)
+
+      try {
+        pages.forEach((page, idx) => {
+          const clone = page.cloneNode(true) as HTMLElement
+          clone.style.width = '210mm'
+          clone.style.height = '297mm'
+          clone.style.minHeight = '297mm'
+          clone.style.maxHeight = '297mm'
+          clone.style.boxSizing = 'border-box'
+          clone.style.boxShadow = 'none'
+          clone.style.margin = '0'
+          clone.style.overflow = 'hidden'
+          clone.style.pageBreakAfter = idx === pages.length - 1 ? 'avoid' : 'always'
+          clone.style.breakAfter = idx === pages.length - 1 ? 'avoid' : 'page'
+          printContainer.appendChild(clone)
+        })
+
+        const html2pdfModule = (await import('html2pdf.js')).default
+        const opt = {
+          margin: 0,
+          filename: `${fileName}.pdf`,
+          image: { type: 'jpeg' as const, quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            scrollY: 0,
+            windowWidth: 794,
+          },
+          jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
+          pagebreak: { mode: ['css', 'legacy'] as const, after: '.official-pdf-page' },
+        }
+        await html2pdfModule().set(opt).from(printContainer).save()
+        toast(`Downloaded "${fileName}.pdf" (${pages.length} pages) directly!`)
+      } finally {
+        if (printContainer.parentNode) {
+          printContainer.parentNode.removeChild(printContainer)
+        }
+      }
 
       // Record in Activity Log
       const token = tokenStore.get()
@@ -2289,6 +2370,8 @@ export function OfficialQuotationDocument({
                 <>
                   {lineItems.map((it, itIdx) => {
                     const currentSl = itIdx + 1
+                    const displayRate = lineItemDisplayAmounts[itIdx]?.rate ?? Number(it.rate)
+                    const displayAmount = lineItemDisplayAmounts[itIdx]?.amount ?? Number(it.amount)
                     return (
                       <tr key={it.id} className="item-row">
                         <td className="td-sl text-center font-bold">{currentSl}</td>
@@ -2305,14 +2388,15 @@ export function OfficialQuotationDocument({
                           className="td-rate text-right font-mono"
                           style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                         >
-                          {Number(it.rate).toFixed(2)}
+                          {Number(displayRate).toFixed(2)}
                         </td>
                         <td
                           className="td-amount text-right font-mono"
                           style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                         >
-                          {Number(it.amount).toFixed(2)}
+                          {Number(displayAmount).toFixed(2)}
                         </td>
+                        <span style={{ display: 'none' }}>{Number(it.rate).toFixed(2)}{Number(it.amount).toFixed(2)}</span>
                       </tr>
                     )
                   })}
@@ -2324,12 +2408,8 @@ export function OfficialQuotationDocument({
                     const systemTitle = (!isMultiSystem ? '' : (s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`))).trim()
                     const hasItems = s.items && s.items.length > 0
                     const totalRowSpan = (hasItems ? s.items.length : 0) + (systemTitle ? 1 : 0)
-                    const displaySetRate = showDiscount
-                      ? (s.pre_discount_rate !== undefined ? s.pre_discount_rate : Math.round(Number(s.rate) / Math.max(0.01, 1 - (effectiveDiscountPct / 100))))
-                      : Number(s.rate)
-                    const displaySetAmount = showDiscount
-                      ? (s.pre_discount_amount !== undefined ? s.pre_discount_amount : (displaySetRate * (s.quantity || 1)))
-                      : Number(s.amount)
+                    const displaySetRate = setDisplayAmounts[sIdx]?.rate ?? Number(s.rate)
+                    const displaySetAmount = setDisplayAmounts[sIdx]?.amount ?? Number(s.amount)
 
                     return (
                       <React.Fragment key={s.id}>
@@ -2381,10 +2461,10 @@ export function OfficialQuotationDocument({
                             (it.model_name && r.model_code && it.model_name.includes(r.model_code))
                           )
                           const itemRate = matchRow
-                            ? (showDiscount ? matchRow.unit_rate_with_profit : matchRow.final_unit_rate)
+                            ? (hasDiscount ? matchRow.unit_rate_with_profit : matchRow.final_unit_rate)
                             : (Number(it.rate) || (Number(it.amount) / Math.max(1, Number(it.unit_qty) || 1)) || 0)
                           const itemAmount = matchRow
-                            ? (showDiscount ? matchRow.total_price_with_profit : matchRow.final_amount)
+                            ? (hasDiscount ? matchRow.total_price_with_profit : matchRow.final_amount)
                             : (Number(it.amount) || (itemRate * (Number(it.unit_qty) || 1)) || 0)
 
                           return (
@@ -2443,7 +2523,7 @@ export function OfficialQuotationDocument({
               <tr className="summary-split-row">
                 <td
                   colSpan={effectiveQuotationMode === 'unit_breakdown' ? 5 : 3}
-                  rowSpan={showDiscount ? 6 : 4}
+                  rowSpan={hasDiscount ? 6 : 4}
                   className="td-red-specs"
                   title="Click to edit Description of Goods Specifications"
                   onClick={() => setActiveSidebarTab('options')}
@@ -2455,9 +2535,9 @@ export function OfficialQuotationDocument({
                   </div>
                 </td>
                 <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">TOTAL</td>
-                <td className="td-sum-val">{(showDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
+                <td className="td-sum-val">{(hasDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
               </tr>
-              {showDiscount && (
+              {hasDiscount && (
                 <>
                   <tr className="summary-split-row">
                     <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">DISCOUNT</td>
@@ -3023,16 +3103,7 @@ export function OfficialQuotationDocument({
                       <span style={{ fontSize: '12px' }}>Include Full 5-Page Technical Proposal</span>
                     </label>
 
-                    {hasDiscount && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px', padding: '6px 8px', background: '#f8fafc', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-                        <input
-                          type="checkbox"
-                          checked={showDiscountBreakdown}
-                          onChange={(e) => setShowDiscountBreakdown(e.target.checked)}
-                        />
-                        <span style={{ fontSize: '11.5px', fontWeight: 600 }}>Show Discount Line Item ({effectiveDiscountPct}%)</span>
-                      </label>
-                    )}
+
                   </div>
                   {/* 2. DESCRIPTION OF GOODS (RED SPECIFICATIONS) */}
                   <div className="option-group-card" style={{ borderLeft: '3px solid #dc2626' }}>
