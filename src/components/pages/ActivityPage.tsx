@@ -16,6 +16,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   const [logs, setLogs] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filterAction, setFilterAction] = useState<string>('all')
+  const [selectedStaff, setSelectedStaff] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [projectMap, setProjectMap] = useState<Map<string, any>>(new Map())
   const [projectRevisionsMap, setProjectRevisionsMap] = useState<Map<string, any[]>>(new Map())
@@ -78,6 +79,17 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
 
   const ownerUsername = org.role === 'owner' ? session.username : undefined
 
+  const staffMembers = useMemo(() => {
+    const set = new Set<string>()
+    for (const l of logs || []) {
+      const actor = l.user_name || (l as any).username || l.details?.username || l.details?.user_name
+      if (actor && typeof actor === 'string' && actor.trim()) {
+        set.add(actor.trim())
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [logs])
+
   const securityAlertsCount = useMemo(() => {
     return (logs || []).filter((l) => checkSecurityIncident(l, ownerUsername).isIncident).length
   }, [logs, ownerUsername])
@@ -89,6 +101,10 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
       } else if (filterAction !== 'all' && item.action !== filterAction) {
         return false
       }
+      if (selectedStaff !== 'all') {
+        const actor = item.user_name || (item as any).username || item.details?.username || item.details?.user_name
+        if (actor !== selectedStaff) return false
+      }
       if (search.trim()) {
         const q = search.toLowerCase()
         const userMatch = item.user_name?.toLowerCase().includes(q)
@@ -98,7 +114,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
       }
       return true
     })
-  }, [logs, filterAction, search, ownerUsername])
+  }, [logs, filterAction, selectedStaff, search, ownerUsername])
 
   const toggleExpand = (id: string) => {
     setExpandedLogIds((prev) => {
@@ -188,7 +204,24 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
           )}
         </div>
 
-        <div className="filter-controls">
+        <div className="filter-controls" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {staffMembers.length > 0 && (
+            <select
+              className="select-input"
+              value={selectedStaff}
+              onChange={(e) => setSelectedStaff(e.target.value)}
+              title="Filter activity by staff member"
+              style={{ minWidth: '150px' }}
+            >
+              <option value="all">👤 All Staff ({staffMembers.length})</option>
+              {staffMembers.map((staff) => (
+                <option key={staff} value={staff}>
+                  👤 {staff}
+                </option>
+              ))}
+            </select>
+          )}
+
           <select
             className="select-input"
             value={filterAction}

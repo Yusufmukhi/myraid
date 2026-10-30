@@ -64,6 +64,18 @@ export async function rollbackTemplateToVersion(
 }
 
 /**
+ * Permanently deletes a template version with client-side role check.
+ */
+export async function deleteTemplate(
+  session: Session,
+  org: Org,
+  templateId: string
+): Promise<{ id: string; version_num: number; deleted: boolean }> {
+  assertPermission(org.role, ['owner', 'admin'], 'deleteTemplate')
+  return await api.templateDelete(session.token, org.id, templateId)
+}
+
+/**
  * Permanently deletes a project with client-side role check.
  */
 export async function deleteProject(

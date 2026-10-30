@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import data from '../../lib/clientWorkbook.json'
 import { api, Org, Session, Template } from '../../lib/api'
-import { publishTemplate, rollbackTemplateToVersion } from '../../lib/permissions'
+import { deleteTemplate, publishTemplate, rollbackTemplateToVersion } from '../../lib/permissions'
 import { Overrides, SheetData, Workbook } from '../../lib/engine'
 import { inr, timeAgo } from '../../lib/format'
 import { INPUT_GROUPS } from '../../lib/inputs'
@@ -16,6 +16,67 @@ interface Props {
 }
 
 type StudioTab = 'sheets' | 'forms' | 'diff'
+
+export interface DiffEntry {
+  key: string
+  label?: string
+  fromVal: any
+  toVal: any
+  type: 'input' | 'formula' | 'baseline'
+}
+
+export function computeTemplateDiff(baseTpl?: Template | null, targetTpl?: Template | null): DiffEntry[] {
+  if (!targetTpl) return []
+  const diffs: DiffEntry[] = []
+
+  const baseInputs = baseTpl?.definition?.default_inputs || {}
+  const targetInputs = targetTpl?.definition?.default_inputs || {}
+  const allInputKeys = Array.from(new Set([...Object.keys(baseInputs), ...Object.keys(targetInputs)]))
+
+  for (const k of allInputKeys) {
+    const vFrom = baseInputs[k]
+    const vTo = targetInputs[k]
+    if (vFrom !== vTo) {
+      diffs.push({
+        key: k,
+        fromVal: vFrom !== undefined && vFrom !== null ? vFrom : '(Standard Default)',
+        toVal: vTo !== undefined && vTo !== null ? vTo : '(Standard Default)',
+        type: 'input',
+      })
+    }
+  }
+
+  const baseFormulas = baseTpl?.definition?.formula_overrides || {}
+  const targetFormulas = targetTpl?.definition?.formula_overrides || {}
+  const allFormulaKeys = Array.from(new Set([...Object.keys(baseFormulas), ...Object.keys(targetFormulas)]))
+
+  for (const k of allFormulaKeys) {
+    const fFrom = baseFormulas[k]
+    const fTo = targetFormulas[k]
+    if (fFrom !== fTo) {
+      diffs.push({
+        key: k,
+        fromVal: fFrom || '(Standard Formula)',
+        toVal: fTo || '(Standard Formula)',
+        type: 'formula',
+      })
+    }
+  }
+
+  const baseType = baseTpl?.definition?.baseline || (baseTpl?.name?.toLowerCase().includes('cut-to-cut') ? 'c2c' : 'actual')
+  const targetType = targetTpl?.definition?.baseline || (targetTpl?.name?.toLowerCase().includes('cut-to-cut') ? 'c2c' : 'actual')
+  if (baseTpl && baseType !== targetType) {
+    diffs.push({
+      key: 'Baseline Architecture',
+      fromVal: baseType === 'c2c' ? 'Cut-to-Cut Costing' : 'Actual Quotation',
+      toVal: targetType === 'c2c' ? 'Cut-to-Cut Costing' : 'Actual Quotation',
+      type: 'baseline',
+    })
+  }
+
+  return diffs
+}
+
 
 export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const { toast, confirm } = useUI()
@@ -37,6 +98,10 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const [templateBaseline, setTemplateBaseline] = useState<'actual' | 'c2c'>('actual')
 
   // Dedicated workbook instances for template draft calculation
+  const [diffModalTemplate, setDiffModalTemplate] = useState<Template | null>(null)
+  const [diffComparisonMode, setDiffComparisonMode] = useState<'prev' | 'initial'>('prev')
+
+  // Dedicated workbook instances for template draft calculation (all 15 sheets initialized)
   const draftWb = useMemo(() => new Workbook(data as unknown as { sheets: SheetData[] }), [])
 
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
@@ -144,6 +209,36 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     try {
       await rollbackTemplateToVersion(session, org, t.id)
       toast(`Version ${t.version_num} is now the active default template for future projects!`)
+      await loadTemplates()
+      onOrgUpdated()
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+  // Permanently delete a non-default template version
+  const handleDeleteTemplate = async (t: Template) => {
+    if (!isAdminOrOwner) {
+      return toast('Only organisation owners and administrators can delete templates.', 'err')
+    }
+    if (t.is_default) {
+      return toast('Cannot delete the active default template. Please set another template as default first.', 'err')
+    }
+    const ok = await confirm({
+      title: `Delete Template Version ${t.version_num}?`,
+      body: `Are you sure you want to delete "${t.name}" (v${t.version_num})? This action cannot be undone.`,
+      confirmLabel: 'Delete Version',
+      danger: true,
+    })
+    if (!ok) return
+
+    setLoading(true)
+    try {
+      await deleteTemplate(session, org, t.id)
+      toast(`Template Version ${t.version_num} has been deleted.`)
       await loadTemplates()
       onOrgUpdated()
     } catch (e) {
@@ -276,7 +371,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
             }}
           >
             <span style={{ fontSize: '18px' }}>📊</span>
-            <span>1. ACTUAL TEMPLATE (₹90/kg)</span>
+            <span>1. ACTUAL TEMPLATE</span>
             {templateBaseline === 'actual' && <span className="chip ok" style={{ fontSize: '11px', padding: '2px 6px' }}>Active</span>}
           </button>
           <button
@@ -304,7 +399,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
             }}
           >
             <span style={{ fontSize: '18px' }}>✂️</span>
-            <span>2. CUT-TO-CUT TEMPLATE (₹79/kg)</span>
+            <span>2. CUT-TO-CUT TEMPLATE</span>
             {templateBaseline === 'c2c' && <span className="chip" style={{ background: '#ede9fe', color: '#6d28d9', fontSize: '11px', padding: '2px 6px' }}>Active</span>}
           </button>
         </div>
@@ -318,7 +413,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
             <div className="row gap">
               <span className="badge-lg">Publishing Version {nextVersion}</span>
               <span className="chip" style={{ background: templateBaseline === 'c2c' ? '#ede9fe' : '#dbeafe', color: templateBaseline === 'c2c' ? '#6d28d9' : '#1e40af', fontWeight: 600 }}>
-                {templateBaseline === 'c2c' ? '✂️ Cut-to-Cut (₹79 Rate)' : '📊 Actual (₹90 Rate)'}
+                {templateBaseline === 'c2c' ? '✂️ Cut-to-Cut Baseline' : '📊 Actual Quotation Baseline'}
               </span>
             </div>
             <button
@@ -742,7 +837,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                           <strong>{t.name}</strong>
                           {(t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut')) && (
                             <span className="chip" style={{ background: '#f5f3ff', color: '#6d28d9', borderColor: '#ddd6fe', fontSize: '11px', padding: '2px 6px' }}>
-                              ✂️ Cut-to-Cut (₹79)
+                              ✂️ Cut-to-Cut
                             </span>
                           )}
                         </div>
@@ -798,6 +893,154 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
           )}
         </div>
       </div>
+
+      {/* Version Differences & Changelog Modal */}
+      {diffModalTemplate && (() => {
+        const t = diffModalTemplate
+        const prevT = templates.find((p) => p.version_num === t.version_num - 1) || templates.filter(p => p.version_num < t.version_num)[0] || null
+        const initialT = templates.find((p) => p.version_num === 1) || templates[templates.length - 1] || null
+        const activeBaseT = diffComparisonMode === 'prev' ? prevT : initialT
+        const diffs = computeTemplateDiff(activeBaseT, t)
+
+        return (
+          <div
+            className="modal-backdrop"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '16px',
+            }}
+            onClick={() => setDiffModalTemplate(null)}
+          >
+            <div
+              className="card"
+              style={{
+                maxWidth: '780px',
+                width: '100%',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                padding: '24px',
+                background: '#ffffff',
+                borderRadius: '12px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="row between mb-3" style={{ alignItems: 'flex-start' }}>
+                <div>
+                  <div className="row gap" style={{ alignItems: 'center', marginBottom: '4px' }}>
+                    <span className="version-pill" style={{ fontSize: '13px', padding: '3px 8px' }}>v{t.version_num}</span>
+                    <h3 style={{ margin: 0, fontSize: '18px' }}>{t.name} — Differences &amp; Changelog</h3>
+                  </div>
+                  <p className="tiny muted" style={{ margin: 0 }}>
+                    Published by {t.published_by || t.created_by || 'Admin'} {t.published_at ? timeAgo(t.published_at) : ''}
+                    {t.description ? ` · ${t.description}` : ''}
+                  </p>
+                </div>
+                <button className="icon-btn" onClick={() => setDiffModalTemplate(null)} title="Close">
+                  {Icon.close}
+                </button>
+              </div>
+
+              {/* Comparison Mode Switcher */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+                <button
+                  type="button"
+                  className={`btn sm ${diffComparisonMode === 'prev' ? 'primary' : 'ghost'}`}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                  onClick={() => setDiffComparisonMode('prev')}
+                >
+                  🔄 Differences from Previous Version {prevT ? `(v${prevT.version_num})` : ''}
+                </button>
+                <button
+                  type="button"
+                  className={`btn sm ${diffComparisonMode === 'initial' ? 'primary' : 'ghost'}`}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                  onClick={() => setDiffComparisonMode('initial')}
+                >
+                  ⭐ Differences from Initial Baseline {initialT ? `(v${initialT.version_num})` : '(v1)'}
+                </button>
+              </div>
+
+              {/* Difference Summary Header */}
+              <div className="card p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div className="row between" style={{ alignItems: 'center' }}>
+                  <span className="tiny font-bold uppercase muted">
+                    Comparing <strong>v{t.version_num}</strong> with {activeBaseT ? <strong>v{activeBaseT.version_num} ({activeBaseT.name})</strong> : 'Baseline'}
+                  </span>
+                  <span className="chip primary" style={{ fontWeight: 600 }}>
+                    {diffs.length} Change{diffs.length !== 1 ? 's' : ''} Found
+                  </span>
+                </div>
+              </div>
+
+              {/* Diffs Table */}
+              {diffs.length === 0 ? (
+                <div className="empty p-4 text-center">
+                  <p style={{ margin: 0, fontWeight: 600, color: '#64748b' }}>
+                    {diffComparisonMode === 'prev' && !prevT
+                      ? 'This is the initial template version (Version 1). There is no previous version to compare against.'
+                      : 'No parameter or formula changes recorded between these two versions.'}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="tbl" style={{ width: '100%', margin: 0, fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc' }}>
+                        <th>Worksheet / Parameter</th>
+                        <th>Type</th>
+                        <th>{diffComparisonMode === 'prev' ? `v${prevT?.version_num || 'Previous'}` : `v${initialT?.version_num || '1'} (Initial)`}</th>
+                        <th>v{t.version_num} (This Version)</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diffs.map((d) => (
+                        <tr key={d.key}>
+                          <td>
+                            <strong>{d.key}</strong>
+                          </td>
+                          <td>
+                            {d.type === 'input' && <span className="chip ok" style={{ fontSize: '11px' }}>Input Parameter</span>}
+                            {d.type === 'formula' && <span className="chip purple" style={{ fontSize: '11px' }}>Formula Rule</span>}
+                            {d.type === 'baseline' && <span className="chip primary" style={{ fontSize: '11px' }}>Baseline Mode</span>}
+                          </td>
+                          <td style={{ color: '#64748b' }}>
+                            <code>{String(d.fromVal)}</code>
+                          </td>
+                          <td style={{ fontWeight: 700, color: '#16a34a' }}>
+                            <code>{String(d.toVal)}</code>
+                          </td>
+                          <td>
+                            <span className="chip" style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontSize: '11px' }}>
+                              Modified
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="row end mt-3">
+                <button className="btn ghost sm" onClick={() => setDiffModalTemplate(null)}>
+                  Close Differences
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

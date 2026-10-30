@@ -18,6 +18,7 @@ interface Props {
   isAdminOrOwner?: boolean
   session?: Session
   org?: Org
+  initialWorkbookType?: 'actual' | 'c2c'
   onSave?: () => void
   hasUnsavedChanges?: boolean
   isSavingProject?: boolean
@@ -50,6 +51,7 @@ export function CalculationDetails({
   isAdminOrOwner = true,
   session,
   org,
+  initialWorkbookType,
   onSave,
   hasUnsavedChanges,
   isSavingProject,
@@ -68,7 +70,13 @@ export function CalculationDetails({
     )
   }
 
-  const [workbookType, setWorkbookType] = useState<'actual' | 'c2c'>('actual')
+  const [workbookType, setWorkbookType] = useState<'actual' | 'c2c'>(initialWorkbookType || 'actual')
+
+  useEffect(() => {
+    if (initialWorkbookType) {
+      setWorkbookType(initialWorkbookType)
+    }
+  }, [initialWorkbookType])
   const [serverWb, setServerWb] = useState<{ actual: Workbook; c2c: Workbook } | null>(null)
   const [serverMeta, setServerMeta] = useState<Record<string, { desc: string; category: string }>>({})
   const [loadingSheets, setLoadingSheets] = useState(false)

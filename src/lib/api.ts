@@ -321,6 +321,22 @@ export const api = {
       p_org: org,
       p_template_id: templateId,
     }),
+  templateDelete: async (token: string, org: string, templateId: string) => {
+    try {
+      return await rpc<{ id: string; version_num: number; deleted: boolean }>('template_delete', {
+        p_token: token,
+        p_org: org,
+        p_template_id: templateId,
+      })
+    } catch (err) {
+      if (client) {
+        const { error } = await client.from('templates').delete().eq('id', templateId).eq('org_id', org)
+        if (error) throw error
+        return { id: templateId, version_num: 0, deleted: true }
+      }
+      throw err
+    }
+  },
 
   // ---- Projects
   projectList: (token: string, org: string, includeArchived = false) =>
