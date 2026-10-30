@@ -192,6 +192,10 @@ export function computeUnitWiseBreakdown(
   let totalPriceWithProfit = 0
   let finalBeforeGst = 0
 
+  const isProfitOnExWorksOnly = summary && summary.profitAmount !== undefined && summary.subtotal !== undefined
+    ? Math.abs(summary.profitAmount - (summary.subtotal * (profitPct / 100))) < 1
+    : false
+
   const rows: UnitWiseCalculationRow[] = rowDefs.map(({ model: m, rowsPerUnit }) => {
     let fullName = m.code
     let defaultDepth = 900
@@ -225,15 +229,38 @@ export function computeUnitWiseBreakdown(
     const widthExtra = (m as any).widthExtra !== undefined ? 0 : (wb ? getWidthExtra(w, m.code) : 0)
     const unit_rate = m.unitRate + widthExtra
     const transportation = rowsPerUnit * ratePerBody
-    // User formula: our unit rate = unit rate + all transportation rate + extra amount
-    const total_unit_rate = unit_rate + transportation + extraAmount
+    const logisticsPerUnit = transportation + extraAmount
+    const total_unit_rate = unit_rate + logisticsPerUnit
     const total_price = m.qty * total_unit_rate
-    const itemProfit = total_price * (profitPct / 100)
-    const itemPriceWithProfit = total_price + itemProfit
-    const unit_rate_with_profit = itemPriceWithProfit / m.qty
-    const itemDiscount = itemPriceWithProfit * (discountPct / 100)
-    const final_amount = itemPriceWithProfit - itemDiscount
-    const final_unit_rate = final_amount / m.qty
+
+    let itemPriceWithProfit = 0
+    let unit_rate_with_profit = 0
+    let itemDiscount = 0
+    let final_amount = 0
+    let final_unit_rate = 0
+
+    if (isProfitOnExWorksOnly) {
+      // Direct parity with Excel & web calculator: profit margin is applied to Ex-Works fabrication only, while installation/transport/extra are pass-through
+      const base_price = m.qty * unit_rate
+      const itemProfit = base_price * (profitPct / 100)
+      const baseWithProfit = base_price + itemProfit
+      itemDiscount = baseWithProfit * (discountPct / 100)
+      const baseFinal = baseWithProfit - itemDiscount
+
+      const logisticsAmount = m.qty * logisticsPerUnit
+      final_amount = baseFinal + logisticsAmount
+      final_unit_rate = final_amount / m.qty
+
+      itemPriceWithProfit = baseWithProfit + logisticsAmount
+      unit_rate_with_profit = itemPriceWithProfit / m.qty
+    } else {
+      const itemProfit = total_price * (profitPct / 100)
+      itemPriceWithProfit = total_price + itemProfit
+      unit_rate_with_profit = itemPriceWithProfit / m.qty
+      itemDiscount = itemPriceWithProfit * (discountPct / 100)
+      final_amount = itemPriceWithProfit - itemDiscount
+      final_unit_rate = final_amount / m.qty
+    }
 
     totalCostBase += total_price
     totalPriceWithProfit += itemPriceWithProfit
@@ -260,6 +287,17 @@ export function computeUnitWiseBreakdown(
       final_unit_rate,
     }
   })
+
+  // Adjust sub-cent rounding against authoritative summary.beforeGst when present
+  if (isProfitOnExWorksOnly && summary?.beforeGst && rows.length > 0) {
+    const roundingDiff = Number((summary.beforeGst - finalBeforeGst).toFixed(2))
+    if (Math.abs(roundingDiff) > 0 && Math.abs(roundingDiff) <= 0.08) {
+      rows[rows.length - 1].final_amount = Number((rows[rows.length - 1].final_amount + roundingDiff).toFixed(2))
+      rows[rows.length - 1].final_unit_rate = rows[rows.length - 1].final_amount / rows[rows.length - 1].qty
+      finalBeforeGst = summary.beforeGst
+      totalPriceWithProfit = Number((totalPriceWithProfit + roundingDiff).toFixed(2))
+    }
+  }
 
   const profitAmount = totalCostBase * (profitPct / 100)
   const discountAmount = totalPriceWithProfit * (discountPct / 100)
