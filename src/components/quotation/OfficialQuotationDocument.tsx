@@ -1885,10 +1885,11 @@ export function OfficialQuotationDocument({
           await new Promise((resolve) => setTimeout(resolve, 80))
 
           const canvas = await html2canvas(page, {
-            scale: 2,
+            scale: 3,
             useCORS: true,
             logging: false,
             backgroundColor: '#ffffff',
+            imageTimeout: 15000,
             onclone: (clonedDoc) => {
               const container = clonedDoc.getElementById('official-quotation-pages')
               if (container) {
@@ -1899,11 +1900,11 @@ export function OfficialQuotationDocument({
             },
           })
 
-          const imgData = canvas.toDataURL('image/jpeg', 0.98)
+          const imgData = canvas.toDataURL('image/png')
           if (idx > 0) {
             pdf.addPage('a4', 'portrait')
           }
-          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST')
+          pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW')
         }
 
         pdf.save(`${fileName}.pdf`)
