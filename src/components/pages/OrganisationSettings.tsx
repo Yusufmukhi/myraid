@@ -126,18 +126,21 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const currentDefaultTemplate = templates.find((t) => t.is_default) || templates[0]
   const nextVersion = (org.current_template_version || 1) + 1
 
-  // Open Template Studio (Supports forking Actual or Cut-to-Cut baseline)
+  // Open Template Studio (Edit existing version in-place or publish new version)
   const handleOpenStudio = (baseTemplate?: Template, forceBaseline?: 'actual' | 'c2c') => {
     const tpl = baseTemplate || currentDefaultTemplate
+    setEditingTemplate(tpl || null)
+
     const initialInputs = tpl?.definition?.default_inputs || {}
     const initialFormulas = tpl?.definition?.formula_overrides || {}
     const isC2C = forceBaseline === 'c2c' || tpl?.definition?.baseline === 'c2c' || tpl?.name?.toLowerCase().includes('cut-to-cut')
 
     setTemplateBaseline(isC2C ? 'c2c' : 'actual')
 
+    setDraftName(tpl?.name || (isC2C ? 'Cut-to-Cut Standards' : 'Default Production Template'))
+    setDraftDesc(tpl?.description || '')
+
     if (isC2C) {
-      setDraftName(baseTemplate ? `${baseTemplate.name} (V${nextVersion})` : `Cut-to-Cut Standards V${nextVersion} (₹79/kg)`)
-      setDraftDesc(baseTemplate?.description || `Cut-to-cut internal production standards (Steel Rate ₹79/kg, internal sheared sizes, 0 stiffener) published by ${session.username}`)
       const c2cInputs: Overrides = {
         'Total cal!H3': 79,
         'Total cal!M3': 69,
@@ -151,8 +154,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
       draftWb.setFormulaOverrides(initialFormulas)
       draftWb.setOverrides(c2cInputs)
     } else {
-      setDraftName(baseTemplate ? `${baseTemplate.name} (V${nextVersion})` : `Default Production Template V${nextVersion}`)
-      setDraftDesc(baseTemplate?.description || `Updated standards & rates across worksheets published by ${session.username}`)
       setDraftOverrides({ ...initialInputs })
       setDraftFormulaOverrides({ ...initialFormulas })
 
@@ -249,10 +250,10 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     }
   }
 
-  // Publish new template version
-  const handlePublishTemplate = async () => {
+  // Save template: either in-place to current version (v1) or as brand new version (v2)
+  const handleSaveTemplate = async (asNewVersion = false) => {
     if (!isAdminOrOwner) {
-      return toast('Only organisation owners and administrators can publish templates.', 'err')
+      return toast('Only organisation owners and administrators can save or publish templates.', 'err')
     }
     const nm = draftName.trim()
     if (!nm) return toast('Template name cannot be empty', 'err')
@@ -261,7 +262,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     const trolleyRate = draftWb.num('Total cal', 'M3') || 90
     const bodyLabourRate = draftWb.num('Total cal', 'B49') || 250
 
-    // Strict input validation to prevent invalid, zero, or negative rates, excessive wastage, or formula crash
     if (steelRate <= 0 || !Number.isFinite(steelRate)) {
       return toast('Steel rate must be a valid positive number.', 'err')
     }
@@ -272,7 +272,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
       return toast('Body labour rate must be a valid positive number.', 'err')
     }
 
-    // Validate custom cell overrides
     for (const [cell, val] of Object.entries(draftOverrides)) {
       if (val !== null && val !== undefined) {
         if (!Number.isFinite(val)) {
@@ -290,17 +289,29 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
       }
     }
 
-    const ok = await confirm({
-      title: `Publish Template Version ${nextVersion}?`,
-      body: `This will become the active default template for all newly created projects in ${org.name}. Previously created projects will NOT be modified.`,
-      confirmLabel: `Publish Version ${nextVersion}`,
-    })
-    if (!ok) return
+    const currentVer = editingTemplate?.version_num || 1
+    const targetVer = asNewVersion ? nextVersion : currentVer
+
+    if (asNewVersion) {
+      const ok = await confirm({
+        title: `Publish as New Template Version ${nextVersion}?`,
+        body: `This will create Version ${nextVersion} as a separate published version and set it as default for newly created projects in ${org.name}.`,
+        confirmLabel: `Publish Version ${nextVersion}`,
+      })
+      if (!ok) return
+    } else {
+      const ok = await confirm({
+        title: `Save Changes to Version ${currentVer}?`,
+        body: `This will save your updates directly to Version ${currentVer} without creating a new version.`,
+        confirmLabel: `Save Version ${currentVer}`,
+      })
+      if (!ok) return
+    }
 
     setPublishing(true)
     try {
       const definition = {
-        version: nextVersion,
+        version: targetVer,
         name: nm,
         description: draftDesc,
         baseline: templateBaseline,
@@ -320,8 +331,14 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
         formula_overrides: draftFormulaOverrides,
       }
 
-      const res = await publishTemplate(session, org, nm, draftDesc, definition)
-      toast(`Successfully published Template Version ${res.version_num}!`)
+      if (asNewVersion || !editingTemplate?.id) {
+        const res = await publishTemplate(session, org, nm, draftDesc, definition)
+        toast(`Successfully published new Template Version ${res.version_num}!`)
+      } else {
+        await updateTemplate(session, org, editingTemplate.id, nm, draftDesc, definition)
+        toast(`Successfully saved changes directly to Version ${currentVer}! (No new version created)`)
+      }
+
       setEditorMode(false)
       await loadTemplates()
       onOrgUpdated()
@@ -411,19 +428,41 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
             <button className="btn ghost sm" onClick={() => setEditorMode(false)}>
               ← Back to Organisation Settings
             </button>
-            <div className="row gap">
-              <span className="badge-lg">Publishing Version {nextVersion}</span>
+            <div className="row gap" style={{ alignItems: 'center' }}>
+              <span className="badge-lg">
+                {editingTemplate ? `Editing Version ${editingTemplate.version_num}` : `Publishing Version ${nextVersion}`}
+              </span>
               <span className="chip" style={{ background: templateBaseline === 'c2c' ? '#ede9fe' : '#dbeafe', color: templateBaseline === 'c2c' ? '#6d28d9' : '#1e40af', fontWeight: 600 }}>
                 {templateBaseline === 'c2c' ? '✂️ Cut-to-Cut Baseline' : '📊 Actual Quotation Baseline'}
               </span>
+              {editingTemplate?.is_default && (
+                <span className="chip ok" style={{ fontSize: '11px', fontWeight: 600 }}>Active Default</span>
+              )}
             </div>
-            <button
-              className="btn primary"
-              disabled={publishing || !draftName.trim()}
-              onClick={handlePublishTemplate}
-            >
-              {publishing ? <Spinner size={16} /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{Icon.plus} Publish Version {nextVersion}</span>}
-            </button>
+            <div className="row gap" style={{ alignItems: 'center' }}>
+              {editingTemplate && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={publishing || !draftName.trim()}
+                  onClick={() => handleSaveTemplate(false)}
+                  title={`Save changes directly to Version ${editingTemplate.version_num} without creating a new version`}
+                  style={{ fontWeight: 700 }}
+                >
+                  {publishing ? <Spinner size={16} /> : <span>💾 Save to v{editingTemplate.version_num}</span>}
+                </button>
+              )}
+              <button
+                type="button"
+                className={editingTemplate ? "btn ghost" : "btn primary"}
+                disabled={publishing || !draftName.trim()}
+                onClick={() => handleSaveTemplate(true)}
+                title={`Publish as a brand new Template Version (Version ${nextVersion})`}
+                style={editingTemplate ? { borderColor: '#2563eb', color: '#1d4ed8', fontWeight: 600 } : { fontWeight: 700 }}
+              >
+                {publishing && !editingTemplate ? <Spinner size={16} /> : <span>➕ Publish as New Version (v{nextVersion})</span>}
+              </button>
+            </div>
           </div>
 
           <div className="row gap mt-2">
