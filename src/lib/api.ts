@@ -560,7 +560,7 @@ export const api = {
     named_constants: Record<string, number>
     metadata?: Record<string, { desc: string; category: string }>
   }> => {
-    // Authenticated Supabase Edge Function (Protected by owner/admin role validation)
+    // 1. Authenticated Supabase Edge Function (Protected by owner/admin role validation)
     if (client) {
       try {
         const { data, error } = await client.functions.invoke('calculate', {
@@ -574,11 +574,21 @@ export const api = {
           return data as any
         }
         if (error) {
-          console.warn('Edge function get_worksheets error:', error)
+          console.warn('Edge function get_worksheets error, falling back to internal dataset:', error)
         }
       } catch (e) {
-        console.warn('Edge function get_worksheets invoke failed:', e)
+        console.warn('Edge function get_worksheets invoke failed, falling back to internal dataset:', e)
       }
+    }
+
+    // 2. Internal bundled module (never served via static public URL)
+    try {
+      const { worksheetsPayload } = await import('./worksheetsData')
+      if (worksheetsPayload?.actual_workbook) {
+        return worksheetsPayload as any
+      }
+    } catch (e) {
+      console.warn('Internal worksheets data import failed:', e)
     }
 
     throw new Error('Engineering worksheets could not be loaded. Please ensure you are logged in as Owner/Admin.')
