@@ -253,7 +253,7 @@ export function CalculationDetails({
                 className={`btn xs ${workbookType === 'actual' ? 'primary' : 'ghost'}`}
                 onClick={() => setWorkbookType('actual')}
                 style={workbookType === 'actual' ? { background: '#0f172a', color: '#fff', fontSize: '11px', fontWeight: 700 } : { fontSize: '11px' }}
-                title="Actual Quotation Sheets (₹90 Steel Rate)"
+                title="Actual Quotation Engineering Sheets"
               >
                 📊 Actual Quotation
               </button>
@@ -262,7 +262,7 @@ export function CalculationDetails({
                 className={`btn xs ${workbookType === 'c2c' ? 'primary' : 'ghost'}`}
                 onClick={() => setWorkbookType('c2c')}
                 style={workbookType === 'c2c' ? { background: '#7c3aed', color: '#fff', fontSize: '11px', fontWeight: 700 } : { fontSize: '11px', color: '#7c3aed' }}
-                title="Cut-to-Cut Cost Sheets (₹79 Steel Rate)"
+                title="Cut-to-Cut Cost Engineering Sheets"
               >
                 ✂️ Cut-to-Cut Sheet
               </button>
@@ -270,7 +270,7 @@ export function CalculationDetails({
           )}
           {workbookType === 'c2c' && (
             <span className="chip purple font-mono" style={{ fontSize: '10px' }}>
-              Cut-to-Cut Pure Cost (₹79/kg)
+              Cut-to-Cut Cost Baseline
             </span>
           )}
         </div>

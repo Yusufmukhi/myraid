@@ -560,25 +560,38 @@ export const api = {
     named_constants: Record<string, number>
     metadata?: Record<string, { desc: string; category: string }>
   }> => {
-    if (!client) throw new Error('Database is not configured.')
-    const { data, error } = await client.functions.invoke('calculate', {
-      body: { action: 'get_worksheets', org_id: orgId },
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'x-org-id': orgId,
-      },
-    })
-    if (error) {
-      let errMsg = error.message
+    // 1. Try server Edge Function first
+    if (client) {
       try {
-        if ((error as any).context && typeof (error as any).context.json === 'function') {
-          const body = await (error as any).context.json()
-          if (body?.error) errMsg = body.error
+        const { data, error } = await client.functions.invoke('calculate', {
+          body: { action: 'get_worksheets', org_id: orgId },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-org-id': orgId,
+          },
+        })
+        if (!error && data?.actual_workbook) {
+          return data as any
         }
-      } catch {}
-      throw new Error(errMsg)
+      } catch (e) {
+        console.warn('Edge function get_worksheets invoke failed, trying static fallback:', e)
+      }
     }
-    return data as any
+
+    // 2. Fallback to static worksheets payload (owner/admin only)
+    try {
+      const res = await fetch('/templates/worksheets.json')
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.actual_workbook) {
+          return data
+        }
+      }
+    } catch (e) {
+      console.warn('Worksheets fallback fetch failed:', e)
+    }
+
+    throw new Error('Engineering worksheets could not be loaded. Please ensure you are logged in as Owner/Admin.')
   },
 
   // ---- Direct Email Staff Provisioning (Owner-Only)

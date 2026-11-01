@@ -3182,7 +3182,7 @@ export function CalculatorPage({
 
                 <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
 
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{inr(Math.round(c2cProfit))}</span>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(c2cProfit))}</span>
 
               </div>
 
@@ -3190,7 +3190,7 @@ export function CalculatorPage({
 
                 <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
 
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{inr(Math.round(c2cTotal))}</span>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(c2cTotal))}</span>
 
               </div>
 
@@ -3343,7 +3343,7 @@ export function CalculatorPage({
                     <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
                     {serverCalculating ? (
                       <span className="kpi-calculating-watermark">
-                        <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating.
+                        <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
                       </span>
                     ) : (
                       <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
@@ -3353,11 +3353,11 @@ export function CalculatorPage({
                     <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                       {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                     </span>
-                    {inr(kpiActiveSysSales)}
+                    {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '12px' }}>calculating…</span> : inr(kpiActiveSysSales)}
                   </strong>
                   <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' }}>
                     <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                    {inr(kpiAllSystemsTotals.sales)}
+                    {serverCalculating ? <span style={{ color: '#047857', fontStyle: 'italic', fontSize: '11px' }}>calculating…</span> : inr(kpiAllSystemsTotals.sales)}
                   </span>
                 </div>
               </>
@@ -3367,7 +3367,7 @@ export function CalculatorPage({
                   <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
                   {serverCalculating ? (
                     <span className="kpi-calculating-watermark">
-                      <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating.
+                      <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
                     </span>
                   ) : (
                     <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
@@ -3377,7 +3377,7 @@ export function CalculatorPage({
                   <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                     {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                   </span>
-                  {inr(activeSysSales)}
+                  {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '12px' }}>calculating…</span> : inr(activeSysSales)}
                 </strong>
                 <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' }}>
                   <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
@@ -3438,14 +3438,14 @@ export function CalculatorPage({
                     <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
                     {serverCalculating ? (
                       <span className="kpi-calculating-watermark">
-                        <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating.
+                        <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
                       </span>
                     ) : (
                       <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
                     )}
                   </div>
                   <strong className="kpi-val sales-val">
-                    {inr(displaySummary.sales)}
+                    {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '13px' }}>calculating…</span> : inr(displaySummary.sales)}
                   </strong>
                   <span className="kpi-sub">
                     {`${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
@@ -3458,14 +3458,14 @@ export function CalculatorPage({
                   <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
                   {serverCalculating ? (
                     <span className="kpi-calculating-watermark">
-                      <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating.
+                      <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
                     </span>
                   ) : (
                     <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
                   )}
                 </div>
                 <strong className="kpi-val sales-val">
-                  {inr(summary.sales)}
+                  {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '13px' }}>calculating…</span> : inr(summary.sales)}
                 </strong>
                 <span className="kpi-sub">
                   {`${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
@@ -4755,7 +4755,7 @@ export function CalculatorPage({
                         </div>
                       </td>
                       <td className="r font-mono font-bold text-green" style={{ fontSize: 20, color: '#047857' }}>
-                        {inr(allSystemsTotals.sales)}
+                        {serverCalculating ? <span style={{ fontSize: 14, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(allSystemsTotals.sales)}
                       </td>
                     </tr>
                   </>
@@ -5019,7 +5019,7 @@ export function CalculatorPage({
                     <strong>Total Quotation Value ({activeSysName})</strong>
                   </td>
                   <td className="r font-mono font-bold text-green" style={{ fontSize: 18 }}>
-                    {inr(summary.sales)}
+                    {serverCalculating ? <span style={{ fontSize: 13, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(summary.sales)}
                   </td>
                 </tr>
                   </>
@@ -5103,8 +5103,8 @@ export function CalculatorPage({
                       <td>
                         <strong style={{ fontSize: 14 }}>Combined Total Quotation Amount ({systems.length} Systems)</strong>
                       </td>
-                      <td className="r font-mono font-bold text-green" style={{ fontSize: 20 }}>
-                        {inr(allSystemsTotals.sales)}
+                      <td className="r font-mono font-bold text-green" style={{ fontSize: 20, color: '#047857' }}>
+                        {serverCalculating ? <span style={{ fontSize: 14, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(allSystemsTotals.sales)}
                       </td>
                     </tr>
                   </>
@@ -5276,7 +5276,7 @@ export function CalculatorPage({
                     <strong style={{ fontSize: 14 }}>Total Quotation Amount ({activeSysName})</strong>
                   </td>
                   <td className="r font-mono font-bold text-green" style={{ fontSize: 20 }}>
-                    {inr(summary.sales)}
+                    {serverCalculating ? <span style={{ fontSize: 14, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(summary.sales)}
                   </td>
                 </tr>
                   </>
@@ -5327,7 +5327,7 @@ export function CalculatorPage({
 
                   <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#581c87', display: 'flex', alignItems: 'center', gap: 8 }}>
 
-                    Cut-to-Cut Full Sheet Breakdown (All Sheets · ₹79/kg)
+                    Cut-to-Cut Full Sheet Breakdown (All Sheets)
                     {serverCalculating && (
                       <span className="kpi-calculating-watermark">
                         <span className="spinner xs" style={{ width: 10, height: 10 }} /> Recalculating…

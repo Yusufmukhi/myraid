@@ -535,6 +535,9 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
               formulaOverrides={draftFormulaOverrides}
               setInput={handleDraftSetInput}
               setFormulaOverride={handleDraftSetFormulaOverride}
+              session={session}
+              org={org}
+              isAdminOrOwner={isAdminOrOwner}
             />
           </div>
         )}
@@ -753,19 +756,8 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                 {templates.find(t => t.definition?.baseline !== 'c2c' && !t.name.toLowerCase().includes('cut-to-cut'))?.name || 'Default Production Template V1'}
               </h3>
               <p className="tiny muted" style={{ margin: 0 }}>
-                Customer-facing quotation baseline with 25% profit margin and standard ₹90/kg steel rate.
+                Customer-facing quotation baseline with 25% profit margin and customizable rates across all 15 sheets.
               </p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-            <div>
-              <div className="tiny muted font-bold uppercase">Steel Rate</div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af' }}>₹90 / kg</div>
-            </div>
-            <div>
-              <div className="tiny muted font-bold uppercase">Trolley Rate</div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af' }}>₹90 / kg</div>
             </div>
           </div>
 
@@ -802,22 +794,11 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                 </span>
               </div>
               <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', color: '#0f172a' }}>
-                {templates.find(t => t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut'))?.name || 'Cut-to-Cut Standards (₹79/kg)'}
+                {templates.find(t => t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut'))?.name || 'Cut-to-Cut Standards'}
               </h3>
               <p className="tiny muted" style={{ margin: 0 }}>
-                Internal confidential costing baseline with minimum material rates (₹79/kg) and sheared sheet sizes.
+                Internal confidential costing baseline with minimum material rates and sheared sheet sizes.
               </p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-            <div>
-              <div className="tiny muted font-bold uppercase">Steel Rate</div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#7c3aed' }}>₹79 / kg</div>
-            </div>
-            <div>
-              <div className="tiny muted font-bold uppercase">Trolley Rate</div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#7c3aed' }}>₹69 / kg</div>
             </div>
           </div>
 
@@ -905,14 +886,24 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                       <td className="tiny muted">{t.published_at ? timeAgo(t.published_at) : timeAgo(t.created_at)}</td>
                       {isAdminOrOwner && (
                         <td className="r">
-                          <div className="row gap" style={{ justifyContent: 'flex-end' }}>
+                          <div className="row gap" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                            <button
+                              className="btn ghost sm"
+                              onClick={() => {
+                                setDiffComparisonMode('prev')
+                                setDiffModalTemplate(t)
+                              }}
+                              title="View differences from previous or initial version"
+                            >
+                              🔍 Differences
+                            </button>
                             {!t.is_default && t.status === 'published' && (
                               <button
                                 className="btn primary sm"
                                 onClick={() => handleSetActiveDefault(t)}
                                 title={`Set Version ${t.version_num} as the default template for future projects`}
                               >
-                                {Icon.check} Set as Default
+                                {Icon.check} Set Default
                               </button>
                             )}
                             <button
@@ -922,6 +913,15 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                             >
                               ✏️ Edit Version
                             </button>
+                            {!t.is_default && (
+                              <button
+                                className="btn danger sm"
+                                onClick={() => handleDeleteTemplate(t)}
+                                title={`Delete Template Version ${t.version_num}`}
+                              >
+                                {Icon.trash} Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}

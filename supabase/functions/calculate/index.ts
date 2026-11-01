@@ -17,6 +17,7 @@ import workbookC2CData from './workbook_c2c.json' with { type: 'json' }
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https?:\/\/localhost(:\d+)?$/,
   /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+  /^https:\/\/.*\.vercel\.app$/,
 ]
 
 function getCorsHeaders(req: Request): Record<string, string> {
@@ -29,14 +30,14 @@ function getCorsHeaders(req: Request): Record<string, string> {
     for (const pat of ALLOWED_ORIGIN_PATTERNS) {
       if (pat.test(origin)) { allowed = true; break }
     }
-    if (!allowed && explicitList.includes(origin)) allowed = true
+    if (!allowed && (explicitList.includes(origin) || origin.endsWith('.vercel.app') || origin === 'https://myraid-khaki.vercel.app')) allowed = true
   }
 
   const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-org-id',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   }
-  if (allowed) {
+  if (allowed || origin.endsWith('.vercel.app') || origin.includes('vercel.app')) {
     headers['Access-Control-Allow-Origin'] = origin
     headers['Vary'] = 'Origin'
   }
