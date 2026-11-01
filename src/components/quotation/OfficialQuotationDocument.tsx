@@ -1111,6 +1111,12 @@ export function OfficialQuotationDocument({
 
   const [profitPct, setProfitPct] = useState<number>(defaultProfitPct)
 
+  useEffect(() => {
+    if (defaultProfitPct !== undefined && !isNaN(defaultProfitPct)) {
+      setProfitPct(defaultProfitPct)
+    }
+  }, [defaultProfitPct])
+
   // Installation Included / Excluded state (defaults to calculator settings)
   const defaultIncludeInstallation = useMemo(() => {
     if (project.summary?.include_installation !== undefined) {
@@ -1378,10 +1384,17 @@ export function OfficialQuotationDocument({
     }
   }, [initialExtraAmount])
 
+  const docDiscountPct = useMemo(() => {
+    if (summary && summary.discountPct !== undefined && !isNaN(summary.discountPct)) return summary.discountPct
+    if (project.summary && project.summary.discount_pct !== undefined && !isNaN(Number(project.summary.discount_pct))) return Number(project.summary.discount_pct)
+    if (project.inputs && project.inputs['__discount_pct'] !== undefined && !isNaN(Number(project.inputs['__discount_pct']))) return Number(project.inputs['__discount_pct'])
+    return 0
+  }, [summary, project])
+
   // Dynamic unit-wise rate breakdown (Transport + Installation + Accommodation distributed by bodies + extra amount + dynamic profit)
   const breakdownResult = useMemo(
-    () => computeUnitWiseBreakdown(summary, wb, includeInstallation, profitPct, undefined, effectiveTotalBodies, extraAmount),
-    [summary, wb, includeInstallation, profitPct, effectiveTotalBodies, extraAmount],
+    () => computeUnitWiseBreakdown(summary, wb, includeInstallation, profitPct, docDiscountPct, effectiveTotalBodies, extraAmount),
+    [summary, wb, includeInstallation, profitPct, docDiscountPct, effectiveTotalBodies, extraAmount],
   )
 
   // Auto-derived destination from address for Freight Clause
@@ -1527,6 +1540,8 @@ export function OfficialQuotationDocument({
             s.amount !== undefined
               ? Number(s.amount)
               : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0)),
+          pre_discount_rate: s.pre_discount_rate !== undefined ? Number(s.pre_discount_rate) : Number(s.rate) || 0,
+          pre_discount_amount: s.pre_discount_amount !== undefined ? Number(s.pre_discount_amount) : (s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0))),
           items: s.items && s.items.length > 0 ? s.items : breakdownResult.rows.map((r, rIdx) => ({
             id: String(rIdx + 1),
             model_name: r.model_name,
@@ -1555,6 +1570,7 @@ export function OfficialQuotationDocument({
     // Sync single set (rate is 1-set cost, amount is rate * qty)
     const newTotal = breakdownResult.finalBeforeGst
     if (!newTotal || newTotal <= 0) return
+    const preDiscTotal = breakdownResult.totalPriceWithProfit || newTotal
     setSets((prev) => {
       const qty = prev[0]?.quantity || 1
       const newRate = Math.round(newTotal)
@@ -1576,6 +1592,8 @@ export function OfficialQuotationDocument({
           quantity: qty,
           rate: newRate,
           amount: Math.round(newRate * qty),
+          pre_discount_rate: Math.round(preDiscTotal / qty),
+          pre_discount_amount: Math.round(preDiscTotal),
         },
       ]
     })
@@ -1584,22 +1602,30 @@ export function OfficialQuotationDocument({
   // Live update rates if profitPct is changed locally inside quotation document
   useEffect(() => {
     if (!initialSets || initialSets.length === 0) return
+    if (profitPct === defaultProfitPct) return
+
     setSets((prev) =>
       prev.map((s) => {
         const qty = Math.max(1, Number(s.quantity) || 1)
         if (s.breakdown) {
-          const costBase = s.breakdown.totalCostBase || (s.rate / (1 + (s.breakdown.profitPct || 25) / 100))
-          const newRate = Math.round(costBase * (1 + profitPct / 100))
+          const exWorks = s.breakdown.subtotal || s.summary?.subtotal || Math.max(0, (s.breakdown.totalCostBase || 0) - (s.breakdown.installation || 0) - (s.breakdown.transport || 0) - (s.breakdown.accommodation || 0))
+          const logistics = Math.max(0, (s.breakdown.totalCostBase || 0) - exWorks)
+          const profitAmount = exWorks * (profitPct / 100)
+          const withProfit = exWorks + profitAmount + logistics
+          const discountAmount = withProfit * (docDiscountPct / 100)
+          const newRate = Math.round(withProfit - discountAmount)
           return {
             ...s,
             rate: newRate,
             amount: Math.round(newRate * qty),
+            pre_discount_rate: Math.round(withProfit / qty),
+            pre_discount_amount: Math.round(withProfit),
           }
         }
         return s
       })
     )
-  }, [profitPct])
+  }, [profitPct, defaultProfitPct, docDiscountPct])
 
   // Helper to re-sync line items (live dynamic sync is active by default)
   const handleSyncBreakdownToLineItems = () => {
@@ -1676,13 +1702,23 @@ export function OfficialQuotationDocument({
     }
     let beforeDisc = 0
     if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
-      const factor = 1 - (effectiveDiscountPct / 100)
-      beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
+      const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || 0), 0)
+      if (setsPreDiscSum > 0) {
+        beforeDisc = setsPreDiscSum
+      } else {
+        const factor = 1 - (effectiveDiscountPct / 100)
+        beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
+      }
     } else if (effectiveQuotationMode === 'unit_breakdown') {
       beforeDisc = breakdownResult.totalPriceWithProfit || subtotal
     } else {
-      const factor = 1 - (effectiveDiscountPct / 100)
-      beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
+      const lineItemsPreDiscSum = breakdownResult.totalPriceWithProfit
+      if (lineItemsPreDiscSum > 0) {
+        beforeDisc = lineItemsPreDiscSum
+      } else {
+        const factor = 1 - (effectiveDiscountPct / 100)
+        beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
+      }
     }
     const discAmt = Number((beforeDisc - subtotal).toFixed(2))
     return {
