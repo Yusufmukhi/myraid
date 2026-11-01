@@ -366,6 +366,20 @@ export class Workbook {
     this.namedConstants = { ...DEFAULT_NAMED_CONSTANTS, ...namedConstants }
   }
 
+  loadSheets(sheets: SheetData[], namedConstants?: Record<string, number>) {
+    this.sheets.clear()
+    this.names.length = 0
+    for (const s of sheets) {
+      this.sheets.set(s.name, s)
+      this.names.push(s.name)
+    }
+    if (namedConstants) {
+      this.namedConstants = { ...DEFAULT_NAMED_CONSTANTS, ...namedConstants }
+    }
+    this.cache.clear()
+    this.asts.clear()
+  }
+
   setNamedConstants(constants: Record<string, number>) {
     this.namedConstants = { ...this.namedConstants, ...constants }
     this.cache.clear()

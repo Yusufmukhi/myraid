@@ -2262,38 +2262,101 @@ export function OfficialQuotationDocument({
                 </>
               ) : effectiveQuotationMode === 'unit_wise' ? (
                 <>
-                  {lineItems.map((it, itIdx) => {
-                    const currentSl = itIdx + 1
-                    const displayRate = lineItemDisplayAmounts[itIdx]?.rate ?? Number(it.rate)
-                    const displayAmount = lineItemDisplayAmounts[itIdx]?.amount ?? Number(it.amount)
-                    return (
-                      <tr key={it.id} className="item-row">
-                        <td className="td-sl text-center font-bold">{currentSl}</td>
-                        <td className="td-desc">
-                          <strong className="model-title">{it.model_name}</strong>
-                          {cleanDimensions(it.dimensions) ? (
-                            <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
-                          ) : null}
-                        </td>
-                        <td className="td-qty text-center font-bold" style={{ verticalAlign: 'middle', fontSize: '10.5px' }}>
-                          {it.quantity}
-                        </td>
-                        <td
-                          className="td-rate text-right font-mono"
-                          style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
-                        >
-                          {Number(displayRate).toFixed(2)}
-                        </td>
-                        <td
-                          className="td-amount text-right font-mono"
-                          style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
-                        >
-                          {Number(displayAmount).toFixed(2)}
-                        </td>
-                        <span style={{ display: 'none' }}>{Number(it.rate).toFixed(2)}{Number(it.amount).toFixed(2)}</span>
-                      </tr>
-                    )
-                  })}
+                  {sets.length > 1 ? (
+                    (() => {
+                      let currentSl = 1
+                      return sets.map((s, sIdx) => {
+                        const nextChar = String.fromCharCode(65 + sIdx)
+                        const sysTitle = (s.system_title || `SYSTEM ${nextChar}`).trim()
+                        const sysItems = s.items && s.items.length > 0 ? s.items : []
+                        const sysQty = Number(s.quantity) || 1
+
+                        return (
+                          <React.Fragment key={s.id || sIdx}>
+                            <tr className="system-title-row" style={{ background: '#f8fafc' }}>
+                              <td className="td-sl"></td>
+                              <td
+                                colSpan={4}
+                                className="td-desc font-bold"
+                                style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.5px', color: '#0f172a', padding: '5px 8px' }}
+                              >
+                                {sysTitle} {s.set_label ? `(${s.set_label})` : `(${sysQty} ${s.unit || 'SET'})`}
+                              </td>
+                            </tr>
+                            {sysItems.map((it, itIdx) => {
+                              const slNo = currentSl++
+                              const displayRate = (it as any).final_unit_rate !== undefined ? (it as any).final_unit_rate : (it.rate || 0)
+                              const itemUnitQty = Number(it.unit_qty) || 1
+                              const totalItemQty = itemUnitQty * sysQty
+                              const displayAmount = (it as any).final_amount !== undefined
+                                ? (it as any).final_amount * sysQty
+                                : Math.round(Number(displayRate) * totalItemQty)
+
+                              return (
+                                <tr key={`${s.id || sIdx}-${it.id || itIdx}`} className="item-row">
+                                  <td className="td-sl text-center font-bold">{slNo}</td>
+                                  <td className="td-desc">
+                                    <strong className="model-title">{it.model_name || it.model_code}</strong>
+                                    {cleanDimensions(it.dimensions) ? (
+                                      <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
+                                    ) : null}
+                                  </td>
+                                  <td className="td-qty text-center font-bold" style={{ verticalAlign: 'middle', fontSize: '10.5px' }}>
+                                    {totalItemQty}
+                                  </td>
+                                  <td
+                                    className="td-rate text-right font-mono"
+                                    style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                  >
+                                    {Number(displayRate).toFixed(2)}
+                                  </td>
+                                  <td
+                                    className="td-amount text-right font-mono"
+                                    style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                  >
+                                    {Number(displayAmount).toFixed(2)}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </React.Fragment>
+                        )
+                      })
+                    })()
+                  ) : (
+                    lineItems.map((it, itIdx) => {
+                      const currentSl = itIdx + 1
+                      const displayRate = lineItemDisplayAmounts[itIdx]?.rate ?? Number(it.rate)
+                      const displayAmount = lineItemDisplayAmounts[itIdx]?.amount ?? Number(it.amount)
+                      return (
+                        <tr key={it.id} className="item-row">
+                          <td className="td-sl text-center font-bold">{currentSl}</td>
+                          <td className="td-desc">
+                            <strong className="model-title">{it.model_name}</strong>
+                            {cleanDimensions(it.dimensions) ? (
+                              <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
+                            ) : null}
+                          </td>
+                          <td className="td-qty text-center font-bold" style={{ verticalAlign: 'middle', fontSize: '10.5px' }}>
+                            {it.quantity}
+                          </td>
+                          <td
+                            className="td-rate text-right font-mono"
+                            style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                          >
+                            {Number(displayRate).toFixed(2)}
+                          </td>
+                          <td
+                            className="td-amount text-right font-mono"
+                            style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                          >
+                            {Number(displayAmount).toFixed(2)}
+                          </td>
+                          <span style={{ display: 'none' }}>{Number(it.rate).toFixed(2)}{Number(it.amount).toFixed(2)}</span>
+                        </tr>
+                      )
+                    })
+                  )}
                 </>
               ) : (
                 <>

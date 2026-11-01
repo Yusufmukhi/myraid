@@ -873,105 +873,27 @@ export function CalculatorPage({
 
 
   const handleQuotationModeChange = (mode: 'set_wise' | 'unit_wise') => {
-
     setQuotationMode(mode)
-
-    if (mode === 'unit_wise') {
-
-      // User requested: When clicking on Individual, erase the multi-system memory so systems don't get mixed
-
-      const currentFull = { ...overrides }
-
-      const singleSys = {
-
-        id: '1',
-
-        name: 'SYSTEM A',
-
-        quantity: 1,
-
-        unit: 'SET',
-
-        overrides: currentFull,
-
-        formulaOverrides: { ...formulaOverrides },
-
-        includeInstallation,
-
-        extraAmount,
-
-        summary,
-
-        breakdown: calcBreakdown,
-
-      }
-
-      setSystems([singleSys])
-
-      setActiveSystemIdx(0)
-
-      const updatedSummary = {
-
-        ...project.summary,
-
-        quotation_mode: mode,
-
-        systems: [singleSys],
-
-      }
-
-      onProjectUpdated({
-
-        ...project,
-
-        summary: updatedSummary,
-
-      })
-
-      toast('Switched to Individual Unit-Wise (multi-system memory cleared)')
-
-    } else {
-
-      const updatedSummary = {
-
-        ...project.summary,
-
-        quotation_mode: mode,
-
-      }
-
-      onProjectUpdated({
-
-        ...project,
-
-        summary: updatedSummary,
-
-      })
-
-      toast('Quotation format set to System / Set-Wise')
-
+    const updatedSummary = {
+      ...project.summary,
+      quotation_mode: mode,
+      systems,
     }
-
+    onProjectUpdated({
+      ...project,
+      summary: updatedSummary,
+    })
+    toast(mode === 'unit_wise' ? 'Switched to Individual Unit-Wise Mode' : 'Switched to System / Set-Wise Mode')
   }
 
-
-
   const MAX_STAFF_DISCOUNT_PCT = 10
-
   const discountRequest = project.summary?.discount_request as {
-
     requested_pct: number
-
     requested_by: string
-
     requested_at: string
-
     status: 'pending' | 'approved' | 'rejected'
-
     decided_by?: string
-
     decided_at?: string
-
   } | undefined
 
   const [isSendingDiscountRequest, setIsSendingDiscountRequest] = useState(false)
@@ -1318,13 +1240,35 @@ export function CalculatorPage({
 
 
 
+  const [wbVersion, setWbVersion] = useState(0)
+
+  useEffect(() => {
+    if (wb && wb.sheets.size > 1) return
+    let active = true
+    api.getFullWorksheets(session.token, org.id)
+      .then((res) => {
+        if (!active) return
+        if (res.actual_workbook?.sheets) {
+          wb.loadSheets(res.actual_workbook.sheets, res.named_constants)
+          if (c2cWb && res.c2c_workbook?.sheets) {
+            c2cWb.loadSheets(res.c2c_workbook.sheets, res.named_constants)
+          }
+          setWbVersion((v) => v + 1)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [session.token, org.id, wb, c2cWb])
+
   // Recalculate summary live whenever inputs, profit %, discount %, or installation toggle change
 
   const actualSummary: Summary = useMemo(() => {
     wb.setFormulaOverrides(formulaOverrides)
     wb.setOverrides(overrides)
     return summarize(wb, profitPct, discountPct, includeInstallation, extraAmount)
-  }, [overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb])
+  }, [overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, wbVersion])
 
   // Recalculate Cut-to-Cut summary live whenever inputs change
   const liveC2cSummary: Summary | null = useMemo(() => {
@@ -1340,7 +1284,7 @@ export function CalculatorPage({
       wb.setOverrides(overrides)
     }
     return res
-  }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides])
+  }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, wbVersion, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides])
 
   const [serverCalculating, setServerCalculating] = useState(false)
   const [serverSynced, setServerSynced] = useState(false)
@@ -1421,7 +1365,7 @@ export function CalculatorPage({
 
     )
 
-  }, [summary, wb, includeInstallation, profitPct, discountPct, totalCombinedBodies, extraAmount, quotationMode])
+  }, [summary, wb, includeInstallation, profitPct, discountPct, totalCombinedBodies, extraAmount, quotationMode, wbVersion])
 
 
 
@@ -1934,7 +1878,7 @@ export function CalculatorPage({
 
         systems: effectiveSystems,
 
-        quotation_sets: quotationMode === 'unit_wise' ? compiledSets.slice(0, 1) : compiledSets,
+        quotation_sets: compiledSets,
 
         quotation_mode: quotationMode,
 

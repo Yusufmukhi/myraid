@@ -46,6 +46,29 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const calculatorSaveRef = useRef<(() => Promise<boolean>) | null>(null)
   const [showWorkspaceUnsavedModal, setShowWorkspaceUnsavedModal] = useState(false)
   const [pendingTab, setPendingTab] = useState<NavTab | null>(null)
+  const [worksheetsLoaded, setWorksheetsLoaded] = useState(false)
+
+  // Dynamically load full 15 worksheets into baseWb & c2cWb on mount
+  useEffect(() => {
+    let active = true
+    api.getFullWorksheets(session.token, org.id)
+      .then((res) => {
+        if (!active) return
+        if (res.actual_workbook?.sheets) {
+          baseWb.loadSheets(res.actual_workbook.sheets, res.named_constants)
+        }
+        if (res.c2c_workbook?.sheets) {
+          c2cWb.loadSheets(res.c2c_workbook.sheets, res.named_constants)
+        }
+        setWorksheetsLoaded(true)
+      })
+      .catch((err) => {
+        console.warn('Could not load dynamic worksheets for workspace:', err)
+      })
+    return () => {
+      active = false
+    }
+  }, [session.token, org.id])
 
   const handleTabSwitch = useCallback((newTab: NavTab) => {
     if (tab === 'calculator' && calculatorDirty && newTab !== 'calculator') {
@@ -880,6 +903,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           {tab === 'calculator' && (
             currentProject ? (
               <CalculatorPage
+                key={`${currentProject.id}-${worksheetsLoaded ? 'full' : 'basic'}`}
                 session={session}
                 org={org}
                 project={currentProject}
