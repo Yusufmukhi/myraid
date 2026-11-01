@@ -1,3 +1,7 @@
+# Proprietary Engineering & Template Sheets (Server-side Edge Function only)
+public/templates/
+*.xlsx
+
 # Dependencies
 node_modules
 dist

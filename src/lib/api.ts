@@ -560,7 +560,7 @@ export const api = {
     named_constants: Record<string, number>
     metadata?: Record<string, { desc: string; category: string }>
   }> => {
-    // 1. Try server Edge Function first
+    // Authenticated Supabase Edge Function (Protected by owner/admin role validation)
     if (client) {
       try {
         const { data, error } = await client.functions.invoke('calculate', {
@@ -573,22 +573,12 @@ export const api = {
         if (!error && data?.actual_workbook) {
           return data as any
         }
-      } catch (e) {
-        console.warn('Edge function get_worksheets invoke failed, trying static fallback:', e)
-      }
-    }
-
-    // 2. Fallback to static worksheets payload (owner/admin only)
-    try {
-      const res = await fetch('/templates/worksheets.json')
-      if (res.ok) {
-        const data = await res.json()
-        if (data?.actual_workbook) {
-          return data
+        if (error) {
+          console.warn('Edge function get_worksheets error:', error)
         }
+      } catch (e) {
+        console.warn('Edge function get_worksheets invoke failed:', e)
       }
-    } catch (e) {
-      console.warn('Worksheets fallback fetch failed:', e)
     }
 
     throw new Error('Engineering worksheets could not be loaded. Please ensure you are logged in as Owner/Admin.')
