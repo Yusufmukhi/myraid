@@ -574,23 +574,14 @@ export const api = {
           return data as any
         }
         if (error) {
-          console.warn('Edge function get_worksheets error, falling back to internal dataset:', error)
+          console.warn('Edge function get_worksheets error, worksheets unavailable:', error)
         }
       } catch (e) {
-        console.warn('Edge function get_worksheets invoke failed, falling back to internal dataset:', e)
+        console.warn('Edge function get_worksheets invoke failed, worksheets unavailable:', e)
       }
     }
 
-    // 2. Internal bundled module (never served via static public URL)
-    try {
-      const { worksheetsPayload } = await import('./worksheetsData')
-      if (worksheetsPayload?.actual_workbook) {
-        return worksheetsPayload as any
-      }
-    } catch (e) {
-      console.warn('Internal worksheets data import failed:', e)
-    }
-
+    // No local or static fallback: worksheets come only from the authenticated edge function.
     throw new Error('Engineering worksheets could not be loaded. Please ensure you are logged in as Owner/Admin.')
   },
 

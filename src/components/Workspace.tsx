@@ -48,8 +48,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const [pendingTab, setPendingTab] = useState<NavTab | null>(null)
   const [worksheetsLoaded, setWorksheetsLoaded] = useState(false)
 
-  // Dynamically load full 15 worksheets into baseWb & c2cWb on mount
+  // Dynamically load full 15 worksheets into baseWb & c2cWb on mount (Owners/Admins only)
   useEffect(() => {
+    if (!isAdminOrOwner) return
     let active = true
     api.getFullWorksheets(session.token, org.id)
       .then((res) => {
@@ -68,7 +69,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     return () => {
       active = false
     }
-  }, [session.token, org.id])
+  }, [session.token, org.id, isAdminOrOwner])
 
   const handleTabSwitch = useCallback((newTab: NavTab) => {
     if (tab === 'calculator' && calculatorDirty && newTab !== 'calculator') {

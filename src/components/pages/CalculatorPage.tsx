@@ -1243,6 +1243,7 @@ export function CalculatorPage({
   const [wbVersion, setWbVersion] = useState(0)
 
   useEffect(() => {
+    if (!isAdminOrOwner) return
     if (wb && wb.sheets.size > 1) return
     let active = true
     api.getFullWorksheets(session.token, org.id)
@@ -1260,7 +1261,7 @@ export function CalculatorPage({
     return () => {
       active = false
     }
-  }, [session.token, org.id, wb, c2cWb])
+  }, [session.token, org.id, wb, c2cWb, isAdminOrOwner])
 
   // Recalculate summary live whenever inputs, profit %, discount %, or installation toggle change
 
@@ -1290,20 +1291,20 @@ export function CalculatorPage({
   const [serverSynced, setServerSynced] = useState(false)
   const [serverQuote, setServerQuote] = useState<any>(() => {
     if (project.summary && project.summary.sales && Array.isArray(project.summary.models)) {
-      return { summary: project.summary, computed_total: project.total, c2c_summary: project.summary?.c2cSummary }
+      return { summary: project.summary, computed_total: project.total, c2c_summary: project.summary?.c2cSummary, total_combined_bodies: project.summary?.total_combined_bodies }
     }
     return null
   })
 
   // Authoritative totals from server calculate function, with immediate live response during editing
   const summary: Summary = useMemo(() => {
-    if (serverQuote?.summary?.models && !serverCalculating) return serverQuote.summary
+    if (serverQuote?.summary?.models) return serverQuote.summary
     return actualSummary || (project.summary ?? null)
   }, [serverQuote, serverCalculating, actualSummary, project.summary])
 
   const c2cSummary: Summary | null = useMemo(() => {
     if (!isAdminOrOwner) return null
-    if (serverQuote?.c2c_summary && !serverCalculating) return serverQuote.c2c_summary
+    if (serverQuote?.c2c_summary) return serverQuote.c2c_summary
     return liveC2cSummary || (project.summary?.c2cSummary ?? null)
   }, [isAdminOrOwner, serverQuote, serverCalculating, liveC2cSummary, project.summary?.c2cSummary])
 
@@ -1321,6 +1322,12 @@ export function CalculatorPage({
 
     }
 
+    if (serverQuote?.total_combined_bodies) {
+
+      return serverQuote.total_combined_bodies
+
+    }
+
     return systems.reduce((acc, sys, idx) => {
 
       const sysOv = idx === activeSystemIdx ? overrides : (sys.overrides || {})
@@ -1333,7 +1340,7 @@ export function CalculatorPage({
 
     }, 0) || 1
 
-  }, [systems, activeSystemIdx, overrides, wb, summary.bodies, quotationMode])
+  }, [systems, activeSystemIdx, overrides, wb, summary.bodies, quotationMode, serverQuote?.total_combined_bodies])
 
 
 
