@@ -1,3 +1,0 @@
-# Supabase Configuration
-[functions.calculate]
-verify_jwt = false

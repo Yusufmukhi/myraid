@@ -1,14 +1,28 @@
+# Dependencies
 node_modules
 dist
+
+# Environment variables & local secrets
 .env
 .env.*
 !.env.example
-supabase/.temp
-data/
-data/workbook.json
-data/cached.json
-docs/*.xlsx
+
+# Supabase - Internal Database Schemas, Functions & Config (Not for deployment)
+supabase/
+
+# Internal Documentation & Audit Reports
+CHANGES_AND_SUPABASE_VERIFICATION.md
+docs/
 *.log
 *.zip
+
+# Internal Scripts & Tooling
+scripts/
+
+# Proprietary Worksheets & Formulas
+public/templates/
+data/
+
+# OS Files
 .DS_Store
 Thumbs.db
