@@ -181,12 +181,12 @@ export function summarize(
     ? profitPct
     : (sheetProfit > 0 ? sheetProfit : 25)
   const profitAmount = subtotal * (safeProfitPct / 100)
-  const subtotalWithProfit = subtotal + profitAmount
+  const subtotalWithProfit = costBase + profitAmount
 
   // Discount Percentage applied on Subtotal with Profit (Before Tax)
   const safeDiscountPct = isNaN(discountPct) ? 0 : discountPct
   const discountAmount = subtotalWithProfit * (safeDiscountPct / 100)
-  const beforeGst = (subtotalWithProfit - discountAmount) + installation + transport + accommodation + totalExtraAmountSum
+  const beforeGst = subtotalWithProfit - discountAmount
 
   // 18% GST on Subtotal Before Tax
   const gst = beforeGst * 0.18
