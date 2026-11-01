@@ -87,46 +87,74 @@ export function summarize(
   const extraSfmu = getWidthExtra(width, 'SFMU')
   const extraDfmuD = getWidthExtra(width, 'DFMU-D')
 
+  // When only the summary sheet is loaded (before full worksheets load or on slow networks),
+  // dynamically compute unit rate variations based on steel rate (H3) and trolley rate (M3)
+  const steelRate = n('H3') || 90
+  const trolleyRate = n('M3') || 90
+  const isOneSheetOnly = wb.names.length <= 1
+
+  // Unit steel weights (kg with wastage) for rate recalculation:
+  // DFMU: SP 149.3345 kg, Trolley 23.4638 kg
+  // SFMU: SP 126.9660 kg, Trolley 11.7319 kg
+  // SFFU: SP 75.3670 kg
+  // DFFU: SP 112.7840 kg
+  // DFMU-D: SP 185.8080 kg, Trolley 23.4638 kg
+  const baseD4 = isOneSheetOnly
+    ? n('D4') + (steelRate - 90) * 149.3345 + (trolleyRate - 90) * 23.4638
+    : n('D4')
+  const baseD8 = isOneSheetOnly
+    ? n('D8') + (steelRate - 90) * 126.9660 + (trolleyRate - 90) * 11.7319
+    : n('D8')
+  const baseD12 = isOneSheetOnly
+    ? n('D12') + (steelRate - 90) * 75.3670
+    : n('D12')
+  const baseD16 = isOneSheetOnly
+    ? n('D16') + (steelRate - 90) * 112.7840
+    : n('D16')
+  const baseD20 = isOneSheetOnly
+    ? n('D20') + (steelRate - 90) * 185.8080 + (trolleyRate - 90) * 23.4638
+    : n('D20')
+
   const models = [
     {
       code: 'DFMU',
       qty: n('G4'),
-      unitRate: n('D4') + extraDfmu,
+      unitRate: baseD4 + extraDfmu,
       widthExtra: extraDfmu,
-      amount: n('G4') * (n('D4') + extraDfmu),
+      amount: n('G4') * (baseD4 + extraDfmu),
       powder: n('E34'),
     },
     {
       code: 'SFMU',
       qty: n('G8'),
-      unitRate: n('D8') + extraSfmu,
+      unitRate: baseD8 + extraSfmu,
       widthExtra: extraSfmu,
-      amount: n('G8') * (n('D8') + extraSfmu),
+      amount: n('G8') * (baseD8 + extraSfmu),
       powder: n('E35'),
     },
     {
       code: 'SFFU',
       qty: n('G12'),
-      unitRate: n('D12'),
+      unitRate: baseD12,
       widthExtra: 0,
-      amount: n('N12'),
+      amount: n('G12') * baseD12,
       powder: n('E36'),
     },
     {
       code: 'DFFU',
       qty: n('G16'),
-      unitRate: n('D16'),
+      unitRate: baseD16,
       widthExtra: 0,
-      amount: n('N16'),
+      amount: n('G16') * baseD16,
       powder: n('E37'),
     },
     {
       code: 'DFMU-D',
       note: 'with door',
       qty: n('G20'),
-      unitRate: n('D20') + extraDfmuD,
+      unitRate: baseD20 + extraDfmuD,
       widthExtra: extraDfmuD,
-      amount: n('G20') * (n('D20') + extraDfmuD),
+      amount: n('G20') * (baseD20 + extraDfmuD),
       powder: n('E38'),
     },
   ]

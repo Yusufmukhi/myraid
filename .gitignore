@@ -19,8 +19,7 @@ docs/
 # Internal Scripts & Tooling
 scripts/
 
-# Proprietary Worksheets & Formulas
-public/templates/
+# Data cache
 data/
 
 # OS Files
