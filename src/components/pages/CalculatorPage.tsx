@@ -2415,6 +2415,24 @@ export function CalculatorPage({
 
   }
 
+  // Render a live calculation value with graceful loading state so users don't see stale/hardcoded figures
+  const renderLiveVal = (val: number | string | undefined | null, formatter: (n: number) => string = inr2) => {
+    if (serverCalculating) {
+      return (
+        <span
+          className="live-calc-pulse"
+          title="Calculating live value..."
+        >
+          —
+        </span>
+      )
+    }
+    if (val === undefined || val === null || (typeof val === 'number' && isNaN(val))) {
+      return '—'
+    }
+    return typeof val === 'number' ? formatter(val) : val
+  }
+
 
 
   // Small text breakdown for the Body widget: "DFMU: 8 · SFMU: 1 · SFFU: 1"
@@ -3389,10 +3407,10 @@ export function CalculatorPage({
                     )}
                   </div>
                   <strong className="kpi-val sales-val">
-                    {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '13px' }}>calculating…</span> : inr(displaySummary.sales)}
+                    {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(displaySummary.sales)}
                   </strong>
                   <span className="kpi-sub">
-                    {`${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
+                    {serverCalculating ? '—' : `${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
                   </span>
                 </div>
               </>
@@ -3409,10 +3427,10 @@ export function CalculatorPage({
                   )}
                 </div>
                 <strong className="kpi-val sales-val">
-                  {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '13px' }}>calculating…</span> : inr(summary.sales)}
+                  {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(summary.sales)}
                 </strong>
                 <span className="kpi-sub">
-                  {`${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
+                  {serverCalculating ? '—' : `${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
                 </span>
               </div>
             )}
@@ -3909,13 +3927,13 @@ export function CalculatorPage({
 
                     >
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.total_unit_rate ?? (dfmuModel?.unitRate ?? activeWb.num('Total cal', 'D4')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.total_unit_rate ?? (dfmuModel?.unitRate ?? activeWb.num('Total cal', 'D4')))}
 
                     </td>
 
                     <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.total_price ?? (dfmuModel?.amount ?? activeWb.num('Total cal', 'N4')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.total_price ?? (dfmuModel?.amount ?? activeWb.num('Total cal', 'N4')))}
 
                     </td>
 
@@ -3991,13 +4009,13 @@ export function CalculatorPage({
 
                     >
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.total_unit_rate ?? (sfmuModel?.unitRate ?? activeWb.num('Total cal', 'D8')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.total_unit_rate ?? (sfmuModel?.unitRate ?? activeWb.num('Total cal', 'D8')))}
 
                     </td>
 
                     <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.total_price ?? (sfmuModel?.amount ?? activeWb.num('Total cal', 'N8')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.total_price ?? (sfmuModel?.amount ?? activeWb.num('Total cal', 'N8')))}
 
                     </td>
 
@@ -4073,13 +4091,13 @@ export function CalculatorPage({
 
                     >
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.total_unit_rate ?? (sffuModel?.unitRate ?? activeWb.num('Total cal', 'D12')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.total_unit_rate ?? (sffuModel?.unitRate ?? activeWb.num('Total cal', 'D12')))}
 
                     </td>
 
                     <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.total_price ?? (sffuModel?.amount ?? activeWb.num('Total cal', 'N12')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.total_price ?? (sffuModel?.amount ?? activeWb.num('Total cal', 'N12')))}
 
                     </td>
 
@@ -4155,13 +4173,13 @@ export function CalculatorPage({
 
                     >
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.total_unit_rate ?? (dffuModel?.unitRate ?? activeWb.num('Total cal', 'D16')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.total_unit_rate ?? (dffuModel?.unitRate ?? activeWb.num('Total cal', 'D16')))}
 
                     </td>
 
                     <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.total_price ?? (dffuModel?.amount ?? activeWb.num('Total cal', 'N16')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.total_price ?? (dffuModel?.amount ?? activeWb.num('Total cal', 'N16')))}
 
                     </td>
 
@@ -4237,13 +4255,13 @@ export function CalculatorPage({
 
                     >
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.total_unit_rate ?? (dfmuDModel?.unitRate ?? activeWb.num('Total cal', 'D20')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.total_unit_rate ?? (dfmuDModel?.unitRate ?? activeWb.num('Total cal', 'D20')))}
 
                     </td>
 
                     <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
 
-                      {inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.total_price ?? (dfmuDModel?.amount ?? activeWb.num('Total cal', 'N20')))}
+                      {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.total_price ?? (dfmuDModel?.amount ?? activeWb.num('Total cal', 'N20')))}
 
                     </td>
 
@@ -4685,11 +4703,11 @@ export function CalculatorPage({
                       <td>
                         <strong>Subtotal Before GST (All Systems)</strong>
                       </td>
-                      <td className="r font-mono font-bold">{inr2(allSystemsTotals.beforeGst)}</td>
+                      <td className="r font-mono font-bold">{renderLiveVal(allSystemsTotals.beforeGst)}</td>
                     </tr>
                     <tr>
                       <td>GST (18%)</td>
-                      <td className="r font-mono">{inr2(allSystemsTotals.gst)}</td>
+                      <td className="r font-mono">{renderLiveVal(allSystemsTotals.gst)}</td>
                     </tr>
                     <tr className="final-sales-row" style={{ background: '#ecfdf5', borderTop: '2px solid #10b981' }}>
                       <td>
@@ -4699,7 +4717,7 @@ export function CalculatorPage({
                         </div>
                       </td>
                       <td className="r font-mono font-bold text-green" style={{ fontSize: 20, color: '#047857' }}>
-                        {serverCalculating ? <span style={{ fontSize: 14, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(allSystemsTotals.sales)}
+                        {renderLiveVal(allSystemsTotals.sales, inr)}
                       </td>
                     </tr>
                   </>
@@ -4707,7 +4725,7 @@ export function CalculatorPage({
                   <>
                 <tr>
                   <td>Ex-Works Subtotal (N22)</td>
-                  <td className="r font-mono">{inr2(summary.subtotal)}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.subtotal)}</td>
                 </tr>
 
                 {/* Packing & Forwarding REMOVED per user request */}
@@ -4716,7 +4734,7 @@ export function CalculatorPage({
 
                   <td>Transport / Freight (N24)</td>
 
-                  <td className="r font-mono">{inr2(summary.transport)}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.transport)}</td>
 
                 </tr>
 
@@ -4724,7 +4742,7 @@ export function CalculatorPage({
 
                   <td>Accommodation (N25)</td>
 
-                  <td className="r font-mono">{inr2(summary.accommodation ?? summary.accessories)}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.accommodation ?? summary.accessories)}</td>
 
                 </tr>
 
@@ -4946,7 +4964,7 @@ export function CalculatorPage({
 
                   </td>
 
-                  <td className="r font-mono font-bold">{inr2(summary.beforeGst)}</td>
+                  <td className="r font-mono font-bold">{renderLiveVal(summary.beforeGst)}</td>
 
                 </tr>
 
@@ -4954,7 +4972,7 @@ export function CalculatorPage({
 
                   <td>GST (18%)</td>
 
-                  <td className="r font-mono">{inr2(summary.gst)}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.gst)}</td>
 
                 </tr>
 
@@ -4963,7 +4981,7 @@ export function CalculatorPage({
                     <strong>Total Quotation Value ({activeSysName})</strong>
                   </td>
                   <td className="r font-mono font-bold text-green" style={{ fontSize: 18 }}>
-                    {serverCalculating ? <span style={{ fontSize: 13, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(summary.sales)}
+                    {renderLiveVal(summary.sales, inr)}
                   </td>
                 </tr>
                   </>
@@ -5037,18 +5055,18 @@ export function CalculatorPage({
                       <td>
                         <strong>Subtotal Before GST (All Systems)</strong>
                       </td>
-                      <td className="r font-mono font-bold text-navy">{inr2(allSystemsTotals.beforeGst)}</td>
+                      <td className="r font-mono font-bold text-navy">{renderLiveVal(allSystemsTotals.beforeGst)}</td>
                     </tr>
                     <tr>
                       <td>GST (18% on Before GST)</td>
-                      <td className="r font-mono">{inr2(allSystemsTotals.gst)}</td>
+                      <td className="r font-mono">{renderLiveVal(allSystemsTotals.gst)}</td>
                     </tr>
                     <tr className="final-sales-row" style={{ background: '#ecfdf5', borderTop: '2px solid #10b981' }}>
                       <td>
                         <strong style={{ fontSize: 14 }}>Combined Total Quotation Amount ({systems.length} Systems)</strong>
                       </td>
                       <td className="r font-mono font-bold text-green" style={{ fontSize: 20, color: '#047857' }}>
-                        {serverCalculating ? <span style={{ fontSize: 14, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(allSystemsTotals.sales)}
+                        {renderLiveVal(allSystemsTotals.sales, inr)}
                       </td>
                     </tr>
                   </>
@@ -5201,7 +5219,7 @@ export function CalculatorPage({
 
                   </td>
 
-                  <td className="r font-mono font-bold text-navy">{inr2(summary.beforeGst)}</td>
+                  <td className="r font-mono font-bold text-navy">{renderLiveVal(summary.beforeGst)}</td>
 
                 </tr>
 
@@ -5209,7 +5227,7 @@ export function CalculatorPage({
 
                   <td>GST (18% on Before GST)</td>
 
-                  <td className="r font-mono">{inr2(summary.gst)}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.gst)}</td>
 
                 </tr>
 
@@ -5220,7 +5238,7 @@ export function CalculatorPage({
                     <strong style={{ fontSize: 14 }}>Total Quotation Amount ({activeSysName})</strong>
                   </td>
                   <td className="r font-mono font-bold text-green" style={{ fontSize: 20 }}>
-                    {serverCalculating ? <span style={{ fontSize: 14, color: '#047857', fontStyle: 'italic' }}>calculating…</span> : inr(summary.sales)}
+                    {renderLiveVal(summary.sales, inr)}
                   </td>
                 </tr>
                   </>

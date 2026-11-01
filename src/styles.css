@@ -3063,3 +3063,25 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
     display: none !important;
   }
 }
+
+@keyframes calcPulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+.live-calc-pulse {
+  display: inline-block;
+  min-width: 28px;
+  text-align: right;
+  color: #94a3b8;
+  letter-spacing: 2px;
+  font-weight: 600;
+  animation: calcPulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
