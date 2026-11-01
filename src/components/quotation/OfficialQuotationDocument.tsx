@@ -244,15 +244,13 @@ export function computeUnitWiseBreakdown(
       const base_price = m.qty * unit_rate
       const itemProfit = base_price * (profitPct / 100)
       const baseWithProfit = base_price + itemProfit
-      itemDiscount = baseWithProfit * (discountPct / 100)
-      const baseFinal = baseWithProfit - itemDiscount
-
       const logisticsAmount = m.qty * logisticsPerUnit
-      final_amount = baseFinal + logisticsAmount
-      final_unit_rate = final_amount / m.qty
-
       itemPriceWithProfit = baseWithProfit + logisticsAmount
       unit_rate_with_profit = itemPriceWithProfit / m.qty
+
+      itemDiscount = itemPriceWithProfit * (discountPct / 100)
+      final_amount = itemPriceWithProfit - itemDiscount
+      final_unit_rate = final_amount / m.qty
     } else {
       const itemProfit = total_price * (profitPct / 100)
       itemPriceWithProfit = total_price + itemProfit
