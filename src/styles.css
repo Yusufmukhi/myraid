@@ -1070,15 +1070,30 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 /* Tier 1: Project Header & Action Strip */
 .top-project-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px 16px;
   background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  flex-wrap: wrap;
+}
+
+.top-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.top-project-row-upper {
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 8px;
+}
+
+.top-project-row-lower {
+  padding-top: 2px;
 }
 
 .top-project-left {
@@ -1119,6 +1134,27 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   gap: 8px;
 }
 
+.top-project-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.top-project-lower-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.top-project-lower-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -1136,8 +1172,7 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   border: 1.5px solid #c084fc;
   border-radius: 8px;
   padding: 4px 12px;
-  min-width: 140px;
-  max-width: 100%;
+  min-width: 150px;
   box-sizing: border-box;
   box-shadow: 0 2px 6px rgba(124, 58, 237, 0.12);
   gap: 2px;
@@ -1832,6 +1867,31 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   .top-pills {
     flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .top-project-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .top-project-tools,
+  .top-project-lower-left,
+  .top-project-lower-right {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .top-project-tools .btn,
+  .top-project-lower-right .btn {
+    flex: 1;
+    min-width: 70px;
+    justify-content: center;
+    height: 34px;
+    padding: 0 8px;
+    font-size: 12px;
   }
 
   .top-actions {

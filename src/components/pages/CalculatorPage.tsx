@@ -2948,6 +2948,9 @@ export function CalculatorPage({
 
       <div className="card top-project-bar">
 
+        {/* Upper Row: Project Identity, Status Pills, and Secondary Utility Actions */}
+        <div className="top-project-row top-project-row-upper">
+
         <div className="top-project-left">
 
           <input
@@ -3088,235 +3091,146 @@ export function CalculatorPage({
 
 
 
-        <div className="top-actions">
-
-          {isAdminOrOwner && (
-
-            <button className="btn ghost sm" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
-
-              {Icon.grid} Sheets
-
-            </button>
-
-          )}
-
-          <button
-
-            className="btn ghost sm"
-
-            onClick={openShareModal}
-
-            title="Share this quotation with other staff"
-
-          >
-
-            {Icon.users} Share
-
-          </button>
-
-          <button
-
-            className="btn ghost sm"
-
-            onClick={() => {
-
-              setReviseName(parseRevision(name || project.name).nextName)
-
-              setShowReviseModal(true)
-
-            }}
-
-            title={`Create new revision Rev ${revInfo.nextRev}`}
-
-          >
-
-            {Icon.refresh} Revise ({revInfo.nextRev})
-
-          </button>
-
-          <button className="btn ghost sm" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
-
-            {Icon.copy} Copy
-
-          </button>
-
-          {/* Direct Quotation Presentation Format Selector */}
-
-          <div
-
-            style={{
-
-              display: 'inline-flex',
-
-              alignItems: 'center',
-
-              background: '#f8fafc',
-
-              padding: '2px 3px',
-
-              borderRadius: '6px',
-
-              border: '1px solid #cbd5e1',
-
-              gap: '2px',
-
-            }}
-
-          >
-
-            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#475569', padding: '0 5px', textTransform: 'uppercase', letterSpacing: '0.2px' }}>
-
-              Format:
-
-            </span>
-
+          <div className="top-project-tools">
+            {isAdminOrOwner && (
+              <button className="btn ghost sm" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
+                {Icon.grid} Sheets
+              </button>
+            )}
             <button
-
-              type="button"
-
-              className={`btn xs ${quotationMode === 'set_wise' ? 'primary' : 'ghost'}`}
-
-              onClick={() => handleQuotationModeChange('set_wise')}
-
-              style={
-
-                quotationMode === 'set_wise'
-
-                  ? { background: '#0f172a', borderColor: '#0f172a', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
-
-                  : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
-
-              }
-
-              title="System / Set-Wise: SYSTEM A, B, C (1 SET rate)"
-
+              className="btn ghost sm"
+              onClick={openShareModal}
+              title="Share this quotation with other staff"
             >
-
-              📦 System / Set-Wise
-
+              {Icon.users} Share
             </button>
-
             <button
-
-              type="button"
-
-              className={`btn xs ${quotationMode === 'unit_wise' ? 'primary' : 'ghost'}`}
-
-              onClick={() => handleQuotationModeChange('unit_wise')}
-
-              style={
-
-                quotationMode === 'unit_wise'
-
-                  ? { background: '#0f172a', borderColor: '#0f172a', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
-
-                  : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
-
-              }
-
-              title="Individual Unit-Wise: Line-by-line model rates (DFMU, SFMU, SFFU) including transportation & extra amount"
-
-            >
-
-              📊 Individual Unit-Wise
-
-            </button>
-
-          </div>
-
-          <button
-
-            className="btn primary sm"
-
-            onClick={() => setShowOfficialQuotation(true)}
-
-            title="View & Print Official Myriad Storage 2-Page Quotation"
-
-            style={{ background: '#0f172a', borderColor: '#0f172a', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-
-          >
-
-            {Icon.fileText} Official Quotation (PDF)
-
-          </button>
-
-          <button className="btn primary sm" disabled={saving} onClick={() => save()}>
-
-            {saving ? <Spinner size={14} /> : Icon.save} Save
-
-          </button>
-
-          {/* Admin Cut-to-Cut 3-Line Summary: Profit, Total, Ratio */}
-
-          {isAdminOrOwner && c2cSummary && (
-
-            <div
-
-              className="c2c-top-summary-badge"
-
-              style={{
-                display: 'inline-flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                background: 'linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%)',
-                border: '1.5px solid #c084fc',
-                borderRadius: '8px',
-                padding: '4px 12px',
-                minWidth: '140px',
-                maxWidth: '100%',
-                boxSizing: 'border-box',
-                boxShadow: '0 2px 6px rgba(124, 58, 237, 0.12)',
-                gap: '2px',
-                flexShrink: 0,
+              className="btn ghost sm"
+              onClick={() => {
+                setReviseName(parseRevision(name || project.name).nextName)
+                setShowReviseModal(true)
               }}
-
-              title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
-
+              title={`Create new revision Rev ${revInfo.nextRev}`}
             >
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                <span style={{ fontSize: '9px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
-                  {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYSTEMS)` : 'C2C ANALYSIS'}
-                </span>
-                {serverCalculating ? (
-                  <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                    <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
-
-                <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
-
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}</span>
-
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
-
-                <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
-
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}</span>
-
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
-
-                <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
-
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span></span>
-
-              </div>
-
-            </div>
-
-          )}
-
+              {Icon.refresh} Revise ({revInfo.nextRev})
+            </button>
+            <button className="btn ghost sm" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
+              {Icon.copy} Copy
+            </button>
+          </div>
         </div>
 
+        {/* Lower Row: Quotation Presentation Format & Primary Actions (Save + C2C side-by-side) */}
+        <div className="top-project-row top-project-row-lower">
+          <div className="top-project-lower-left">
+            {/* Direct Quotation Presentation Format Selector */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                background: '#f8fafc',
+                padding: '2px 3px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                gap: '2px',
+              }}
+            >
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#475569', padding: '0 5px', textTransform: 'uppercase', letterSpacing: '0.2px' }}>
+                Format:
+              </span>
+              <button
+                type="button"
+                className={`btn xs ${quotationMode === 'set_wise' ? 'primary' : 'ghost'}`}
+                onClick={() => handleQuotationModeChange('set_wise')}
+                style={
+                  quotationMode === 'set_wise'
+                    ? { background: '#0f172a', borderColor: '#0f172a', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
+                    : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
+                }
+                title="System / Set-Wise: SYSTEM A, B, C (1 SET rate)"
+              >
+                📦 System / Set-Wise
+              </button>
+              <button
+                type="button"
+                className={`btn xs ${quotationMode === 'unit_wise' ? 'primary' : 'ghost'}`}
+                onClick={() => handleQuotationModeChange('unit_wise')}
+                style={
+                  quotationMode === 'unit_wise'
+                    ? { background: '#0f172a', borderColor: '#0f172a', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
+                    : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
+                }
+                title="Individual Unit-Wise: Line-by-line model rates (DFMU, SFMU, SFFU) including transportation & extra amount"
+              >
+                📊 Individual Unit-Wise
+              </button>
+            </div>
+          </div>
+
+          <div className="top-project-lower-right">
+            <button
+              className="btn primary sm"
+              onClick={() => setShowOfficialQuotation(true)}
+              title="View & Print Official Myriad Storage 2-Page Quotation"
+              style={{ background: '#0f172a', borderColor: '#0f172a', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '6px', height: '36px' }}
+            >
+              {Icon.fileText} Official Quotation (PDF)
+            </button>
+            <button className="btn primary sm" disabled={saving} onClick={() => save()} style={{ height: '36px', minWidth: '85px' }}>
+              {saving ? <Spinner size={14} /> : Icon.save} Save
+            </button>
+
+            {/* Admin Cut-to-Cut 3-Line Summary: Profit, Total, Ratio */}
+            {isAdminOrOwner && c2cSummary && (
+              <div
+                className="c2c-top-summary-badge"
+                style={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  background: 'linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%)',
+                  border: '1.5px solid #c084fc',
+                  borderRadius: '8px',
+                  padding: '4px 12px',
+                  minWidth: '150px',
+                  boxSizing: 'border-box',
+                  boxShadow: '0 2px 6px rgba(124, 58, 237, 0.12)',
+                  gap: '2px',
+                  flexShrink: 0,
+                }}
+                title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+                    {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYSTEMS)` : 'C2C ANALYSIS'}
+                  </span>
+                  {serverCalculating ? (
+                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span></span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
 
