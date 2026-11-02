@@ -1388,9 +1388,11 @@ export function CalculatorPage({
     if (!raw) return null
 
     // Ensure C2C direct costBase strictly includes: Ex-Works + Transport + Accommodation + Installation + Extra Amount
-    const trans = raw.transport ?? (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : 0)
-    const acc = raw.accommodation ?? (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : 0)
-    const inst = includeInstallation ? (raw.installation ?? (raw.rawInstallation ?? 0)) : 0
+    const projectTrans = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
+    const projectAcc = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+    const trans = (raw.transport && raw.transport > 0) ? raw.transport : projectTrans
+    const acc = (raw.accommodation && raw.accommodation > 0) ? raw.accommodation : projectAcc
+    const inst = includeInstallation ? ((raw.installation && raw.installation > 0) ? raw.installation : (raw.rawInstallation ?? 0)) : 0
     const extraTot = (raw.extraAmount ?? extraAmount ?? 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
     const effC2cCostBase = raw.subtotal + inst + trans + acc + extraTot
 
@@ -1402,7 +1404,7 @@ export function CalculatorPage({
       extraAmount: raw.extraAmount ?? extraAmount ?? 0,
       costBase: effC2cCostBase,
     }
-  }, [isAdminOrOwner, serverQuote, serverCalculating, liveC2cSummary, project.summary?.c2cSummary, overrides, includeInstallation, extraAmount])
+  }, [isAdminOrOwner, serverQuote, serverCalculating, liveC2cSummary, project.summary?.c2cSummary, overrides, includeInstallation, extraAmount, wb])
 
 
 
@@ -2780,37 +2782,31 @@ export function CalculatorPage({
 
   // Line 3: Ratio = Total ÷ Cut-to-Cut Steel Weight
 
-  const isServerQuoteMatching = !serverCalculating && serverQuote && (!serverQuote.systems || serverQuote.systems.length === systems.length)
-
   // Single active system C2C metrics
-  const singleC2CProfit = (isServerQuoteMatching && systems.length === 1 && serverQuote.c2c_profit !== undefined)
-    ? serverQuote.c2c_profit
-    : (c2cSummary ? (summary.subtotalWithProfit * activeSysQty) - (c2cSummary.costBase * activeSysQty) : 0)
+  const singleC2CProfit = c2cSummary
+    ? (summary.subtotalWithProfit * activeSysQty) - (c2cSummary.costBase * activeSysQty)
+    : 0
 
-  const singleC2CTotal = (isServerQuoteMatching && systems.length === 1 && serverQuote.c2c_total !== undefined)
-    ? serverQuote.c2c_total
-    : (c2cSummary ? singleC2CProfit + (c2cSummary.labourSubtotal * activeSysQty) : 0)
+  const singleC2CTotal = c2cSummary
+    ? singleC2CProfit + (c2cSummary.labourSubtotal * activeSysQty)
+    : 0
 
   const singleC2CWeight = (c2cSummary?.totalWeight || 0) * activeSysQty
 
-  const singleC2CRatio = (isServerQuoteMatching && systems.length === 1 && serverQuote.c2c_ratio !== undefined)
-    ? serverQuote.c2c_ratio
-    : (singleC2CWeight > 0 ? singleC2CTotal / singleC2CWeight : 0)
+  const singleC2CRatio = singleC2CWeight > 0 ? singleC2CTotal / singleC2CWeight : 0
 
   // Multi-system combined C2C metrics (System A + System B + System C + ...)
-  const allC2CProfit = (isServerQuoteMatching && systems.length > 1 && serverQuote.c2c_profit !== undefined)
-    ? serverQuote.c2c_profit
-    : ((c2cAllSystemsTotals && allSystemsTotals) ? (allSystemsTotals.beforeGst - c2cAllSystemsTotals.costBase) : singleC2CProfit)
+  const allC2CProfit = (c2cAllSystemsTotals && allSystemsTotals)
+    ? (allSystemsTotals.beforeGst - c2cAllSystemsTotals.costBase)
+    : singleC2CProfit
 
-  const allC2CTotal = (isServerQuoteMatching && systems.length > 1 && serverQuote.c2c_total !== undefined)
-    ? serverQuote.c2c_total
-    : (c2cAllSystemsTotals ? allC2CProfit + c2cAllSystemsTotals.labourSubtotal : singleC2CTotal)
+  const allC2CTotal = c2cAllSystemsTotals
+    ? allC2CProfit + c2cAllSystemsTotals.labourSubtotal
+    : singleC2CTotal
 
   const allC2CWeight = c2cAllSystemsTotals ? c2cAllSystemsTotals.totalWeight : singleC2CWeight
 
-  const allC2CRatio = (isServerQuoteMatching && systems.length > 1 && serverQuote.c2c_ratio !== undefined)
-    ? serverQuote.c2c_ratio
-    : (allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0)
+  const allC2CRatio = allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0
 
   const c2cProfit = singleC2CProfit
   const c2cTotal = singleC2CTotal
@@ -3263,27 +3259,19 @@ export function CalculatorPage({
               className="c2c-top-summary-badge"
 
               style={{
-
                 display: 'inline-flex',
-
                 flexDirection: 'column',
-
                 justifyContent: 'center',
-
                 background: 'linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%)',
-
                 border: '1.5px solid #c084fc',
-
                 borderRadius: '8px',
-
-                padding: '5px 14px',
-
-                minWidth: '155px',
-
+                padding: '4px 12px',
+                minWidth: '140px',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
                 boxShadow: '0 2px 6px rgba(124, 58, 237, 0.12)',
-
                 gap: '2px',
-
+                flexShrink: 0,
               }}
 
               title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
