@@ -44,6 +44,19 @@ interface ClientGroup {
   wonValue: number
 }
 
+function getPageNumbers(current: number, total: number): (number | string)[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total]
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total]
+}
+
 export function ClientRelationsPage({
   session,
   org,
@@ -57,12 +70,14 @@ export function ClientRelationsPage({
   const [members, setMembers] = useState<Member[]>([])
   const [savedClients, setSavedClients] = useState<SavedClient[]>(() => getSavedClients(org.id))
 
-  // Filters
+  // Filters & Pagination
   const [search, setSearch] = useState('')
   const [staffFilter, setStaffFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'won' | 'lost'>('all')
   const [sortBy, setSortBy] = useState<'quotes_desc' | 'value_desc' | 'name_asc'>('quotes_desc')
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set())
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 12
 
   const loadData = async () => {
     try {
@@ -85,6 +100,11 @@ export function ClientRelationsPage({
   useEffect(() => {
     loadData()
   }, [org.id])
+
+  // Reset pagination on filter change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, staffFilter, statusFilter, sortBy])
 
   // Member map for quick staff lookup
   const memberMap = useMemo(() => {
@@ -257,6 +277,14 @@ export function ClientRelationsPage({
     })
   }, [clientGroups, staffFilter, statusFilter, search, sortBy])
 
+  // Pagination calculations
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE))
+  const activePage = Math.min(currentPage, totalPages)
+  const paginatedGroups = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE
+    return filteredGroups.slice(start, start + PAGE_SIZE)
+  }, [filteredGroups, activePage])
+
   // Summary Metrics
   const summaryMetrics = useMemo(() => {
     let totalClientsWithQuotes = 0
@@ -322,18 +350,23 @@ export function ClientRelationsPage({
 
   return (
     <div className="client-relations-page">
-      {/* Top Header */}
-      <div className="activity-top-header mb-3">
+      {/* Top Header Card */}
+      <div className="cr-header-card">
         <div>
-          <h2 style={{ fontSize: '20px', margin: 0, fontWeight: 700 }}>
-            Client &amp; Staff Relations
-          </h2>
-          <p className="tiny muted" style={{ margin: '3px 0 0 0' }}>
-            Account distribution matrix: manage client relationships, view quotation assignments, and track multi-staff interactions.
-          </p>
+          <div className="cr-header-title-row">
+            <span className="cr-header-icon">👥</span>
+            <div>
+              <h2 className="cr-header-title">Client &amp; Staff Relations</h2>
+              <p className="cr-header-subtitle">
+                Account distribution matrix: manage client relationships, track quotation assignments across team members, and view account pipelines.
+              </p>
+            </div>
+          </div>
         </div>
+
         <div className="row gap" style={{ alignItems: 'center' }}>
           <button
+            type="button"
             className="btn ghost sm"
             onClick={handleExpandAll}
             title={expandedClients.size === filteredGroups.length ? 'Collapse All Accounts' : 'Expand All Accounts'}
@@ -342,6 +375,7 @@ export function ClientRelationsPage({
           </button>
           {onNavigate && (
             <button
+              type="button"
               className="btn ghost sm"
               onClick={() => onNavigate('clients')}
               title="Open Client Directory"
@@ -349,69 +383,91 @@ export function ClientRelationsPage({
               {Icon.building} Client Directory
             </button>
           )}
-          <button className="btn ghost sm" onClick={loadData} title="Refresh relations matrix">
+          <button type="button" className="btn ghost sm" onClick={loadData} title="Refresh relations matrix">
             {Icon.refresh} Refresh
           </button>
         </div>
       </div>
 
       {/* KPI Overview Cards */}
-      <div className="grid-cards mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-        <div className="card stat-card">
-          <span className="tiny text-muted uppercase font-bold">Total Clients Tracked</span>
-          <div className="stat-value" style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b' }}>
-            {summaryMetrics.totalClients}
+      <div className="cr-kpi-grid">
+        <div className="cr-kpi-card">
+          <div className="cr-kpi-top">
+            <span className="cr-kpi-label">Total Accounts</span>
+            <div className="cr-kpi-icon-wrap" style={{ background: '#f1f5f9', color: '#0f172a' }}>
+              🏢
+            </div>
           </div>
-          <span className="tiny muted">{summaryMetrics.totalClientsWithQuotes} clients with active quotations</span>
+          <div className="cr-kpi-value">{summaryMetrics.totalClients}</div>
+          <div className="cr-kpi-desc">
+            {summaryMetrics.totalClientsWithQuotes} clients with quotation history
+          </div>
         </div>
 
-        <div className="card stat-card">
-          <span className="tiny text-muted uppercase font-bold">Total Quotations</span>
-          <div className="stat-value" style={{ fontSize: '24px', fontWeight: 700, color: '#2563eb' }}>
+        <div className="cr-kpi-card">
+          <div className="cr-kpi-top">
+            <span className="cr-kpi-label">Total Quotations</span>
+            <div className="cr-kpi-icon-wrap" style={{ background: '#eff6ff', color: '#2563eb' }}>
+              📑
+            </div>
+          </div>
+          <div className="cr-kpi-value" style={{ color: '#2563eb' }}>
             {summaryMetrics.totalQuotes}
           </div>
-          <span className="tiny muted">Handled across {summaryMetrics.activeStaffCount} staff members</span>
+          <div className="cr-kpi-desc">
+            Handled across {summaryMetrics.activeStaffCount} active staff members
+          </div>
         </div>
 
-        <div className="card stat-card">
-          <span className="tiny text-muted uppercase font-bold">Active Pipeline (₹)</span>
-          <div className="stat-value" style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>
+        <div className="cr-kpi-card">
+          <div className="cr-kpi-top">
+            <span className="cr-kpi-label">Active Pipeline</span>
+            <div className="cr-kpi-icon-wrap" style={{ background: '#fef3c7', color: '#d97706' }}>
+              💼
+            </div>
+          </div>
+          <div className="cr-kpi-value" style={{ color: '#b45309' }}>
             {inr(summaryMetrics.totalPipeline)}
           </div>
-          <span className="tiny muted">Quoted &amp; negotiating value</span>
+          <div className="cr-kpi-desc">Quoted &amp; negotiating quotation value</div>
         </div>
 
-        <div className="card stat-card">
-          <span className="tiny text-muted uppercase font-bold">Won Revenue (₹)</span>
-          <div className="stat-value" style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>
+        <div className="cr-kpi-card">
+          <div className="cr-kpi-top">
+            <span className="cr-kpi-label">Won Revenue</span>
+            <div className="cr-kpi-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
+              🏆
+            </div>
+          </div>
+          <div className="cr-kpi-value" style={{ color: '#059669' }}>
             {inr(summaryMetrics.totalWon)}
           </div>
-          <span className="tiny muted">Successfully closed business</span>
+          <div className="cr-kpi-desc">Successfully converted business</div>
         </div>
       </div>
 
-      {/* Filter and Search Controls */}
-      <div className="card filter-bar mb-3">
-        <div className="search-wrap">
-          <span className="search-icon">{Icon.search}</span>
+      {/* Filter and Search Bar */}
+      <div className="cr-filter-card">
+        <div className="cr-search-box">
+          <span className="cr-search-icon">🔍</span>
           <input
             type="text"
-            className="search-input"
+            className="cr-search-input"
             placeholder="Search by client name, quotation title, contact, GST, or handling staff…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
-            <button className="search-clear" onClick={() => setSearch('')}>
+            <button type="button" className="cr-search-clear" onClick={() => setSearch('')}>
               ✕
             </button>
           )}
         </div>
 
-        <div className="filter-selects">
+        <div className="cr-filter-group">
           {/* Staff Filter */}
           <select
-            className="filter-select"
+            className="cr-select"
             value={staffFilter}
             onChange={(e) => setStaffFilter(e.target.value)}
             title="Filter by Handling Staff"
@@ -424,9 +480,9 @@ export function ClientRelationsPage({
             ))}
           </select>
 
-          {/* Quotation Status Filter */}
+          {/* Status Filter */}
           <select
-            className="filter-select"
+            className="cr-select"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
             title="Filter by Quotation Status"
@@ -437,14 +493,14 @@ export function ClientRelationsPage({
             <option value="lost">Lost / Archived Only</option>
           </select>
 
-          {/* Sort By */}
+          {/* Sort Filter */}
           <select
-            className="filter-select"
+            className="cr-select"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
             title="Sort Client Accounts"
           >
-            <option value="quotes_desc">Sort: Most Quotations First</option>
+            <option value="quotes_desc">Sort: Most Quotes First</option>
             <option value="value_desc">Sort: Highest Total Value</option>
             <option value="name_asc">Sort: Client Name (A-Z)</option>
           </select>
@@ -453,125 +509,127 @@ export function ClientRelationsPage({
 
       {/* Main Content: Client List with Handled Quotations */}
       {loading ? (
-        <div className="page-loading card" style={{ padding: '40px', textAlign: 'center' }}>
-          <Spinner size={32} />
-          <p className="muted mt-2">Loading client relationships &amp; quotations…</p>
+        <div className="card" style={{ padding: '60px 20px', textAlign: 'center', background: '#ffffff', borderRadius: '12px' }}>
+          <Spinner size={34} />
+          <p className="muted mt-3" style={{ fontSize: '14px' }}>Loading client relationships &amp; quotations matrix…</p>
         </div>
       ) : filteredGroups.length === 0 ? (
-        <div className="card empty" style={{ padding: '40px', textAlign: 'center' }}>
-          <p>No client relations match your criteria.</p>
-          <button className="btn ghost sm mt-2" onClick={() => { setSearch(''); setStaffFilter('all'); setStatusFilter('all'); }}>
+        <div className="card" style={{ padding: '60px 20px', textAlign: 'center', background: '#ffffff', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+          <span style={{ fontSize: '32px' }}>🔍</span>
+          <h3 style={{ margin: '12px 0 6px 0', fontSize: '16px', color: '#0f172a' }}>No Client Accounts Found</h3>
+          <p className="muted" style={{ margin: 0, fontSize: '13px' }}>No client accounts match your current search and filter criteria.</p>
+          <button
+            type="button"
+            className="btn ghost sm mt-3"
+            onClick={() => {
+              setSearch('')
+              setStaffFilter('all')
+              setStatusFilter('all')
+            }}
+          >
             Reset Filters
           </button>
         </div>
       ) : (
-        <div className="client-relations-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {filteredGroups.map((group) => {
+        <div className="cr-client-list">
+          {paginatedGroups.map((group) => {
             const clientKey = group.clientName.toLowerCase()
             const isExpanded = expandedClients.has(clientKey)
 
             return (
               <div
                 key={clientKey}
-                className={`card client-relation-card ${isExpanded ? 'is-expanded' : ''}`}
-                style={{
-                  border: isExpanded ? '1px solid #93c5fd' : '1px solid #e2e8f0',
-                  boxShadow: isExpanded ? '0 4px 12px rgba(37,99,235,0.08)' : undefined,
-                  transition: 'all 0.2s ease',
-                  padding: '16px',
-                }}
+                className={`cr-client-card ${isExpanded ? 'is-expanded' : ''}`}
               >
-                {/* Client Main Summary Row */}
+                {/* Main Client Summary Row */}
                 <div
-                  className="row between"
-                  style={{
-                    alignItems: 'flex-start',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    gap: '16px',
-                  }}
+                  className="cr-client-header"
                   onClick={() => toggleClientExpand(clientKey)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      toggleClientExpand(clientKey)
+                    }
+                  }}
                 >
-                  {/* Left: Client Details & Staff Tags */}
-                  <div style={{ flex: 1, minWidth: '260px' }}>
-                    <div className="row gap" style={{ alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '18px' }}>🏢</span>
-                      <strong style={{ fontSize: '16px', color: '#0f172a' }}>
-                        {group.clientName}
-                      </strong>
-                      {group.gst && (
-                        <span className="badge" style={{ background: '#f1f5f9', color: '#475569', fontSize: '11px', fontWeight: 600 }}>
-                          GST: {group.gst}
-                        </span>
-                      )}
+                  {/* Left: Avatar + Details + Staff Chips */}
+                  <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flex: 1 }}>
+                    <div className="cr-client-avatar">
+                      🏢
                     </div>
 
-                    {/* Metadata line */}
-                    <div className="row gap" style={{ flexWrap: 'wrap', fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                      {group.contactPerson && (
-                        <span>
-                          <strong>Attn:</strong> {group.contactPerson}
-                        </span>
-                      )}
-                      {group.phone && (
-                        <span>
-                          <strong>Phone:</strong> {group.phone}
-                        </span>
-                      )}
-                      {group.email && (
-                        <span>
-                          <strong>Email:</strong> {group.email}
-                        </span>
-                      )}
-                      {group.address && (
-                        <span title={group.address}>
-                          <strong>Address:</strong> {group.address.slice(0, 45)}{group.address.length > 45 ? '…' : ''}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Handling Staff Badges */}
-                    <div className="row gap" style={{ alignItems: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
-                      <span className="tiny font-bold uppercase" style={{ color: '#64748b', marginRight: '2px' }}>
-                        Handling Staff:
-                      </span>
-                      {group.staffList.length === 0 ? (
-                        <span className="tiny muted">No quotations assigned yet</span>
-                      ) : (
-                        group.staffList.map((st) => (
-                          <span
-                            key={st.staffUsername}
-                            className="badge"
-                            style={{
-                              background: '#eff6ff',
-                              color: '#1d4ed8',
-                              border: '1px solid #bfdbfe',
-                              fontSize: '11px',
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                              fontWeight: 600,
-                            }}
-                            title={`${st.displayName} handles ${st.count} quotation(s) totalling ${inr(st.totalValue)}`}
-                          >
-                            👤 {st.displayName} (<strong>{st.count} quote{st.count > 1 ? 's' : ''}</strong>)
+                    <div className="cr-client-info">
+                      <div className="cr-client-name-row">
+                        <span className="cr-client-title">{group.clientName}</span>
+                        {group.gst && (
+                          <span className="cr-gst-tag">
+                            GST: {group.gst}
                           </span>
-                        ))
-                      )}
+                        )}
+                      </div>
+
+                      {/* Contact metadata */}
+                      <div className="cr-meta-chips">
+                        {group.contactPerson && (
+                          <span className="cr-meta-item">
+                            <span>👤</span> <strong>Attn:</strong> {group.contactPerson}
+                          </span>
+                        )}
+                        {group.phone && (
+                          <span className="cr-meta-item">
+                            <span>📞</span> {group.phone}
+                          </span>
+                        )}
+                        {group.email && (
+                          <span className="cr-meta-item">
+                            <span>✉️</span> {group.email}
+                          </span>
+                        )}
+                        {group.address && (
+                          <span className="cr-meta-item" title={group.address}>
+                            <span>📍</span> {group.address.slice(0, 40)}{group.address.length > 40 ? '…' : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Staff Handling Chips */}
+                      <div className="cr-staff-badges-wrap">
+                        <span className="cr-staff-label">Handled By:</span>
+                        {group.staffList.length === 0 ? (
+                          <span className="tiny muted">No quotations assigned yet</span>
+                        ) : (
+                          group.staffList.map((st) => (
+                            <span
+                              key={st.staffUsername}
+                              className="cr-staff-badge"
+                              title={`${st.displayName} (@${st.staffUsername}) handles ${st.count} quotation(s) totalling ${inr(st.totalValue)}`}
+                            >
+                              <span className="cr-staff-avatar-mini">
+                                {st.displayName.charAt(0).toUpperCase()}
+                              </span>
+                              <span>{st.displayName}</span>
+                              <span className="cr-staff-count">{st.count}</span>
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Right: Metrics & Expand Toggle */}
-                  <div className="row gap" style={{ alignItems: 'center', minWidth: '280px', justifyContent: 'flex-end' }}>
-                    <div style={{ textAlign: 'right', marginRight: '8px' }}>
-                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b' }}>
+                  {/* Right: Metrics + Action Buttons */}
+                  <div className="cr-client-actions">
+                    <div className="cr-quote-stat-pill">
+                      <div className="cr-quote-count-bold">
                         {group.totalQuotes} Quotation{group.totalQuotes !== 1 ? 's' : ''}
                       </div>
-                      <div className="tiny" style={{ color: '#059669', fontWeight: 600 }}>
+                      <div className="cr-quote-value-bold">
                         {inr(group.totalValue)} total
                       </div>
                       {group.wonValue > 0 && (
-                        <div className="tiny muted">
-                          {inr(group.wonValue)} won ({group.wonQuotes})
+                        <div className="cr-quote-won-tiny">
+                          🏆 {inr(group.wonValue)} won ({group.wonQuotes})
                         </div>
                       )}
                     </div>
@@ -585,7 +643,7 @@ export function ClientRelationsPage({
                           onCreateQuotationWithClient(group.rawClient!)
                         }}
                         title="Create new quotation for this client"
-                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 600 }}
                       >
                         + New Quote
                       </button>
@@ -593,53 +651,49 @@ export function ClientRelationsPage({
 
                     <button
                       type="button"
-                      className="btn ghost sm"
+                      className="cr-btn-toggle"
                       onClick={(e) => {
                         e.stopPropagation()
                         toggleClientExpand(clientKey)
                       }}
-                      style={{ padding: '4px 8px', minWidth: '32px' }}
-                      title={isExpanded ? 'Collapse' : 'Expand'}
+                      title={isExpanded ? 'Collapse quotations' : 'Expand quotations'}
                     >
-                      {isExpanded ? '▴' : '▾'}
+                      <span>{isExpanded ? 'Hide' : 'View'} ({group.projects.length})</span>
+                      <span style={{ fontSize: '11px' }}>{isExpanded ? '▴' : '▾'}</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Expanded Table: Quotations for this Client */}
+                {/* Expanded Drawer: All Quotations for this Client */}
                 {isExpanded && (
-                  <div
-                    className="client-quotations-drawer mt-3 pt-3"
-                    style={{
-                      borderTop: '1px solid #e2e8f0',
-                      animation: 'fadeIn 0.15s ease',
-                    }}
-                  >
-                    <div className="row between mb-2" style={{ alignItems: 'center' }}>
-                      <strong style={{ fontSize: '13px', color: '#334155' }}>
-                        Quotations for {group.clientName} ({group.projects.length})
-                      </strong>
-                      <span className="tiny muted">
-                        Click on any quotation to open directly in the calculator
-                      </span>
+                  <div className="cr-drawer">
+                    <div className="cr-drawer-header">
+                      <div>
+                        <strong style={{ fontSize: '13.5px', color: '#0f172a' }}>
+                          Quotations for {group.clientName} ({group.projects.length})
+                        </strong>
+                        <div className="tiny muted" style={{ marginTop: '2px' }}>
+                          Manage handled estimates, check staff ownership, and jump directly to the calculator.
+                        </div>
+                      </div>
                     </div>
 
                     {group.projects.length === 0 ? (
-                      <div className="empty" style={{ padding: '16px', background: '#f8fafc', borderRadius: '6px' }}>
+                      <div className="empty" style={{ padding: '20px', background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
                         <p className="tiny muted" style={{ margin: 0 }}>
                           No quotations created yet for this client account.
                         </p>
                       </div>
                     ) : (
-                      <div className="table-responsive" style={{ overflowX: 'auto' }}>
-                        <table className="table" style={{ width: '100%', fontSize: '12.5px', margin: 0 }}>
+                      <div className="cr-table-wrap">
+                        <table className="cr-table">
                           <thead>
-                            <tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
-                              <th style={{ padding: '8px 10px', width: '30%' }}>Quotation / Project</th>
-                              <th style={{ padding: '8px 10px', width: '22%' }}>Handled / Created By</th>
-                              <th style={{ padding: '8px 10px', width: '15%' }}>Status</th>
-                              <th style={{ padding: '8px 10px', width: '15%', textAlign: 'right' }}>Total Value</th>
-                              <th style={{ padding: '8px 10px', width: '18%', textAlign: 'right' }}>Action</th>
+                            <tr>
+                              <th style={{ width: '32%' }}>Quotation / Project</th>
+                              <th style={{ width: '24%' }}>Handled / Created By</th>
+                              <th style={{ width: '14%' }}>Status</th>
+                              <th style={{ width: '16%', textAlign: 'right' }}>Total Value</th>
+                              <th style={{ width: '14%', textAlign: 'right' }}>Action</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -652,36 +706,29 @@ export function ClientRelationsPage({
                               const isLoss = proj.is_archived || proj.status === 'loss' || proj.status === 'archived' || proj.status === 'lost'
                               const isWon = !proj.is_archived && (proj.status === 'won' || proj.status === 'approved')
                               const isNegotiating = proj.status === 'negotiating'
+
+                              const statusClass = isWon ? 'cr-badge-won' : isLoss ? 'cr-badge-loss' : isNegotiating ? 'cr-badge-negotiating' : 'cr-badge-quoted'
                               const statusLabel = isWon ? 'WON' : isLoss ? 'LOST' : isNegotiating ? 'NEGOTIATING' : 'QUOTED'
-                              const statusBg = isWon ? '#dcfce7' : isLoss ? '#f1f5f9' : isNegotiating ? '#fef3c7' : '#dbeafe'
-                              const statusColor = isWon ? '#15803d' : isLoss ? '#64748b' : isNegotiating ? '#b45309' : '#1d4ed8'
 
                               return (
-                                <tr
-                                  key={proj.id}
-                                  style={{
-                                    borderBottom: '1px solid #f1f5f9',
-                                    transition: 'background 0.15s ease',
-                                  }}
-                                  className="client-project-row"
-                                >
+                                <tr key={proj.id}>
                                   {/* Quotation Name */}
-                                  <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
-                                    <div style={{ fontWeight: 600, color: '#1e293b' }}>
+                                  <td>
+                                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>
                                       {proj.name}
                                     </div>
-                                    <div className="tiny muted font-mono">
+                                    <div className="tiny muted font-mono" style={{ marginTop: '2px' }}>
                                       ID: {proj.id.slice(0, 8)}… • {timeAgo(proj.updated_at || proj.created_at)}
                                     </div>
                                   </td>
 
                                   {/* Handled By Staff */}
-                                  <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
+                                  <td>
                                     <div className="row gap" style={{ alignItems: 'center' }}>
                                       <div
                                         style={{
-                                          width: '24px',
-                                          height: '24px',
+                                          width: '26px',
+                                          height: '26px',
                                           borderRadius: '50%',
                                           background: '#e0e7ff',
                                           color: '#4338ca',
@@ -690,55 +737,47 @@ export function ClientRelationsPage({
                                           justifyContent: 'center',
                                           fontWeight: 700,
                                           fontSize: '11px',
+                                          flexShrink: 0,
                                         }}
                                       >
                                         {staffName.charAt(0).toUpperCase()}
                                       </div>
                                       <div>
-                                        <div style={{ fontWeight: 600, color: '#334155' }}>
+                                        <div style={{ fontWeight: 600, color: '#1e293b' }}>
                                           {staffName}
                                         </div>
-                                        <span className="tiny muted font-mono">
-                                          @{creatorKey} • {staffRole}
-                                        </span>
+                                        <div className="tiny muted font-mono">
+                                          @{creatorKey} • <span style={{ textTransform: 'capitalize' }}>{staffRole}</span>
+                                        </div>
                                       </div>
                                     </div>
                                   </td>
 
                                   {/* Status */}
-                                  <td style={{ padding: '8px 10px', verticalAlign: 'middle' }}>
-                                    <span
-                                      className="badge"
-                                      style={{
-                                        background: statusBg,
-                                        color: statusColor,
-                                        fontWeight: 700,
-                                        fontSize: '11px',
-                                        padding: '2px 8px',
-                                        borderRadius: '6px',
-                                      }}
-                                    >
+                                  <td>
+                                    <span className={`cr-quote-badge ${statusClass}`}>
+                                      {isWon ? '✓ ' : isNegotiating ? '⏳ ' : isLoss ? '✕ ' : '• '}
                                       {statusLabel}
                                     </span>
                                   </td>
 
                                   {/* Total Value */}
-                                  <td style={{ padding: '8px 10px', verticalAlign: 'middle', textAlign: 'right' }}>
-                                    <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>
+                                  <td style={{ textAlign: 'right' }}>
+                                    <strong style={{ color: '#0f172a', fontFamily: 'monospace', fontSize: '13px' }}>
                                       {inr(Number(proj.total) || 0)}
                                     </strong>
                                   </td>
 
                                   {/* Action */}
-                                  <td style={{ padding: '8px 10px', verticalAlign: 'middle', textAlign: 'right' }}>
+                                  <td style={{ textAlign: 'right' }}>
                                     <button
                                       type="button"
-                                      className="btn primary sm"
-                                      style={{ padding: '4px 10px', fontSize: '11.5px', whiteSpace: 'nowrap' }}
+                                      className="cr-btn-open"
                                       onClick={() => onOpenProject(proj.id)}
                                       title="Open this quotation in the calculator"
                                     >
-                                      {Icon.fileText} Open Quote →
+                                      <span>Open Quote</span>
+                                      <span>→</span>
                                     </button>
                                   </td>
                                 </tr>
@@ -753,6 +792,72 @@ export function ClientRelationsPage({
               </div>
             )
           })}
+
+          {/* Google-Style Pagination Footer */}
+          {filteredGroups.length > 0 && (
+            <div className="google-pagination-container mt-2">
+              <div className="pagination-info">
+                Showing <strong>{(activePage - 1) * PAGE_SIZE + 1}</strong> – <strong>{Math.min(activePage * PAGE_SIZE, filteredGroups.length)}</strong> of <strong>{filteredGroups.length}</strong> client accounts
+              </div>
+
+              {totalPages > 1 && (
+                <div className="google-pagination-controls">
+                  <button
+                    type="button"
+                    className="pagination-nav-btn"
+                    disabled={activePage <= 1}
+                    onClick={() => {
+                      setCurrentPage((p) => Math.max(1, p - 1))
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    title="Previous Page"
+                  >
+                    ‹ Previous
+                  </button>
+
+                  <div className="pagination-numbers">
+                    {getPageNumbers(activePage, totalPages).map((p, idx) => {
+                      if (p === '...') {
+                        return (
+                          <span key={`dots-${idx}`} className="pagination-ellipsis">
+                            …
+                          </span>
+                        )
+                      }
+                      const pageNum = Number(p)
+                      const isActive = pageNum === activePage
+                      return (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          className={`pagination-number-btn ${isActive ? 'active' : ''}`}
+                          onClick={() => {
+                            setCurrentPage(pageNum)
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                          }}
+                        >
+                          {pageNum}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="pagination-nav-btn"
+                    disabled={activePage >= totalPages}
+                    onClick={() => {
+                      setCurrentPage((p) => Math.min(totalPages, p + 1))
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    title="Next Page"
+                  >
+                    Next ›
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
