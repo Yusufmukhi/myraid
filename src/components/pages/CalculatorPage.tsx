@@ -2951,167 +2951,99 @@ export function CalculatorPage({
 
 
       {/* ------------------------------------------------ TOP TIER 1: Clean Project Header & Controls */}
-
       <div className="card top-project-bar">
-
-        {/* Upper Row: Project Identity, Status Pills, and Secondary Utility Actions */}
+        {/* Upper Row: Project Identity, Status Pills, and Toolbar Group */}
         <div className="top-project-row top-project-row-upper">
+          <div className="top-project-left">
+            <div className="top-name-wrapper" title="Quotation Name">
+              <span className="top-name-icon">{Icon.fileText}</span>
+              <input
+                ref={nameInputRef}
+                type="text"
+                className="top-name-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Project name…"
+                disabled={isApprovedLocked}
+              />
+            </div>
 
-        <div className="top-project-left">
-
-          <input
-
-            ref={nameInputRef}
-
-            type="text"
-
-            className="top-name-input"
-
-            value={name}
-
-            onChange={(e) => setName(e.target.value)}
-
-            placeholder="Project name…"
-
-            disabled={isApprovedLocked}
-
-          />
-
-          <div className="top-pills">
-
-            <select
-
-              className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
-
-              value={status === 'draft' ? 'quoted' : status === 'lost' || status === 'archived' ? 'loss' : status === 'approved' ? 'won' : status}
-
-              onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-
-            >
-
-              <option value="quoted">Quoted</option>
-
-              <option value="negotiating">Negotiating</option>
-
-              <option value="won">Won</option>
-
-              <option value="loss">Loss</option>
-
-            </select>
-
-
-
-            {isAdminOrOwner ? (
-
-              <button
-
-                className="chip version-chip"
-
-                onClick={openRecalcModal}
-
-                title="Click to switch template version"
-
+            <div className="top-pills">
+              <select
+                className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
+                value={status === 'draft' ? 'quoted' : status === 'lost' || status === 'archived' ? 'loss' : status === 'approved' ? 'won' : status}
+                onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+                title="Quotation Status"
               >
+                <option value="quoted">Quoted</option>
+                <option value="negotiating">Negotiating</option>
+                <option value="won">Won</option>
+                <option value="loss">Loss</option>
+              </select>
 
-                {Icon.layers} v{project.template_version}
+              {isAdminOrOwner ? (
+                <button
+                  className="chip version-chip"
+                  onClick={openRecalcModal}
+                  title="Click to switch template version"
+                >
+                  {Icon.layers} v{project.template_version}
+                </button>
+              ) : (
+                <span className="chip version-chip" title="Template Version">
+                  {Icon.layers} v{project.template_version}
+                </span>
+              )}
 
-              </button>
+              {isAdminOrOwner && hasNewerTemplate && (
+                <button
+                  className="chip warn-btn"
+                  onClick={openRecalcModal}
+                  title="Newer template version available"
+                >
+                  {Icon.refresh} v{org.current_template_version}
+                </button>
+              )}
 
-            ) : (
+              {dirty ? (
+                <span className="chip warn">● Unsaved</span>
+              ) : (
+                <span className="chip ok">{Icon.check} Saved</span>
+              )}
 
-              <span className="chip version-chip" title="Template Version">
+              {isAdminOrOwner && formulaOverridesCount > 0 && (
+                <span className="chip purple font-mono">
+                  {formulaOverridesCount} Rule{formulaOverridesCount !== 1 ? 's' : ''}
+                </span>
+              )}
 
-                {Icon.layers} v{project.template_version}
+              {revInfo.currentRev ? (
+                <span className="chip primary font-mono font-bold" title={`Quotation Revision: Rev ${revInfo.currentRev}`}>
+                  Rev {revInfo.currentRev}
+                </span>
+              ) : null}
 
-              </span>
-
-            )}
-
-
-
-            {isAdminOrOwner && hasNewerTemplate && (
-
-              <button
-
-                className="chip warn-btn"
-
-                onClick={openRecalcModal}
-
-                title="Newer template version available"
-
-              >
-
-                {Icon.refresh} v{org.current_template_version}
-
-              </button>
-
-            )}
-
-
-
-            {dirty ? (
-
-              <span className="chip warn">● Unsaved</span>
-
-            ) : (
-
-              <span className="chip ok">{Icon.check} Saved</span>
-
-            )}
-
-
-
-            {isAdminOrOwner && formulaOverridesCount > 0 && (
-
-              <span className="chip purple font-mono">
-
-                {formulaOverridesCount} Rule{formulaOverridesCount !== 1 ? 's' : ''}
-
-              </span>
-
-            )}
-
-
-
-            {revInfo.currentRev ? (
-
-              <span className="chip primary font-mono font-bold" title={`Quotation Revision: Rev ${revInfo.currentRev}`}>
-
-                Rev {revInfo.currentRev}
-
-              </span>
-
-            ) : null}
-
-
-
-            {!isAdminOrOwner && (
-
-              <span className="chip warning font-mono">Member View</span>
-
-            )}
-
+              {!isAdminOrOwner && (
+                <span className="chip warning font-mono">Member View</span>
+              )}
+            </div>
           </div>
 
-        </div>
-
-
-
-          <div className="top-project-tools">
+          <div className="top-toolbar-group">
             {isAdminOrOwner && (
-              <button className="btn ghost sm" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
+              <button className="top-toolbar-btn" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
                 {Icon.grid} Sheets
               </button>
             )}
             <button
-              className="btn ghost sm"
+              className="top-toolbar-btn"
               onClick={openShareModal}
               title="Share this quotation with other staff"
             >
               {Icon.users} Share
             </button>
             <button
-              className="btn ghost sm"
+              className="top-toolbar-btn"
               onClick={() => {
                 setReviseName(parseRevision(name || project.name).nextName)
                 setShowReviseModal(true)
@@ -3120,52 +3052,29 @@ export function CalculatorPage({
             >
               {Icon.refresh} Revise ({revInfo.nextRev})
             </button>
-            <button className="btn ghost sm" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
+            <button className="top-toolbar-btn" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
               {Icon.copy} Copy
             </button>
           </div>
         </div>
 
-        {/* Lower Row: Quotation Presentation Format & Primary Actions (Save + C2C side-by-side) */}
+        {/* Lower Row: Quotation Presentation Format & Primary Actions */}
         <div className="top-project-row top-project-row-lower">
           <div className="top-project-lower-left">
-            {/* Direct Quotation Presentation Format Selector */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                background: '#f8fafc',
-                padding: '2px 3px',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                gap: '2px',
-              }}
-            >
-              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#475569', padding: '0 5px', textTransform: 'uppercase', letterSpacing: '0.2px' }}>
-                Format:
-              </span>
+            <div className="top-format-selector">
+              <span className="top-format-label">Format:</span>
               <button
                 type="button"
-                className={`btn xs ${quotationMode === 'set_wise' ? 'primary' : 'ghost'}`}
+                className={`top-format-btn ${quotationMode === 'set_wise' ? 'active' : ''}`}
                 onClick={() => handleQuotationModeChange('set_wise')}
-                style={
-                  quotationMode === 'set_wise'
-                    ? { background: '#0f172a', borderColor: '#0f172a', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
-                    : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
-                }
                 title="System / Set-Wise: SYSTEM A, B, C (1 SET rate)"
               >
                 📦 System / Set-Wise
               </button>
               <button
                 type="button"
-                className={`btn xs ${quotationMode === 'unit_wise' ? 'primary' : 'ghost'}`}
+                className={`top-format-btn ${quotationMode === 'unit_wise' ? 'active' : ''}`}
                 onClick={() => handleQuotationModeChange('unit_wise')}
-                style={
-                  quotationMode === 'unit_wise'
-                    ? { background: '#0f172a', borderColor: '#0f172a', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
-                    : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
-                }
                 title="Individual Unit-Wise: Line-by-line model rates (DFMU, SFMU, SFFU) including transportation & extra amount"
               >
                 📊 Individual Unit-Wise
@@ -3175,14 +3084,13 @@ export function CalculatorPage({
 
           <div className="top-project-lower-right">
             <button
-              className="btn primary sm"
+              className="top-pdf-btn"
               onClick={() => setShowOfficialQuotation(true)}
               title="View & Print Official Myriad Storage 2-Page Quotation"
-              style={{ background: '#0f172a', borderColor: '#0f172a', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '6px', height: '36px' }}
             >
               {Icon.fileText} Official Quotation (PDF)
             </button>
-            <button className="btn primary sm" disabled={saving} onClick={() => save()} style={{ height: '36px', minWidth: '85px' }}>
+            <button className="top-save-btn" disabled={saving} onClick={() => save()}>
               {saving ? <Spinner size={14} /> : Icon.save} Save
             </button>
 

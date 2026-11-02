@@ -2436,14 +2436,10 @@ export function OfficialQuotationDocument({
                                 >
                                   <div
                                     style={{
-                                      display: 'inline-flex',
+                                      display: 'flex',
                                       flexDirection: 'column',
                                       alignItems: 'center',
                                       gap: '2px',
-                                      border: '1px solid #ff0000',
-                                      borderRadius: '2px',
-                                      padding: '3px 12px',
-                                      background: '#fff5f5',
                                     }}
                                   >
                                     {sysNotes.map((note, nIdx) => (
@@ -2634,14 +2630,10 @@ export function OfficialQuotationDocument({
                             >
                               <div
                                 style={{
-                                  display: 'inline-flex',
+                                  display: 'flex',
                                   flexDirection: 'column',
                                   alignItems: 'center',
                                   gap: '2px',
-                                  border: '1px solid #ff0000',
-                                  borderRadius: '2px',
-                                  padding: '3px 12px',
-                                  background: '#fff5f5',
                                 }}
                               >
                                 {sysNotes.map((note, nIdx) => (
