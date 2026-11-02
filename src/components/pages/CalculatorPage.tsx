@@ -1396,7 +1396,7 @@ export function CalculatorPage({
 
     }
 
-    if (serverQuote?.total_combined_bodies) {
+    if (serverQuote?.total_combined_bodies && !serverCalculating && (!serverQuote.systems || serverQuote.systems.length === systems.length)) {
 
       return serverQuote.total_combined_bodies
 
@@ -2654,7 +2654,7 @@ export function CalculatorPage({
 
     if (!isAdminOrOwner || !c2cSummary) return null
 
-    if (serverQuote?.c2c_all_systems && !serverCalculating) return serverQuote.c2c_all_systems
+    if (serverQuote?.c2c_all_systems && !serverCalculating && (!serverQuote.systems || serverQuote.systems.length === systems.length)) return serverQuote.c2c_all_systems
 
     let spTotal = 0
 
@@ -2761,29 +2761,47 @@ export function CalculatorPage({
 
   // Line 3: Ratio = Total ÷ Cut-to-Cut Steel Weight
 
-  const c2cProfit = (serverQuote?.c2c_profit !== undefined && !serverCalculating)
+  const isServerQuoteMatching = !serverCalculating && serverQuote && (!serverQuote.systems || serverQuote.systems.length === systems.length)
+
+  // Single active system C2C metrics
+  const singleC2CProfit = (isServerQuoteMatching && systems.length === 1 && serverQuote.c2c_profit !== undefined)
     ? serverQuote.c2c_profit
     : (c2cSummary ? (summary.subtotalWithProfit * activeSysQty) - (c2cSummary.costBase * activeSysQty) : 0)
 
-  const c2cTotal = (serverQuote?.c2c_total !== undefined && !serverCalculating)
+  const singleC2CTotal = (isServerQuoteMatching && systems.length === 1 && serverQuote.c2c_total !== undefined)
     ? serverQuote.c2c_total
-    : (c2cSummary ? c2cProfit + (c2cSummary.labourSubtotal * activeSysQty) : 0)
+    : (c2cSummary ? singleC2CProfit + (c2cSummary.labourSubtotal * activeSysQty) : 0)
 
-  const c2cTotalWeight = (c2cSummary?.totalWeight || 0) * activeSysQty
+  const singleC2CWeight = (c2cSummary?.totalWeight || 0) * activeSysQty
 
-  const c2cRatio = (serverQuote?.c2c_ratio !== undefined && !serverCalculating)
+  const singleC2CRatio = (isServerQuoteMatching && systems.length === 1 && serverQuote.c2c_ratio !== undefined)
     ? serverQuote.c2c_ratio
-    : (c2cTotalWeight > 0 ? c2cTotal / c2cTotalWeight : 0)
+    : (singleC2CWeight > 0 ? singleC2CTotal / singleC2CWeight : 0)
 
+  // Multi-system combined C2C metrics (System A + System B + System C + ...)
+  const allC2CProfit = (isServerQuoteMatching && systems.length > 1 && serverQuote.c2c_profit !== undefined)
+    ? serverQuote.c2c_profit
+    : ((c2cAllSystemsTotals && allSystemsTotals) ? (allSystemsTotals.beforeGst - c2cAllSystemsTotals.costBase) : singleC2CProfit)
 
+  const allC2CTotal = (isServerQuoteMatching && systems.length > 1 && serverQuote.c2c_total !== undefined)
+    ? serverQuote.c2c_total
+    : (c2cAllSystemsTotals ? allC2CProfit + c2cAllSystemsTotals.labourSubtotal : singleC2CTotal)
 
-  const allC2CProfit = (c2cAllSystemsTotals && allSystemsTotals) ? (allSystemsTotals.beforeGst - c2cAllSystemsTotals.costBase) : c2cProfit
+  const allC2CWeight = c2cAllSystemsTotals ? c2cAllSystemsTotals.totalWeight : singleC2CWeight
 
-  const allC2CTotal = c2cAllSystemsTotals ? allC2CProfit + c2cAllSystemsTotals.labourSubtotal : c2cTotal
+  const allC2CRatio = (isServerQuoteMatching && systems.length > 1 && serverQuote.c2c_ratio !== undefined)
+    ? serverQuote.c2c_ratio
+    : (allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0)
 
-  const allC2CWeight = c2cAllSystemsTotals ? c2cAllSystemsTotals.totalWeight : c2cTotalWeight
+  const c2cProfit = singleC2CProfit
+  const c2cTotal = singleC2CTotal
+  const c2cRatio = singleC2CRatio
+  const c2cTotalWeight = singleC2CWeight
 
-  const allC2CRatio = allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0
+  // Top widget displays aggregate totals across all systems when systems.length > 1
+  const displayC2CProfit = systems.length > 1 ? allC2CProfit : singleC2CProfit
+  const displayC2CTotal = systems.length > 1 ? allC2CTotal : singleC2CTotal
+  const displayC2CRatio = systems.length > 1 ? allC2CRatio : singleC2CRatio
 
 
 
@@ -3254,7 +3272,9 @@ export function CalculatorPage({
             >
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                <span style={{ fontSize: '9px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>C2C ANALYSIS</span>
+                <span style={{ fontSize: '9px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+                  {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYSTEMS)` : 'C2C ANALYSIS'}
+                </span>
                 {serverCalculating ? (
                   <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
@@ -3268,7 +3288,7 @@ export function CalculatorPage({
 
                 <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
 
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(c2cProfit))}</span>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}</span>
 
               </div>
 
@@ -3276,7 +3296,7 @@ export function CalculatorPage({
 
                 <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
 
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(c2cTotal))}</span>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}</span>
 
               </div>
 
@@ -3284,7 +3304,7 @@ export function CalculatorPage({
 
                 <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
 
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>₹{c2cRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span></span>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span></span>
 
               </div>
 
