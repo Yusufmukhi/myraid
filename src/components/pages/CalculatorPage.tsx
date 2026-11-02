@@ -2698,40 +2698,32 @@ export function CalculatorPage({
 
 
 
+    const projectTransport = overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0)
+    const projectAccommodation = overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0)
+
     systems.forEach((sys, idx) => {
-
       const isCurrent = idx === activeSystemIdx
-
       const q = Math.max(1, Number(sys.quantity) || 1)
 
-      let sum = c2cSummary
+      const targetWb = c2cWb || wb
+      const sysOv: Overrides = filterCutToCutOverrides(isCurrent ? overrides : (sys.overrides || {}))
+      // In set-wise multi-system mode, Transport and Accommodation are shared project logistics added once at project level
+      sysOv['Total cal!N24'] = 0
+      sysOv['Total cal!N25'] = 0
+      if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = overrides['Total cal!B49']
+      if (overrides['Total cal!N23'] !== undefined) sysOv['Total cal!N23'] = overrides['Total cal!N23']
 
-      if (!isCurrent) {
-
-        const sysOv: Overrides = filterCutToCutOverrides(sys.overrides || {})
-
-        if (overrides['Total cal!N24'] !== undefined) sysOv['Total cal!N24'] = overrides['Total cal!N24']
-
-        if (overrides['Total cal!N25'] !== undefined) sysOv['Total cal!N25'] = overrides['Total cal!N25']
-
-        if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = overrides['Total cal!B49']
-
-        if (overrides['Total cal!N23'] !== undefined) sysOv['Total cal!N23'] = overrides['Total cal!N23']
-
-        const sysExtra = isCurrent
+      const sysExtra = isCurrent
         ? extraAmount
         : (sys.extraAmount !== undefined
           ? Number(sys.extraAmount)
           : (sys.overrides?.['__extra_amount'] !== undefined ? Number(sys.overrides['__extra_amount']) : 0))
       sysOv['__extra_amount'] = sysExtra
+      sysOv['__include_installation'] = includeInstallation ? 1 : 0
 
-        sysOv['__include_installation'] = includeInstallation ? 1 : 0
-
-        const targetWb = c2cWb || wb
-        targetWb.setFormulaOverrides(sys.formulaOverrides || {})
-        targetWb.setOverrides(sysOv)
-        sum = summarize(targetWb, profitPct, discountPct, includeInstallation, sysExtra)
-      }
+      targetWb.setFormulaOverrides(isCurrent ? { ...formulaOverrides, ...(project.summary?.c2c_formula_overrides || {}) } : (sys.formulaOverrides || {}))
+      targetWb.setOverrides(sysOv)
+      const sum = summarize(targetWb, profitPct, discountPct, includeInstallation, sysExtra)
 
       spTotal += (sum.steel?.spTotal || 0) * q
       trolleyTotal += (sum.trolley?.total || 0) * q
@@ -2743,6 +2735,9 @@ export function CalculatorPage({
       beforeGst += (sum.beforeGst || 0) * q
       sales += (sum.sales || 0) * q
     })
+
+    // Add single shared project Transport and Accommodation once to total combined C2C cost base
+    costBase += projectTransport + projectAccommodation
 
     // Reset targetWb back to current active system state
     const targetWb = c2cWb || wb
