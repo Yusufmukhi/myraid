@@ -3908,13 +3908,13 @@ export function CalculatorPage({
 
                   <>
 
-                    <th className="col-amount r" style={{ minWidth: 120, background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }} title="Total Unit Rate = Base Rate + Trans/Inst/Acc + Extra Charge">
+                    <th className="col-amount text-center" style={{ minWidth: 120, background: '#e0f2fe', color: '#0369a1', fontWeight: 700, textAlign: 'center' }} title="Total Unit Rate = Base Rate + Trans/Inst/Acc + Extra Charge">
 
                       Total Unit Rate (₹)
 
                     </th>
 
-                    <th className="col-amount r" style={{ minWidth: 120, background: '#f0fdf4', color: '#15803d', fontWeight: 700 }} title="Total Amount = Total Unit Rate × Qty">
+                    <th className="col-amount text-center" style={{ minWidth: 120, background: '#f0fdf4', color: '#15803d', fontWeight: 700, textAlign: 'center' }} title="Total Amount = Total Unit Rate × Qty">
 
                       Total Amount (₹)
 
@@ -3986,9 +3986,9 @@ export function CalculatorPage({
 
                     <td
 
-                      className="col-amount r font-mono font-bold"
+                      className="col-amount text-center font-mono font-bold"
 
-                      style={{ background: '#f0f9ff', color: '#0369a1' }}
+                      style={{ background: '#f0f9ff', color: '#0369a1', textAlign: 'center' }}
 
                       title={`Base: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.unit_rate ?? 0)} + Trans/Inst/Acc: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.transportation ?? 0)}${extraAmount > 0 ? ` + Extra: ${inr2(extraAmount)}` : ''}`}
 
@@ -3998,7 +3998,7 @@ export function CalculatorPage({
 
                     </td>
 
-                    <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
+                    <td className="col-amount text-center font-mono font-bold text-green" style={{ background: '#f0fdf4', textAlign: 'center' }}>
 
                       {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFMU')?.total_price ?? (dfmuModel?.amount ?? activeWb.num('Total cal', 'N4')))}
 
@@ -4068,9 +4068,9 @@ export function CalculatorPage({
 
                     <td
 
-                      className="col-amount r font-mono font-bold"
+                      className="col-amount text-center font-mono font-bold"
 
-                      style={{ background: '#f0f9ff', color: '#0369a1' }}
+                      style={{ background: '#f0f9ff', color: '#0369a1', textAlign: 'center' }}
 
                       title={`Base: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.unit_rate ?? 0)} + Trans/Inst/Acc: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.transportation ?? 0)}${extraAmount > 0 ? ` + Extra: ${inr2(extraAmount)}` : ''}`}
 
@@ -4080,7 +4080,7 @@ export function CalculatorPage({
 
                     </td>
 
-                    <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
+                    <td className="col-amount text-center font-mono font-bold text-green" style={{ background: '#f0fdf4', textAlign: 'center' }}>
 
                       {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'SFMU')?.total_price ?? (sfmuModel?.amount ?? activeWb.num('Total cal', 'N8')))}
 
@@ -4150,9 +4150,9 @@ export function CalculatorPage({
 
                     <td
 
-                      className="col-amount r font-mono font-bold"
+                      className="col-amount text-center font-mono font-bold"
 
-                      style={{ background: '#f0f9ff', color: '#0369a1' }}
+                      style={{ background: '#f0f9ff', color: '#0369a1', textAlign: 'center' }}
 
                       title={`Base: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.unit_rate ?? 0)} + Trans/Inst/Acc: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.transportation ?? 0)}${extraAmount > 0 ? ` + Extra: ${inr2(extraAmount)}` : ''}`}
 
@@ -4162,7 +4162,7 @@ export function CalculatorPage({
 
                     </td>
 
-                    <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
+                    <td className="col-amount text-center font-mono font-bold text-green" style={{ background: '#f0fdf4', textAlign: 'center' }}>
 
                       {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'SFFU')?.total_price ?? (sffuModel?.amount ?? activeWb.num('Total cal', 'N12')))}
 
@@ -4232,9 +4232,9 @@ export function CalculatorPage({
 
                     <td
 
-                      className="col-amount r font-mono font-bold"
+                      className="col-amount text-center font-mono font-bold"
 
-                      style={{ background: '#f0f9ff', color: '#0369a1' }}
+                      style={{ background: '#f0f9ff', color: '#0369a1', textAlign: 'center' }}
 
                       title={`Base: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.unit_rate ?? 0)} + Trans/Inst/Acc: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.transportation ?? 0)}${extraAmount > 0 ? ` + Extra: ${inr2(extraAmount)}` : ''}`}
 
@@ -4244,7 +4244,7 @@ export function CalculatorPage({
 
                     </td>
 
-                    <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
+                    <td className="col-amount text-center font-mono font-bold text-green" style={{ background: '#f0fdf4', textAlign: 'center' }}>
 
                       {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFFU')?.total_price ?? (dffuModel?.amount ?? activeWb.num('Total cal', 'N16')))}
 
@@ -4314,9 +4314,9 @@ export function CalculatorPage({
 
                     <td
 
-                      className="col-amount r font-mono font-bold"
+                      className="col-amount text-center font-mono font-bold"
 
-                      style={{ background: '#f0f9ff', color: '#0369a1' }}
+                      style={{ background: '#f0f9ff', color: '#0369a1', textAlign: 'center' }}
 
                       title={`Base: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.unit_rate ?? 0)} + Trans/Inst/Acc: ${inr2(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.transportation ?? 0)}${extraAmount > 0 ? ` + Extra: ${inr2(extraAmount)}` : ''}`}
 
@@ -4326,7 +4326,7 @@ export function CalculatorPage({
 
                     </td>
 
-                    <td className="col-amount r font-mono font-bold text-green" style={{ background: '#f0fdf4' }}>
+                    <td className="col-amount text-center font-mono font-bold text-green" style={{ background: '#f0fdf4', textAlign: 'center' }}>
 
                       {renderLiveVal(calcBreakdown.rows.find((r) => r.model_code === 'DFMU-D' || r.model_code === 'DFFU-D')?.total_price ?? (dfmuDModel?.amount ?? activeWb.num('Total cal', 'N20')))}
 
@@ -4344,13 +4344,13 @@ export function CalculatorPage({
 
               <tr className="excel-foot-row">
 
-                <td colSpan={isAdminOrOwner ? 13 : 11} className="font-bold text-muted r">
+                <td colSpan={isAdminOrOwner ? 13 : 11} className="font-bold text-muted text-center" style={{ textAlign: 'center' }}>
 
                   {isAdminOrOwner ? 'Total Units & Total Value:' : 'Total Units:'}
 
                 </td>
 
-                <td className="col-qty r font-bold text-navy font-mono" style={{ fontSize: 13, background: '#fef3c7' }}>
+                <td className="col-qty text-center font-bold text-navy font-mono" style={{ fontSize: 13, background: '#fef3c7', textAlign: 'center' }}>
 
                   {(summary?.models || []).reduce((acc, m) => acc + m.qty, 0)} nos
 
@@ -4360,9 +4360,9 @@ export function CalculatorPage({
 
                   <>
 
-                    <td className="col-amount r text-muted">—</td>
+                    <td className="col-amount text-center text-muted" style={{ textAlign: 'center' }}>—</td>
 
-                    <td className="col-amount r font-mono font-bold text-green" style={{ fontSize: 15, background: '#dcfce7' }}>
+                    <td className="col-amount text-center font-mono font-bold text-green" style={{ fontSize: 15, background: '#dcfce7', textAlign: 'center' }}>
 
                       {inr2(calcBreakdown.rows.reduce((sum, r) => sum + r.total_price, 0))}
 
@@ -5476,15 +5476,15 @@ export function CalculatorPage({
 
                     <th style={{ padding: '8px 10px', textAlign: 'center' }}>Qty</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Actual Unit Rate</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Actual Unit Rate</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'right', color: '#7c3aed' }}>C2C Unit Rate</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#7c3aed' }}>C2C Unit Rate</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Actual Total</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Actual Total</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'right', color: '#7c3aed' }}>C2C Total</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#7c3aed' }}>C2C Total</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'right', color: '#15803d' }}>Unit Diff (Profit)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#15803d' }}>Unit Diff (Profit)</th>
 
                   </tr>
 
@@ -5509,15 +5509,15 @@ export function CalculatorPage({
 
                         <td style={{ padding: '8px 10px', textAlign: 'center' }}>{m.qty}</td>
 
-                        <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{inr2(m.unitRate)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace' }}>{inr2(m.unitRate)}</td>
 
-                        <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: '#7c3aed', fontWeight: 600 }}>{inr2(c2cUnitRate)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace', color: '#7c3aed', fontWeight: 600 }}>{inr2(c2cUnitRate)}</td>
 
-                        <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{inr2(m.amount)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace' }}>{inr2(m.amount)}</td>
 
-                        <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: '#7c3aed', fontWeight: 600 }}>{inr2(c2cAmount)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace', color: '#7c3aed', fontWeight: 600 }}>{inr2(c2cAmount)}</td>
 
-                        <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: '#15803d', fontWeight: 700 }}>+{inr2(unitDiff * m.qty)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace', color: '#15803d', fontWeight: 700 }}>+{inr2(unitDiff * m.qty)}</td>
 
                       </tr>
 

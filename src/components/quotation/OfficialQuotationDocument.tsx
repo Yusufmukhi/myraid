@@ -2279,11 +2279,11 @@ export function OfficialQuotationDocument({
                         {cleanDimensions(r.dimensions) ? <div className="model-dims">{cleanDimensions(r.dimensions)}</div> : null}
                       </td>
                       <td className="td-qty text-center font-bold">{r.qty}</td>
-                      <td className="td-rate text-center font-mono">{r.unit_rate.toFixed(2)}</td>
-                      <td className="td-rate text-center font-mono">{r.transportation.toFixed(2)}</td>
-                      <td className="td-rate text-center font-mono">{r.total_unit_rate.toFixed(2)}</td>
-                      <td className="td-amount text-center font-mono">{r.total_price.toFixed(2)}</td>
-                      <td className="td-amount text-center font-mono font-bold">{r.total_price_with_profit.toFixed(2)}</td>
+                      <td className="td-rate text-center font-mono" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{r.unit_rate.toFixed(2)}</td>
+                      <td className="td-rate text-center font-mono" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{r.transportation.toFixed(2)}</td>
+                      <td className="td-rate text-center font-mono" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{r.total_unit_rate.toFixed(2)}</td>
+                      <td className="td-amount text-center font-mono" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{r.total_price.toFixed(2)}</td>
+                      <td className="td-amount text-center font-mono font-bold" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{r.total_price_with_profit.toFixed(2)}</td>
                     </tr>
                   ))}
                 </>
@@ -2333,13 +2333,13 @@ export function OfficialQuotationDocument({
                                   </td>
                                   <td
                                     className="td-rate text-center font-mono"
-                                    style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                    style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
                                     {Number(displayRate).toFixed(2)}
                                   </td>
                                   <td
                                     className="td-amount text-center font-mono"
-                                    style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                    style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
                                     {Number(displayAmount).toFixed(2)}
                                   </td>
@@ -2369,13 +2369,13 @@ export function OfficialQuotationDocument({
                           </td>
                           <td
                             className="td-rate text-center font-mono"
-                            style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                            style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                           >
                             {Number(displayRate).toFixed(2)}
                           </td>
                           <td
                             className="td-amount text-center font-mono"
-                            style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                            style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                           >
                             {Number(displayAmount).toFixed(2)}
                           </td>
@@ -2418,7 +2418,7 @@ export function OfficialQuotationDocument({
                             <td
                               className="td-rate text-center font-mono"
                               rowSpan={totalRowSpan}
-                              style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                              style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                             >
                               {Number(displaySetRate).toLocaleString('en-IN', {
                                 minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
@@ -2429,7 +2429,7 @@ export function OfficialQuotationDocument({
                             <td
                               className="td-amount text-center font-mono"
                               rowSpan={totalRowSpan}
-                              style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                              style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                             >
                               {Number(displaySetAmount).toFixed(2)}
                             </td>
@@ -2476,7 +2476,7 @@ export function OfficialQuotationDocument({
                                   <td
                                     className="td-rate text-center font-mono"
                                     rowSpan={s.items.length}
-                                    style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                    style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
                                     {Number(displaySetRate).toLocaleString('en-IN', {
                                       minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
@@ -2487,7 +2487,7 @@ export function OfficialQuotationDocument({
                                   <td
                                     className="td-amount text-center font-mono"
                                     rowSpan={s.items.length}
-                                    style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                    style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
                                     {Number(displaySetAmount).toFixed(2)}
                                   </td>
@@ -2518,32 +2518,32 @@ export function OfficialQuotationDocument({
                     ))}
                   </div>
                 </td>
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">TOTAL</td>
-                <td className="td-sum-val text-center">{(hasDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>TOTAL</td>
+                <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{(hasDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
               </tr>
               {hasDiscount && (
                 <>
                   <tr className="summary-split-row">
-                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">DISCOUNT</td>
-                    <td className="td-sum-val text-center">{totalDiscountAmount.toFixed(2)}</td>
+                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>DISCOUNT</td>
+                    <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{totalDiscountAmount.toFixed(2)}</td>
                   </tr>
                   <tr className="summary-split-row">
-                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">AFTER DISCOUNT</td>
-                    <td className="td-sum-val text-center">{subtotal.toFixed(2)}</td>
+                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>AFTER DISCOUNT</td>
+                    <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{subtotal.toFixed(2)}</td>
                   </tr>
                 </>
               )}
               <tr className="summary-split-row">
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">GST 18%</td>
-                <td className="td-sum-val text-center">{gst18.toFixed(2)}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>GST 18%</td>
+                <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{gst18.toFixed(2)}</td>
               </tr>
               <tr className="summary-split-row">
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">ROUND OFF</td>
-                <td className="td-sum-val text-center">{Math.abs(Number(roundOff)) > 0.001 ? roundOff : ''}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>ROUND OFF</td>
+                <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{Math.abs(Number(roundOff)) > 0.001 ? roundOff : ''}</td>
               </tr>
               <tr className="summary-split-row grand-total-row">
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label grand text-center">GRAND TOTAL</td>
-                <td className="td-sum-val grand text-center">{grandTotal.toFixed(2)}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label grand text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>GRAND TOTAL</td>
+                <td className="td-sum-val grand text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{grandTotal.toFixed(2)}</td>
               </tr>
             </tbody>
           </table>
@@ -3833,39 +3833,39 @@ export function OfficialQuotationDocument({
 
                     {/* Full Table matching user's Excel sheet */}
                     <div style={{ overflowX: 'auto', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#ffffff' }}>
-                      <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse', textAlign: 'right' }}>
+                      <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse', textAlign: 'center' }}>
                         <thead>
-                          <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #cbd5e1', fontWeight: 700, color: '#334155' }}>
-                            <th style={{ textAlign: 'left', padding: '5px' }}>Model</th>
-                            <th style={{ padding: '5px' }}>Qty</th>
-                            <th style={{ padding: '5px' }}>Unit Rate</th>
-                            <th style={{ padding: '5px' }}>Extra Chrg</th>
-                            <th style={{ padding: '5px' }}>Total Unit</th>
-                            <th style={{ padding: '5px' }}>Total Price</th>
-                            <th style={{ padding: '5px', color: '#1e3a8a' }}>+ Profit ({breakdownResult.profitPct}%)</th>
+                          <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #cbd5e1', fontWeight: 700, color: '#334155', textAlign: 'center' }}>
+                            <th style={{ textAlign: 'center', padding: '5px' }}>Model</th>
+                            <th style={{ textAlign: 'center', padding: '5px' }}>Qty</th>
+                            <th style={{ textAlign: 'center', padding: '5px' }}>Unit Rate</th>
+                            <th style={{ textAlign: 'center', padding: '5px' }}>Extra Chrg</th>
+                            <th style={{ textAlign: 'center', padding: '5px' }}>Total Unit</th>
+                            <th style={{ textAlign: 'center', padding: '5px' }}>Total Price</th>
+                            <th style={{ textAlign: 'center', padding: '5px', color: '#1e3a8a' }}>+ Profit ({breakdownResult.profitPct}%)</th>
                           </tr>
                         </thead>
                         <tbody>
                           {breakdownResult.rows.map((r) => (
-                            <tr key={r.model_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ textAlign: 'left', padding: '5px', fontWeight: 600 }}>
+                            <tr key={r.model_code} style={{ borderBottom: '1px solid #f1f5f9', textAlign: 'center' }}>
+                              <td style={{ textAlign: 'center', padding: '5px', fontWeight: 600 }}>
                                 {r.model_code}
                                 <span style={{ fontSize: '8.5px', color: '#64748b', display: 'block' }}>{r.rows_per_unit} rows/unit</span>
                               </td>
-                              <td style={{ padding: '5px' }}>{r.qty}</td>
-                              <td style={{ padding: '5px', fontFamily: 'monospace' }}>{Math.round(r.unit_rate).toLocaleString('en-IN')}</td>
-                              <td style={{ padding: '5px', fontFamily: 'monospace', color: '#0369a1' }}>{r.transportation.toFixed(0)}</td>
-                              <td style={{ padding: '5px', fontFamily: 'monospace' }}>{r.total_unit_rate.toFixed(0)}</td>
-                              <td style={{ padding: '5px', fontFamily: 'monospace' }}>{Math.round(r.total_price).toLocaleString('en-IN')}</td>
-                              <td style={{ padding: '5px', fontFamily: 'monospace', fontWeight: 700, color: '#1e3a8a' }}>
+                              <td style={{ textAlign: 'center', padding: '5px' }}>{r.qty}</td>
+                              <td style={{ textAlign: 'center', padding: '5px', fontFamily: 'monospace' }}>{Math.round(r.unit_rate).toLocaleString('en-IN')}</td>
+                              <td style={{ textAlign: 'center', padding: '5px', fontFamily: 'monospace', color: '#0369a1' }}>{r.transportation.toFixed(0)}</td>
+                              <td style={{ textAlign: 'center', padding: '5px', fontFamily: 'monospace' }}>{r.total_unit_rate.toFixed(0)}</td>
+                              <td style={{ textAlign: 'center', padding: '5px', fontFamily: 'monospace' }}>{Math.round(r.total_price).toLocaleString('en-IN')}</td>
+                              <td style={{ textAlign: 'center', padding: '5px', fontFamily: 'monospace', fontWeight: 700, color: '#1e3a8a' }}>
                                 {Math.round(r.total_price_with_profit).toLocaleString('en-IN')}
                               </td>
                             </tr>
                           ))}
-                          <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #cbd5e1' }}>
-                            <td colSpan={5} style={{ padding: '6px 5px', textAlign: 'left' }}>Subtotal (Before GST):</td>
-                            <td style={{ padding: '6px 5px', fontFamily: 'monospace' }}>₹{Math.round(breakdownResult.totalCostBase).toLocaleString('en-IN')}</td>
-                            <td style={{ padding: '6px 5px', fontFamily: 'monospace', color: '#16a34a' }}>₹{Math.round(breakdownResult.totalPriceWithProfit).toLocaleString('en-IN')}</td>
+                          <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #cbd5e1', textAlign: 'center' }}>
+                            <td colSpan={5} style={{ padding: '6px 5px', textAlign: 'center' }}>Subtotal (Before GST):</td>
+                            <td style={{ padding: '6px 5px', fontFamily: 'monospace', textAlign: 'center' }}>₹{Math.round(breakdownResult.totalCostBase).toLocaleString('en-IN')}</td>
+                            <td style={{ padding: '6px 5px', fontFamily: 'monospace', color: '#16a34a', textAlign: 'center' }}>₹{Math.round(breakdownResult.totalPriceWithProfit).toLocaleString('en-IN')}</td>
                           </tr>
                         </tbody>
                       </table>
