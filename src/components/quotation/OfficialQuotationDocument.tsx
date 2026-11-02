@@ -2382,18 +2382,7 @@ export function OfficialQuotationDocument({
                                 className="td-desc font-bold text-center"
                                 style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.5px', color: '#0f172a', padding: '5px 8px', textAlign: 'center' }}
                               >
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                  <span>{sysTitle} {s.set_label ? `(${s.set_label})` : `(${sysQty} ${s.unit || 'SET'})`}</span>
-                                  {sysNotes.length > 0 && (
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                                      {sysNotes.map((note, nIdx) => (
-                                        <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
-                                          • {note}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
+                                <span>{sysTitle} {s.set_label ? `(${s.set_label})` : `(${sysQty} ${s.unit || 'SET'})`}</span>
                               </td>
                             </tr>
                             {sysItems.map((it, itIdx) => {
@@ -2432,6 +2421,40 @@ export function OfficialQuotationDocument({
                                 </tr>
                               )
                             })}
+                            {sysNotes.length > 0 && (
+                              <tr key={`notes-${s.id || sIdx}`} className="system-notes-row">
+                                <td className="td-sl"></td>
+                                <td
+                                  colSpan={4}
+                                  className="td-desc text-center"
+                                  style={{
+                                    padding: '4px 8px',
+                                    textAlign: 'center',
+                                    verticalAlign: 'middle',
+                                    background: '#ffffff',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: 'inline-flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      border: '1px solid #ff0000',
+                                      borderRadius: '2px',
+                                      padding: '3px 12px',
+                                      background: '#fff5f5',
+                                    }}
+                                  >
+                                    {sysNotes.map((note, nIdx) => (
+                                      <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                                        {note}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
                           </React.Fragment>
                         )
                       })
@@ -2477,9 +2500,6 @@ export function OfficialQuotationDocument({
                     const nextChar = String.fromCharCode(65 + sIdx)
                     const systemTitle = (!isMultiSystem ? '' : (s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`))).trim()
                     const hasItems = s.items && s.items.length > 0
-                    const totalRowSpan = (hasItems ? s.items.length : 0) + (systemTitle ? 1 : 0)
-                    const displaySetRate = setDisplayAmounts[sIdx]?.rate ?? Number(s.rate)
-                    const displaySetAmount = setDisplayAmounts[sIdx]?.amount ?? Number(s.amount)
 
                     const sysDoubleDrive = systemHasDoubleDrive(s)
                     const showSysDoubleDrive = sets.length > 1 && sysDoubleDrive && !allSystemsHaveDoubleDrive
@@ -2494,6 +2514,10 @@ export function OfficialQuotationDocument({
                       sysNotes.push(`${sysTrack} ${sysTrack === 1 ? 'TRACK' : 'TRACKS'}`)
                     }
 
+                    const totalRowSpan = (hasItems ? s.items.length : 0) + (systemTitle ? 1 : 0) + (sysNotes.length > 0 ? 1 : 0)
+                    const displaySetRate = setDisplayAmounts[sIdx]?.rate ?? Number(s.rate)
+                    const displaySetAmount = setDisplayAmounts[sIdx]?.amount ?? Number(s.amount)
+
                     return (
                       <React.Fragment key={s.id}>
                         {systemTitle ? (
@@ -2504,15 +2528,6 @@ export function OfficialQuotationDocument({
                               style={{ fontWeight: 800, textAlign: 'center', fontSize: '11px', letterSpacing: '0.5px' }}
                             >
                               <div>{systemTitle}</div>
-                              {sysNotes.length > 0 && (
-                                <div style={{ marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px', alignItems: 'center' }}>
-                                  {sysNotes.map((note, nIdx) => (
-                                    <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
-                                      {note}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
                             </td>
                             <td className="td-qty"></td>
                             <td
@@ -2605,6 +2620,40 @@ export function OfficialQuotationDocument({
                             </tr>
                           )
                         })}
+                        {sysNotes.length > 0 && (
+                          <tr key={`notes-${s.id || sIdx}`} className="system-notes-row">
+                            <td className="td-sl"></td>
+                            <td
+                              className="td-desc text-center"
+                              style={{
+                                padding: '4px 8px',
+                                textAlign: 'center',
+                                verticalAlign: 'middle',
+                                background: '#ffffff',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  gap: '2px',
+                                  border: '1px solid #ff0000',
+                                  borderRadius: '2px',
+                                  padding: '3px 12px',
+                                  background: '#fff5f5',
+                                }}
+                              >
+                                {sysNotes.map((note, nIdx) => (
+                                  <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                                    {note}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="td-qty"></td>
+                          </tr>
+                        )}
                       </React.Fragment>
                     )
                   })}

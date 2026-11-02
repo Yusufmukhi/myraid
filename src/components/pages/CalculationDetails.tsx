@@ -94,31 +94,43 @@ export function CalculationDetails({
   const selectedSys = systems && systems[currentSystemIdx] ? systems[currentSystemIdx] : null
 
   const effectiveSysOverrides = useMemo(() => {
+    if (currentSystemIdx === 0) {
+      return { ...(selectedSys?.overrides || {}), ...overrides }
+    }
     if (selectedSys && selectedSys.overrides && Object.keys(selectedSys.overrides).length > 0) {
       return selectedSys.overrides
     }
-    return currentSystemIdx === 0 ? overrides : {}
+    return {}
   }, [selectedSys, currentSystemIdx, overrides])
 
   const effectiveSysFormulaOverrides = useMemo(() => {
+    if (currentSystemIdx === 0) {
+      return { ...(selectedSys?.formulaOverrides || {}), ...formulaOverrides }
+    }
     if (selectedSys && selectedSys.formulaOverrides && Object.keys(selectedSys.formulaOverrides).length > 0) {
       return selectedSys.formulaOverrides
     }
-    return currentSystemIdx === 0 ? formulaOverrides : {}
+    return {}
   }, [selectedSys, currentSystemIdx, formulaOverrides])
 
   const effectiveSysC2COverrides = useMemo(() => {
+    if (currentSystemIdx === 0) {
+      return { ...(selectedSys?.c2c_overrides || {}), ...c2cOverrides }
+    }
     if (selectedSys && selectedSys.c2c_overrides) {
       return selectedSys.c2c_overrides
     }
-    return currentSystemIdx === 0 ? c2cOverrides : {}
+    return {}
   }, [selectedSys, currentSystemIdx, c2cOverrides])
 
   const effectiveSysC2CFormulaOverrides = useMemo(() => {
+    if (currentSystemIdx === 0) {
+      return { ...(selectedSys?.c2c_formula_overrides || {}), ...c2cFormulaOverrides }
+    }
     if (selectedSys && selectedSys.c2c_formula_overrides) {
       return selectedSys.c2c_formula_overrides
     }
-    return currentSystemIdx === 0 ? c2cFormulaOverrides : {}
+    return {}
   }, [selectedSys, currentSystemIdx, c2cFormulaOverrides])
 
   const handleApplyInput = (key: string, value: number | null | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {

@@ -608,10 +608,16 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       c2cWb.setFormulaOverrides(effectiveFormulas)
       const newC2CSummary = summarize(c2cWb)
 
+      const systems = currentProject.summary?.systems ? [...currentProject.summary.systems] : undefined
+      if (systems && systems[0]) {
+        systems[0] = { ...systems[0], c2c_formula_overrides: currentC2CFormulas }
+      }
+
       const updated: Project = {
         ...currentProject,
         summary: {
           ...(currentProject.summary || {}),
+          ...(systems ? { systems } : {}),
           c2c_formula_overrides: currentC2CFormulas,
           c2c_summary: newC2CSummary,
           c2cSummary: newC2CSummary,
@@ -633,6 +639,11 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     const newSummary = summarize(baseWb)
     const newC2CSummary = summarize(c2cWb)
 
+    const systems = currentProject.summary?.systems ? [...currentProject.summary.systems] : undefined
+    if (systems && systems[0]) {
+      systems[0] = { ...systems[0], formulaOverrides: nextOverrides }
+    }
+
     const updated: Project = {
       ...currentProject,
       formula_overrides: nextOverrides,
@@ -640,6 +651,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       summary: {
         ...(currentProject.summary || {}),
         ...newSummary,
+        ...(systems ? { systems } : {}),
         c2c_summary: newC2CSummary,
         c2cSummary: newC2CSummary,
       },
@@ -664,10 +676,16 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       c2cWb.setOverrides(effectiveC2C)
       const newC2CSummary = summarize(c2cWb)
 
+      const systems = currentProject.summary?.systems ? [...currentProject.summary.systems] : undefined
+      if (systems && systems[0]) {
+        systems[0] = { ...systems[0], c2c_overrides: currentC2C }
+      }
+
       const updated: Project = {
         ...currentProject,
         summary: {
           ...(currentProject.summary || {}),
+          ...(systems ? { systems } : {}),
           c2c_overrides: currentC2C,
           c2c_summary: newC2CSummary,
           c2cSummary: newC2CSummary,
@@ -691,6 +709,11 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     const newSummary = summarize(baseWb)
     const newC2CSummary = summarize(c2cWb)
 
+    const systems = currentProject.summary?.systems ? [...currentProject.summary.systems] : undefined
+    if (systems && systems[0]) {
+      systems[0] = { ...systems[0], overrides: cleaned }
+    }
+
     const updated: Project = {
       ...currentProject,
       inputs: cleaned,
@@ -698,6 +721,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       summary: {
         ...(currentProject.summary || {}),
         ...newSummary,
+        ...(systems ? { systems } : {}),
         c2c_summary: newC2CSummary,
         c2cSummary: newC2CSummary,
       },
