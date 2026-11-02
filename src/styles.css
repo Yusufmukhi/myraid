@@ -2605,74 +2605,89 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   border: 1px solid #000000;
   padding: 5px 6px;
   color: #000000;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .pdf-goods-table th {
   background: #ffffff;
   font-weight: 700;
   text-align: center;
+  vertical-align: middle;
   font-size: 10.1px;
   padding: 6px 6px;
 }
 
-.th-sl { width: 34px; }
-.th-desc { text-align: center; }
-.th-qty { width: 50px; text-align: center; }
-.th-set { width: 58px; text-align: center; }
-.th-rate { width: 75px; text-align: center; }
-.th-amount { width: 95px; text-align: center; }
+.th-sl { width: 34px; text-align: center; vertical-align: middle; }
+.th-desc { text-align: center; vertical-align: middle; }
+.th-qty { width: 50px; text-align: center; vertical-align: middle; }
+.th-set { width: 58px; text-align: center; vertical-align: middle; }
+.th-rate { width: 75px; text-align: center; vertical-align: middle; }
+.th-amount { width: 95px; text-align: center; vertical-align: middle; }
 
-.td-sl { text-align: center; vertical-align: top; }
-.td-desc { vertical-align: top; }
-.td-desc .model-title { font-weight: 700; font-size: 10.1px; margin-bottom: 2px; }
-.td-desc .model-dims { font-size: 10.1px; }
-.td-qty { text-align: center; vertical-align: top; }
+.td-sl { text-align: center; vertical-align: middle; }
+.td-desc { text-align: center; vertical-align: middle; }
+.td-desc .model-title { font-weight: 700; font-size: 10.1px; margin-bottom: 2px; text-align: center; }
+.td-desc .model-dims { font-size: 10.1px; text-align: center; }
+.td-qty { text-align: center; vertical-align: middle; }
 .td-set { text-align: center; vertical-align: middle; }
-.td-rate { text-align: right; vertical-align: top; }
-.td-amount { text-align: right; vertical-align: top; }
+.td-rate { text-align: center; vertical-align: middle; }
+.td-amount { text-align: center; vertical-align: middle; }
 
 .system-title-row td {
   padding: 4px 6px;
   background-color: #ffffff;
+  text-align: center;
+  vertical-align: middle;
 }
 .system-title-row .td-desc {
   text-align: center;
+  vertical-align: middle;
   font-weight: 800;
   font-size: 11px;
   letter-spacing: 0.5px;
 }
 .pdf-goods-table td[rowSpan] {
   vertical-align: middle;
+  text-align: center;
 }
 
 .td-red-specs {
   vertical-align: middle;
   padding: 8px 8px;
+  text-align: left;
 }
 .red-specs-content {
   color: #ff0000;
   font-weight: 700;
   font-size: 10.1px;
   line-height: 1.38;
+  text-align: left;
 }
 
 .td-sum-label {
-  text-align: right;
+  text-align: center;
+  vertical-align: middle;
   font-weight: 700;
   font-size: 10.1px;
   padding: 5px 6px;
 }
 .td-sum-label.grand {
   font-weight: 800;
+  text-align: center;
+  vertical-align: middle;
 }
 .td-sum-val {
-  text-align: right;
+  text-align: center;
+  vertical-align: middle;
   font-size: 10.1px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 5px 6px;
 }
 .td-sum-val.grand {
   font-weight: 800;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .pdf-words-bar {
@@ -2682,6 +2697,7 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   font-size: 10.1px;
   font-weight: 700;
   color: #ff0000;
+  text-align: center;
 }
 
 .unit-breakdown-table {
@@ -2735,16 +2751,21 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   border: 1px solid #000000;
   padding: 5px 6px;
   color: #000000;
+  text-align: center;
+  vertical-align: middle;
 }
 .pdf-body-table th {
   background: #ffffff;
   font-weight: 700;
   text-align: center;
+  vertical-align: middle;
   font-size: 10.1px;
   padding: 6px 6px;
 }
 .pdf-body-table td {
   font-size: 10.1px;
+  text-align: center;
+  vertical-align: middle;
 }
 .total-body-yellow {
   background-color: #ffff00 !important;

@@ -2078,7 +2078,7 @@ export function OfficialQuotationDocument({
         {bodyItems.map((b, idx) => (
           <tr key={b.id}>
             <td className="text-center">{idx + 1})</td>
-            <td>
+            <td className="text-center">
               <div style={{ fontWeight: 600 }}>{b.title}</div>
               {b.sub_label?.trim() ? <div className="tiny muted">{b.sub_label}</div> : null}
             </td>
@@ -2088,7 +2088,7 @@ export function OfficialQuotationDocument({
           </tr>
         ))}
         <tr className="total-body-row">
-          <td colSpan={4} className="text-right" style={{ fontWeight: 700, paddingRight: '12px' }}>
+          <td colSpan={4} className="text-center" style={{ fontWeight: 700 }}>
             TOTAL BODY
           </td>
           <td className="total-body-yellow text-center">
@@ -2273,17 +2273,17 @@ export function OfficialQuotationDocument({
                   {breakdownResult.rows.map((r, idx) => (
                     <tr key={r.model_code} className="item-row">
                       <td className="td-sl text-center">{idx + 1}</td>
-                      <td className="td-desc">
+                      <td className="td-desc text-center">
                         <strong className="model-title">{r.model_code}</strong>
                         {r.model_name?.trim() ? <div style={{ fontSize: '9px', color: '#64748b' }}>{r.model_name}</div> : null}
                         {cleanDimensions(r.dimensions) ? <div className="model-dims">{cleanDimensions(r.dimensions)}</div> : null}
                       </td>
                       <td className="td-qty text-center font-bold">{r.qty}</td>
-                      <td className="td-rate text-right font-mono">{r.unit_rate.toFixed(2)}</td>
-                      <td className="td-rate text-right font-mono">{r.transportation.toFixed(2)}</td>
-                      <td className="td-rate text-right font-mono">{r.total_unit_rate.toFixed(2)}</td>
-                      <td className="td-amount text-right font-mono">{r.total_price.toFixed(2)}</td>
-                      <td className="td-amount text-right font-mono font-bold">{r.total_price_with_profit.toFixed(2)}</td>
+                      <td className="td-rate text-center font-mono">{r.unit_rate.toFixed(2)}</td>
+                      <td className="td-rate text-center font-mono">{r.transportation.toFixed(2)}</td>
+                      <td className="td-rate text-center font-mono">{r.total_unit_rate.toFixed(2)}</td>
+                      <td className="td-amount text-center font-mono">{r.total_price.toFixed(2)}</td>
+                      <td className="td-amount text-center font-mono font-bold">{r.total_price_with_profit.toFixed(2)}</td>
                     </tr>
                   ))}
                 </>
@@ -2322,7 +2322,7 @@ export function OfficialQuotationDocument({
                               return (
                                 <tr key={`${s.id || sIdx}-${it.id || itIdx}`} className="item-row">
                                   <td className="td-sl text-center font-bold">{slNo}</td>
-                                  <td className="td-desc">
+                                  <td className="td-desc text-center">
                                     <strong className="model-title">{it.model_name || it.model_code}</strong>
                                     {cleanDimensions(it.dimensions) ? (
                                       <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
@@ -2332,13 +2332,13 @@ export function OfficialQuotationDocument({
                                     {totalItemQty}
                                   </td>
                                   <td
-                                    className="td-rate text-right font-mono"
+                                    className="td-rate text-center font-mono"
                                     style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
                                     {Number(displayRate).toFixed(2)}
                                   </td>
                                   <td
-                                    className="td-amount text-right font-mono"
+                                    className="td-amount text-center font-mono"
                                     style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
                                     {Number(displayAmount).toFixed(2)}
@@ -2358,7 +2358,7 @@ export function OfficialQuotationDocument({
                       return (
                         <tr key={it.id} className="item-row">
                           <td className="td-sl text-center font-bold">{currentSl}</td>
-                          <td className="td-desc">
+                          <td className="td-desc text-center">
                             <strong className="model-title">{it.model_name}</strong>
                             {cleanDimensions(it.dimensions) ? (
                               <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
@@ -2368,13 +2368,13 @@ export function OfficialQuotationDocument({
                             {it.quantity}
                           </td>
                           <td
-                            className="td-rate text-right font-mono"
+                            className="td-rate text-center font-mono"
                             style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                           >
                             {Number(displayRate).toFixed(2)}
                           </td>
                           <td
-                            className="td-amount text-right font-mono"
+                            className="td-amount text-center font-mono"
                             style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                           >
                             {Number(displayAmount).toFixed(2)}
@@ -2416,7 +2416,7 @@ export function OfficialQuotationDocument({
                               <div style={{ fontSize: '9px', color: '#475569' }}>{s.unit || 'SET'}</div>
                             </td>
                             <td
-                              className="td-rate text-right font-mono"
+                              className="td-rate text-center font-mono"
                               rowSpan={totalRowSpan}
                               style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                             >
@@ -2427,7 +2427,7 @@ export function OfficialQuotationDocument({
                               })}
                             </td>
                             <td
-                              className="td-amount text-right font-mono"
+                              className="td-amount text-center font-mono"
                               rowSpan={totalRowSpan}
                               style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                             >
@@ -2454,7 +2454,7 @@ export function OfficialQuotationDocument({
                           return (
                             <tr key={it.id} className="item-row">
                               <td className="td-sl text-center font-bold">{currentSl}</td>
-                              <td className="td-desc">
+                              <td className="td-desc text-center">
                                 <strong className="model-title">{it.model_name}</strong>
                                 {cleanDimensions(it.dimensions) ? (
                                   <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
@@ -2474,7 +2474,7 @@ export function OfficialQuotationDocument({
                                     <div style={{ fontSize: '9px', color: '#475569' }}>{s.unit || 'SET'}</div>
                                   </td>
                                   <td
-                                    className="td-rate text-right font-mono"
+                                    className="td-rate text-center font-mono"
                                     rowSpan={s.items.length}
                                     style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
@@ -2485,7 +2485,7 @@ export function OfficialQuotationDocument({
                                     })}
                                   </td>
                                   <td
-                                    className="td-amount text-right font-mono"
+                                    className="td-amount text-center font-mono"
                                     rowSpan={s.items.length}
                                     style={{ verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                                   >
@@ -2518,32 +2518,32 @@ export function OfficialQuotationDocument({
                     ))}
                   </div>
                 </td>
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">TOTAL</td>
-                <td className="td-sum-val">{(hasDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">TOTAL</td>
+                <td className="td-sum-val text-center">{(hasDiscount ? totalBeforeDiscount : subtotal).toFixed(2)}</td>
               </tr>
               {hasDiscount && (
                 <>
                   <tr className="summary-split-row">
-                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">DISCOUNT</td>
-                    <td className="td-sum-val">{totalDiscountAmount.toFixed(2)}</td>
+                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">DISCOUNT</td>
+                    <td className="td-sum-val text-center">{totalDiscountAmount.toFixed(2)}</td>
                   </tr>
                   <tr className="summary-split-row">
-                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">AFTER DISCOUNT</td>
-                    <td className="td-sum-val">{subtotal.toFixed(2)}</td>
+                    <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">AFTER DISCOUNT</td>
+                    <td className="td-sum-val text-center">{subtotal.toFixed(2)}</td>
                   </tr>
                 </>
               )}
               <tr className="summary-split-row">
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">GST 18%</td>
-                <td className="td-sum-val">{gst18.toFixed(2)}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">GST 18%</td>
+                <td className="td-sum-val text-center">{gst18.toFixed(2)}</td>
               </tr>
               <tr className="summary-split-row">
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label">ROUND OFF</td>
-                <td className="td-sum-val">{Math.abs(Number(roundOff)) > 0.001 ? roundOff : ''}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center">ROUND OFF</td>
+                <td className="td-sum-val text-center">{Math.abs(Number(roundOff)) > 0.001 ? roundOff : ''}</td>
               </tr>
               <tr className="summary-split-row grand-total-row">
-                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label grand">GRAND TOTAL</td>
-                <td className="td-sum-val grand">{grandTotal.toFixed(2)}</td>
+                <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label grand text-center">GRAND TOTAL</td>
+                <td className="td-sum-val grand text-center">{grandTotal.toFixed(2)}</td>
               </tr>
             </tbody>
           </table>
