@@ -360,6 +360,9 @@ const C2C_PHYSICAL_CELLS = new Set([
   'SFFU!A3', 'SFFU!B3', 'SFFU!C3', 'SFFU!D3', 'SFFU!E3', 'SFFU!F3', 'SFFU!G3', 'SFFU!I3', 'SFFU!L3',
   'DFFU!A3', 'DFFU!B3', 'DFFU!C3', 'DFFU!D3', 'DFFU!E3', 'DFFU!F3', 'DFFU!G3', 'DFFU!I3', 'DFFU!L3',
   'DFMU-D!A3', 'DFMU-D!B3', 'DFMU-D!C3', 'DFMU-D!D3', 'DFMU-D!E3', 'DFMU-D!F3', 'DFMU-D!G3', 'DFMU-D!I3', 'DFMU-D!L3',
+  // Logistics, Installation & Extra Amount
+  'Total cal!N23', 'Total cal!N24', 'Total cal!N25', 'Total cal!B49',
+  '__extra_amount', '__include_installation',
 ])
 
 export function filterCutToCutOverrides(overrides: Record<string, any>): Record<string, any> {

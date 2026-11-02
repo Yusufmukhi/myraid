@@ -1327,6 +1327,12 @@ export function CalculatorPage({
     const c2cCustom = project.summary?.c2c_overrides || {}
     const c2cCustomFormulas = project.summary?.c2c_formula_overrides || {}
     const c2cOv = { ...filterCutToCutOverrides(overrides), ...c2cCustom }
+    if (overrides['Total cal!N24'] !== undefined) c2cOv['Total cal!N24'] = overrides['Total cal!N24']
+    if (overrides['Total cal!N25'] !== undefined) c2cOv['Total cal!N25'] = overrides['Total cal!N25']
+    if (overrides['Total cal!B49'] !== undefined) c2cOv['Total cal!B49'] = overrides['Total cal!B49']
+    if (overrides['Total cal!N23'] !== undefined) c2cOv['Total cal!N23'] = overrides['Total cal!N23']
+    c2cOv['__extra_amount'] = extraAmount
+    c2cOv['__include_installation'] = includeInstallation ? 1 : 0
     targetWb.setFormulaOverrides({ ...formulaOverrides, ...c2cCustomFormulas })
     targetWb.setOverrides(c2cOv)
     const res = summarize(targetWb, profitPct, discountPct, includeInstallation, extraAmount)
@@ -1378,9 +1384,25 @@ export function CalculatorPage({
 
   const c2cSummary: Summary | null = useMemo(() => {
     if (!isAdminOrOwner) return null
-    if (serverQuote?.c2c_summary) return serverQuote.c2c_summary
-    return liveC2cSummary || (project.summary?.c2cSummary ?? null)
-  }, [isAdminOrOwner, serverQuote, serverCalculating, liveC2cSummary, project.summary?.c2cSummary])
+    const raw: Summary | null = serverQuote?.c2c_summary || liveC2cSummary || (project.summary?.c2cSummary ?? null)
+    if (!raw) return null
+
+    // Ensure C2C direct costBase strictly includes: Ex-Works + Transport + Accommodation + Installation + Extra Amount
+    const trans = raw.transport ?? (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : 0)
+    const acc = raw.accommodation ?? (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : 0)
+    const inst = includeInstallation ? (raw.installation ?? (raw.rawInstallation ?? 0)) : 0
+    const extraTot = (raw.extraAmount ?? extraAmount ?? 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
+    const effC2cCostBase = raw.subtotal + inst + trans + acc + extraTot
+
+    return {
+      ...raw,
+      transport: trans,
+      accommodation: acc,
+      installation: inst,
+      extraAmount: raw.extraAmount ?? extraAmount ?? 0,
+      costBase: effC2cCostBase,
+    }
+  }, [isAdminOrOwner, serverQuote, serverCalculating, liveC2cSummary, project.summary?.c2cSummary, overrides, includeInstallation, extraAmount])
 
 
 
@@ -2694,6 +2716,8 @@ export function CalculatorPage({
 
         if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = overrides['Total cal!B49']
 
+        if (overrides['Total cal!N23'] !== undefined) sysOv['Total cal!N23'] = overrides['Total cal!N23']
+
         const sysExtra = isCurrent
         ? extraAmount
         : (sys.extraAmount !== undefined
@@ -3267,7 +3291,7 @@ export function CalculatorPage({
 
               }}
 
-              title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual with Profit - C2C Cost)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)"
+              title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
 
             >
 
@@ -5525,9 +5549,13 @@ export function CalculatorPage({
 
               <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
 
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Cost Base (CostBase)</div>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Direct Cost Base</div>
 
                 <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{inr2(c2cSummary.costBase)}</div>
+
+                <div style={{ fontSize: '9.5px', color: '#7c3aed', marginTop: '3px' }}>
+                  Ex-Works ({inr(c2cSummary.subtotal)}) + Trans ({inr(c2cSummary.transport || 0)}) + Acc ({inr(c2cSummary.accommodation || 0)}) + Inst ({inr(c2cSummary.installation || 0)}){(c2cSummary.extraAmount || 0) > 0 ? ` + Extra (${inr((c2cSummary.extraAmount || 0) * (c2cSummary.models?.reduce((a, m) => a + m.qty, 0) || 1))})` : ''}
+                </div>
 
               </div>
 
