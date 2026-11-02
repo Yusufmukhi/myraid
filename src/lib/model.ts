@@ -175,12 +175,12 @@ export function summarize(
   const costBase = subtotal + installation + transport + accommodation + totalExtraAmountSum
 
   // Profit Margin (Explicit parameter, or cell Total cal!C26, or default 25%)
-  // In Excel row 26: N26 = N22 * Profit%, applied to Ex-Works Subtotal
+  // Applied on Direct Cost Base (costBase = Ex-Works + Transport + Accommodation + Extra + Installation)
   const sheetProfit = wb.num('Total cal', 'C26')
   const safeProfitPct = (profitPct !== undefined && !isNaN(profitPct))
     ? profitPct
     : (sheetProfit > 0 ? sheetProfit : 25)
-  const profitAmount = subtotal * (safeProfitPct / 100)
+  const profitAmount = costBase * (safeProfitPct / 100)
   const subtotalWithProfit = costBase + profitAmount
 
   // Discount Percentage applied on Subtotal with Profit (Before Tax)

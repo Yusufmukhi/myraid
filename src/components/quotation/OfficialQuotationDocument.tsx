@@ -233,32 +233,13 @@ export function computeUnitWiseBreakdown(
     const total_unit_rate = unit_rate + logisticsPerUnit
     const total_price = m.qty * total_unit_rate
 
-    let itemPriceWithProfit = 0
-    let unit_rate_with_profit = 0
-    let itemDiscount = 0
-    let final_amount = 0
-    let final_unit_rate = 0
-
-    if (isProfitOnExWorksOnly) {
-      // Direct parity with Excel & web calculator: profit margin is applied to Ex-Works fabrication only, while installation/transport/extra are pass-through
-      const base_price = m.qty * unit_rate
-      const itemProfit = base_price * (profitPct / 100)
-      const baseWithProfit = base_price + itemProfit
-      const logisticsAmount = m.qty * logisticsPerUnit
-      itemPriceWithProfit = baseWithProfit + logisticsAmount
-      unit_rate_with_profit = itemPriceWithProfit / m.qty
-
-      itemDiscount = itemPriceWithProfit * (discountPct / 100)
-      final_amount = itemPriceWithProfit - itemDiscount
-      final_unit_rate = final_amount / m.qty
-    } else {
-      const itemProfit = total_price * (profitPct / 100)
-      itemPriceWithProfit = total_price + itemProfit
-      unit_rate_with_profit = itemPriceWithProfit / m.qty
-      itemDiscount = itemPriceWithProfit * (discountPct / 100)
-      final_amount = itemPriceWithProfit - itemDiscount
-      final_unit_rate = final_amount / m.qty
-    }
+    // Profit margin applied on Direct Cost Base (total_price = unit_rate + logisticsPerUnit)
+    const itemProfit = total_price * (profitPct / 100)
+    const itemPriceWithProfit = total_price + itemProfit
+    const unit_rate_with_profit = itemPriceWithProfit / m.qty
+    const itemDiscount = itemPriceWithProfit * (discountPct / 100)
+    const final_amount = itemPriceWithProfit - itemDiscount
+    const final_unit_rate = final_amount / m.qty
 
     totalCostBase += total_price
     totalPriceWithProfit += itemPriceWithProfit
@@ -1612,10 +1593,9 @@ export function OfficialQuotationDocument({
       prev.map((s) => {
         const qty = Math.max(1, Number(s.quantity) || 1)
         if (s.breakdown) {
-          const exWorks = s.breakdown.subtotal || s.summary?.subtotal || Math.max(0, (s.breakdown.totalCostBase || 0) - (s.breakdown.installation || 0) - (s.breakdown.transport || 0) - (s.breakdown.accommodation || 0))
-          const logistics = Math.max(0, (s.breakdown.totalCostBase || 0) - exWorks)
-          const profitAmount = exWorks * (profitPct / 100)
-          const withProfit = exWorks + profitAmount + logistics
+          const costBase = s.breakdown.totalCostBase || s.summary?.costBase || s.breakdown.subtotal || 0
+          const profitAmount = costBase * (profitPct / 100)
+          const withProfit = costBase + profitAmount
           const discountAmount = withProfit * (docDiscountPct / 100)
           const newRate = Math.round(withProfit - discountAmount)
           return {
