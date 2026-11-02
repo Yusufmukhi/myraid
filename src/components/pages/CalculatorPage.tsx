@@ -1327,9 +1327,10 @@ export function CalculatorPage({
     const c2cCustom = project.summary?.c2c_overrides || {}
     const c2cCustomFormulas = project.summary?.c2c_formula_overrides || {}
     const c2cOv = { ...filterCutToCutOverrides(overrides), ...c2cCustom }
+    const labourPerBody = overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300)
+    c2cOv['Total cal!B49'] = labourPerBody
     if (overrides['Total cal!N24'] !== undefined) c2cOv['Total cal!N24'] = overrides['Total cal!N24']
     if (overrides['Total cal!N25'] !== undefined) c2cOv['Total cal!N25'] = overrides['Total cal!N25']
-    if (overrides['Total cal!B49'] !== undefined) c2cOv['Total cal!B49'] = overrides['Total cal!B49']
     if (overrides['Total cal!N23'] !== undefined) c2cOv['Total cal!N23'] = overrides['Total cal!N23']
     c2cOv['__extra_amount'] = extraAmount
     c2cOv['__include_installation'] = includeInstallation ? 1 : 0
@@ -1390,9 +1391,11 @@ export function CalculatorPage({
     // Ensure C2C direct costBase strictly includes: Ex-Works + Transport + Accommodation + Installation + Extra Amount
     const projectTrans = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
     const projectAcc = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+    const labourPerBody = (overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300))
     const trans = (raw.transport && raw.transport > 0) ? raw.transport : projectTrans
     const acc = (raw.accommodation && raw.accommodation > 0) ? raw.accommodation : projectAcc
-    const inst = includeInstallation ? ((raw.installation && raw.installation > 0) ? raw.installation : (raw.rawInstallation ?? 0)) : 0
+    const systemBodies = raw.bodies || (raw.models?.reduce((acc: number, m: any) => acc + (m.bodies || 0), 0)) || 51
+    const inst = includeInstallation ? (systemBodies * labourPerBody) : 0
     const extraTot = (raw.extraAmount ?? extraAmount ?? 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
     const effC2cCostBase = raw.subtotal + inst + trans + acc + extraTot
 
@@ -2675,33 +2678,21 @@ export function CalculatorPage({
   // Cut-to-Cut Combined Metrics across all systems (Admin Only)
 
   const c2cAllSystemsTotals = useMemo(() => {
-
     if (!isAdminOrOwner || !c2cSummary) return null
 
-    if (serverQuote?.c2c_all_systems && !serverCalculating && (!serverQuote.systems || serverQuote.systems.length === systems.length)) return serverQuote.c2c_all_systems
-
     let spTotal = 0
-
     let trolleyTotal = 0
-
     let totalWeight = 0
-
     let weightWithMachine = 0
-
     let labourSubtotal = 0
-
     let powderTotal = 0
-
     let costBase = 0
-
     let beforeGst = 0
-
     let sales = 0
-
-
 
     const projectTransport = overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0)
     const projectAccommodation = overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0)
+    const labourPerBody = overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300)
 
     systems.forEach((sys, idx) => {
       const isCurrent = idx === activeSystemIdx
@@ -2712,8 +2703,7 @@ export function CalculatorPage({
       // In set-wise multi-system mode, Transport and Accommodation are shared project logistics added once at project level
       sysOv['Total cal!N24'] = 0
       sysOv['Total cal!N25'] = 0
-      if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = overrides['Total cal!B49']
-      if (overrides['Total cal!N23'] !== undefined) sysOv['Total cal!N23'] = overrides['Total cal!N23']
+      sysOv['Total cal!B49'] = labourPerBody
 
       const sysExtra = isCurrent
         ? extraAmount
@@ -2727,13 +2717,19 @@ export function CalculatorPage({
       targetWb.setOverrides(sysOv)
       const sum = summarize(targetWb, profitPct, discountPct, includeInstallation, sysExtra)
 
+      // C2C Installation = bodies * labour per body rate entered by user
+      const sysBodies = computeSystemTotalBodies(sys, sysOv, targetWb, isCurrent, sum.bodies)
+      const sysInstallation = includeInstallation ? (sysBodies * labourPerBody) : 0
+      const sysExtraTot = sysExtra * (sum.models?.reduce((a, m) => a + m.qty, 0) || 1)
+      const sysCostBase = sum.subtotal + sysInstallation + sysExtraTot
+
       spTotal += (sum.steel?.spTotal || 0) * q
       trolleyTotal += (sum.trolley?.total || 0) * q
       totalWeight += (sum.totalWeight || 0) * q
       weightWithMachine += (sum.weightWithMachine || 0) * q
       labourSubtotal += (sum.labourSubtotal || 0) * q
       powderTotal += (sum.powderTotal || 0) * q
-      costBase += (sum.costBase || 0) * q
+      costBase += sysCostBase * q
       beforeGst += (sum.beforeGst || 0) * q
       sales += (sum.sales || 0) * q
     })
@@ -2770,7 +2766,7 @@ export function CalculatorPage({
 
     }
 
-  }, [isAdminOrOwner, c2cSummary, systems, activeSystemIdx, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount])
+  }, [isAdminOrOwner, c2cSummary, systems, activeSystemIdx, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb])
 
 
 
