@@ -2451,13 +2451,18 @@ export function CalculatorPage({
   // Helper to read current input value
 
   const getCellVal = (key: string): number => {
-    if (false) {
-      // Actual excel rate
-      // Actual trolley rate
+    if (key in overrides && overrides[key] !== null && overrides[key] !== undefined) {
+      return Number(overrides[key])
     }
-    if (key in overrides && overrides[key] !== null) return overrides[key] as number
     const [sheet, a] = [key.slice(0, key.lastIndexOf('!')), key.slice(key.lastIndexOf('!') + 1)]
-    return activeWb.num(sheet, a)
+    const val = activeWb.num(sheet, a)
+    if (!val || val === 0) {
+      if (key === 'Total cal!H3') return 90
+      if (key === 'Total cal!M3') return 90
+      if (key === 'Total cal!B49') return 300
+      if (key === 'Total cal!C26') return 25
+    }
+    return val
   }
 
 
