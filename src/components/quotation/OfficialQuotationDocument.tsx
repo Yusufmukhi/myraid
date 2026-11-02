@@ -417,9 +417,10 @@ export function generateDefaultRedSpecs(
     specs.push('DOUBLE DRIVE WITH REDUCTION WHEEL')
   }
 
-  // Track count: e.g. "2 TRACKS", "3 TRACKS", etc.
-  const tracks = (trackCount && trackCount > 0) ? trackCount : 2
-  specs.push(`${tracks} ${tracks === 1 ? 'TRACK' : 'TRACKS'}`)
+  // Track count: e.g. "2 TRACKS", "3 TRACKS", etc. (only included if trackCount > 0)
+  if (trackCount && trackCount > 0) {
+    specs.push(`${trackCount} ${trackCount === 1 ? 'TRACK' : 'TRACKS'}`)
+  }
 
   // Superstructure thickness
   specs.push(`${superThickness} THICKNESS SUPERSTRUCTURE`)
@@ -1293,15 +1294,12 @@ export function OfficialQuotationDocument({
   // Enforce staff never viewing unit breakdown or profit margins in their PDF
   const effectiveQuotationMode = (!userIsAdmin && quotationMode === 'unit_breakdown') ? 'set_wise' : quotationMode
 
-  // System count check: In unit_wise mode or 1 system, treat as single (show body table, no systems); in multi-system set_wise, remove body table
+  // System count check: true if project has multiple systems
   const isMultiSystem = useMemo(() => {
-    if (effectiveQuotationMode === 'unit_wise' || effectiveQuotationMode === 'unit_breakdown') {
-      return false
-    }
     if (initialSets && initialSets.length > 1) return true
     if (project.summary?.quotation_sets && project.summary.quotation_sets.length > 1) return true
     return false
-  }, [effectiveQuotationMode, initialSets, project.summary?.quotation_sets])
+  }, [initialSets, project.summary?.quotation_sets])
 
   // 1c. Installation Body Items (per bay qty = model rows, bay = dfmuRows / 2)
   const defaultBodyItems = useMemo<InstallationBodyItem[]>(() => {
@@ -1652,14 +1650,17 @@ export function OfficialQuotationDocument({
 
   // Calculations
   const subtotal = useMemo(() => {
-    if (!isMultiSystem && summary?.beforeGst) {
-      return summary.beforeGst
+    if (sets.length > 1) {
+      return sets.reduce((acc, s) => acc + (Number(s.amount) || 0), 0)
     }
     if (effectiveQuotationMode === 'set_wise') {
       return sets.reduce((acc, s) => acc + (Number(s.amount) || 0), 0)
     }
     if (effectiveQuotationMode === 'unit_breakdown') {
       return breakdownResult.finalBeforeGst
+    }
+    if (!isMultiSystem && summary?.beforeGst) {
+      return summary.beforeGst
     }
     return lineItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0)
   }, [isMultiSystem, summary?.beforeGst, effectiveQuotationMode, sets, lineItems, breakdownResult])
@@ -1688,7 +1689,15 @@ export function OfficialQuotationDocument({
       return { totalBeforeDiscount: subtotal, totalDiscountAmount: 0 }
     }
     let beforeDisc = 0
-    if (!isMultiSystem && breakdownResult.totalPriceWithProfit > 0) {
+    if (sets.length > 1) {
+      const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || Number(s.amount) || 0), 0)
+      if (setsPreDiscSum > 0) {
+        beforeDisc = setsPreDiscSum
+      } else {
+        const factor = 1 - (effectiveDiscountPct / 100)
+        beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
+      }
+    } else if (!isMultiSystem && breakdownResult.totalPriceWithProfit > 0) {
       beforeDisc = breakdownResult.totalPriceWithProfit
     } else if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
       const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || 0), 0)
@@ -1802,14 +1811,67 @@ export function OfficialQuotationDocument({
     return tc
   }, [wb, project.inputs])
 
+  const getSystemTrackCount = (s: any, sIdx: number): number => {
+    if (s.track_count && Number(s.track_count) > 0) return Number(s.track_count)
+    const sysObj = project.summary?.systems?.[sIdx]
+    if (sysObj?.overrides?.['Total cal!I3']) {
+      const val = Number(sysObj.overrides['Total cal!I3'])
+      if (val > 0) return Math.round(val)
+    }
+    if (s.overrides?.['Total cal!I3']) {
+      const val = Number(s.overrides['Total cal!I3'])
+      if (val > 0) return Math.round(val)
+    }
+    if (sIdx === 0) {
+      if (wb) {
+        const val = wb.num('Total cal', 'I3')
+        if (val && val > 0) return Math.round(val)
+      }
+      if (project.inputs?.['Total cal!I3']) {
+        const val = Number(project.inputs['Total cal!I3'])
+        if (val > 0) return Math.round(val)
+      }
+    }
+    return projectTrackCount || 2
+  }
+
+  const systemHasDoubleDrive = (s: any): boolean => {
+    const items = s.items || []
+    return items.some((it: any) => {
+      const w = extractWidthFromDimensions(it.dimensions)
+      return w !== null && w >= 3000
+    })
+  }
+
+  const allSystemsTrackCounts = useMemo(() => {
+    return sets.map((s, idx) => getSystemTrackCount(s, idx))
+  }, [sets, project.summary?.systems, wb, project.inputs, projectTrackCount])
+
+  const allTracksIdentical = useMemo(() => {
+    if (sets.length <= 1) return true
+    return allSystemsTrackCounts.every((tc) => tc === allSystemsTrackCounts[0])
+  }, [sets.length, allSystemsTrackCounts])
+
+  const allSystemsHaveDoubleDrive = useMemo(() => {
+    if (sets.length <= 1) return hasDoubleDrive
+    return sets.every((s) => systemHasDoubleDrive(s))
+  }, [sets, hasDoubleDrive])
+
   // Initial red specifications: preserved from saved quotation summary or generated from dimensions and tracks
   const defaultRedSpecs = useMemo<string[]>(() => {
     if (project.summary?.red_specs && Array.isArray(project.summary.red_specs) && project.summary.red_specs.length > 0) {
       return project.summary.red_specs
     }
-    const effWidth = hasDoubleDrive ? 3000 : 1830
-    return generateDefaultRedSpecs(effWidth, projectTrackCount, wb, project.inputs)
-  }, [project.summary?.red_specs, hasDoubleDrive, projectTrackCount, wb, project.inputs])
+    // Only show DOUBLE DRIVE in shared bottom specs if single system or all systems have double drive.
+    // If only specific systems have double drive, it is shown in red under that specific system only.
+    const effWidth = (sets.length > 1 ? allSystemsHaveDoubleDrive : hasDoubleDrive) ? 3000 : 1830
+
+    // Only show track count in shared bottom specs if single system or all systems have the SAME track count.
+    // If track counts differ, track count is displayed in red under each specific system only.
+    const trackToShow = (sets.length > 1 && !allTracksIdentical) ? 0 : projectTrackCount
+
+    return generateDefaultRedSpecs(effWidth, trackToShow, wb, project.inputs)
+  }, [project.summary?.red_specs, sets.length, allSystemsHaveDoubleDrive, hasDoubleDrive, allTracksIdentical, projectTrackCount, wb, project.inputs])
 
   const [redSpecs, setRedSpecs] = useState<string[]>(defaultRedSpecs)
 
@@ -2298,16 +2360,40 @@ export function OfficialQuotationDocument({
                         const sysItems = s.items && s.items.length > 0 ? s.items : []
                         const sysQty = Number(s.quantity) || 1
 
+                        const sysDoubleDrive = systemHasDoubleDrive(s)
+                        const showSysDoubleDrive = sets.length > 1 && sysDoubleDrive && !allSystemsHaveDoubleDrive
+                        const sysTrack = allSystemsTrackCounts[sIdx] || projectTrackCount || 2
+                        const showSysTrack = sets.length > 1 && !allTracksIdentical
+
+                        const sysNotes: string[] = []
+                        if (showSysDoubleDrive) {
+                          sysNotes.push('DOUBLE DRIVE WITH REDUCTION WHEEL')
+                        }
+                        if (showSysTrack) {
+                          sysNotes.push(`${sysTrack} ${sysTrack === 1 ? 'TRACK' : 'TRACKS'}`)
+                        }
+
                         return (
                           <React.Fragment key={s.id || sIdx}>
                             <tr className="system-title-row" style={{ background: '#f8fafc' }}>
                               <td className="td-sl"></td>
                               <td
                                 colSpan={4}
-                                className="td-desc font-bold"
-                                style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.5px', color: '#0f172a', padding: '5px 8px' }}
+                                className="td-desc font-bold text-center"
+                                style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.5px', color: '#0f172a', padding: '5px 8px', textAlign: 'center' }}
                               >
-                                {sysTitle} {s.set_label ? `(${s.set_label})` : `(${sysQty} ${s.unit || 'SET'})`}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                  <span>{sysTitle} {s.set_label ? `(${s.set_label})` : `(${sysQty} ${s.unit || 'SET'})`}</span>
+                                  {sysNotes.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                      {sysNotes.map((note, nIdx) => (
+                                        <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
+                                          • {note}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                             {sysItems.map((it, itIdx) => {
@@ -2395,6 +2481,19 @@ export function OfficialQuotationDocument({
                     const displaySetRate = setDisplayAmounts[sIdx]?.rate ?? Number(s.rate)
                     const displaySetAmount = setDisplayAmounts[sIdx]?.amount ?? Number(s.amount)
 
+                    const sysDoubleDrive = systemHasDoubleDrive(s)
+                    const showSysDoubleDrive = sets.length > 1 && sysDoubleDrive && !allSystemsHaveDoubleDrive
+                    const sysTrack = allSystemsTrackCounts[sIdx] || projectTrackCount || 2
+                    const showSysTrack = sets.length > 1 && !allTracksIdentical
+
+                    const sysNotes: string[] = []
+                    if (showSysDoubleDrive) {
+                      sysNotes.push('DOUBLE DRIVE WITH REDUCTION WHEEL')
+                    }
+                    if (showSysTrack) {
+                      sysNotes.push(`${sysTrack} ${sysTrack === 1 ? 'TRACK' : 'TRACKS'}`)
+                    }
+
                     return (
                       <React.Fragment key={s.id}>
                         {systemTitle ? (
@@ -2404,7 +2503,16 @@ export function OfficialQuotationDocument({
                               className="td-desc font-bold text-center"
                               style={{ fontWeight: 800, textAlign: 'center', fontSize: '11px', letterSpacing: '0.5px' }}
                             >
-                              {systemTitle}
+                              <div>{systemTitle}</div>
+                              {sysNotes.length > 0 && (
+                                <div style={{ marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px', alignItems: 'center' }}>
+                                  {sysNotes.map((note, nIdx) => (
+                                    <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
+                                      {note}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             <td className="td-qty"></td>
                             <td

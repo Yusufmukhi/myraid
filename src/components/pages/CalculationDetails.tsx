@@ -122,6 +122,21 @@ export function CalculationDetails({
   }, [selectedSys, currentSystemIdx, c2cFormulaOverrides])
 
   const handleApplyInput = (key: string, value: number | null | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {
+    const targetWb = targetWorkbook === 'c2c'
+      ? (serverWb ? serverWb.c2c : c2cWb)
+      : (serverWb ? serverWb.actual : wb)
+
+    if (targetWb) {
+      const currentOvr = { ...targetWb.getOverrides() }
+      if (value === undefined || value === null) {
+        delete currentOvr[key]
+      } else {
+        currentOvr[key] = value
+      }
+      targetWb.setOverrides(currentOvr)
+      setRenderVer((v) => v + 1)
+    }
+
     if (onSystemInput) {
       onSystemInput(currentSystemIdx, key, value, targetWorkbook)
     } else {
@@ -130,6 +145,21 @@ export function CalculationDetails({
   }
 
   const handleApplyFormulaOverride = (key: string, formula: string | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {
+    const targetWb = targetWorkbook === 'c2c'
+      ? (serverWb ? serverWb.c2c : c2cWb)
+      : (serverWb ? serverWb.actual : wb)
+
+    if (targetWb) {
+      const currentFO = { ...targetWb.getFormulaOverrides() }
+      if (formula === undefined || formula === null) {
+        delete currentFO[key]
+      } else {
+        currentFO[key] = formula
+      }
+      targetWb.setFormulaOverrides(currentFO)
+      setRenderVer((v) => v + 1)
+    }
+
     if (onSystemFormulaOverride) {
       onSystemFormulaOverride(currentSystemIdx, key, formula, targetWorkbook)
     } else {
@@ -253,24 +283,24 @@ export function CalculationDetails({
     return { spans, covered }
   }, [sheet])
 
-  // Column widths from content
+  // Fast heuristic column widths without re-evaluating entire AST dependency graph on every stroke
   const widths = useMemo(() => {
     const w: number[] = []
     if (!sheet) return w
+    const sampleLimit = Math.min(sheet.rows, 35)
     for (let c = 0; c < sheet.cols; c++) {
-      let max = 3
-      for (let r = 0; r < sheet.rows; r++) {
+      let max = 4
+      for (let r = 0; r < sampleLimit; r++) {
         if (spans.has(`${r},${c}`) || covered.has(`${r},${c}`)) continue
-        const raw = sheet.cells[r][c]
-        if (raw === null) continue
-        const v = activeWb.value(name, r, c)
-        const len = fmtCell(v).length
+        const raw = sheet.cells[r]?.[c]
+        if (raw === null || raw === undefined) continue
+        const len = typeof raw === 'number' ? 9 : (typeof raw === 'string' ? Math.min(22, raw.length) : 5)
         if (len > max) max = len
       }
-      w.push(Math.max(46, Math.min(240, max * 7.4 + 16)))
+      w.push(Math.max(48, Math.min(240, max * 7.4 + 16)))
     }
     return w
-  }, [sheet, spans, covered, name, activeWb, renderVer])
+  }, [sheet, spans, covered])
 
   useEffect(() => {
     setSel(null)
@@ -285,6 +315,11 @@ export function CalculationDetails({
   const isInput = sel ? (activeWb.isInput(name, sel.r, sel.c) || EXTRA_EDITABLE.has(selKey) || (!isFormula && typeof selVal === 'number')) : false
   const isOverriddenInput = sel ? selKey in activeOverrides : false
   const isOverriddenFormula = sel ? selKey in activeFormulaOverrides : false
+
+  const [fbarVal, setFbarVal] = useState<string>('')
+  useEffect(() => {
+    setFbarVal(selVal !== null && selVal !== undefined && typeof selVal === 'number' ? String(selVal) : '')
+  }, [selKey, selVal])
 
   const handleStartFormulaEdit = () => {
     if (!sel) return
@@ -443,10 +478,22 @@ export function CalculationDetails({
               <div className="row gap">
                 <span className="chip ok">Input Cell</span>
                 <span className="tiny muted">Override value:</span>
-                <NumField
+                <input
+                  type="number"
                   className="fbar-input"
-                  value={typeof selVal === 'number' ? selVal : null}
-                  onChange={(v) => handleApplyInput(selKey, v, workbookType)}
+                  style={{ width: '90px', padding: '3px 6px', fontWeight: 600, border: '1.5px solid #cbd5e1', borderRadius: '4px', textAlign: 'center' }}
+                  value={fbarVal}
+                  onChange={(e) => setFbarVal(e.target.value)}
+                  onBlur={() => {
+                    const num = fbarVal.trim() === '' ? undefined : Number(fbarVal)
+                    handleApplyInput(selKey, isNaN(num as number) ? undefined : num, workbookType)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const num = fbarVal.trim() === '' ? undefined : Number(fbarVal)
+                      handleApplyInput(selKey, isNaN(num as number) ? undefined : num, workbookType)
+                    }
+                  }}
                 />
                 {isOverriddenInput && (
                   <button
@@ -481,11 +528,23 @@ export function CalculationDetails({
                   )}
                   <div className="row gap" style={{ marginLeft: 8 }}>
                     <span className="tiny muted">Or value:</span>
-                    <NumField
+                    <input
+                      type="number"
                       className="fbar-input"
-                      value={isOverriddenInput ? (typeof selVal === 'number' ? selVal : null) : null}
-                      onChange={(v) => handleApplyInput(selKey, v, workbookType)}
                       placeholder="Custom val"
+                      style={{ width: '90px', padding: '3px 6px', fontWeight: 600, border: '1.5px solid #cbd5e1', borderRadius: '4px', textAlign: 'center' }}
+                      value={fbarVal}
+                      onChange={(e) => setFbarVal(e.target.value)}
+                      onBlur={() => {
+                        const num = fbarVal.trim() === '' ? undefined : Number(fbarVal)
+                        handleApplyInput(selKey, isNaN(num as number) ? undefined : num, workbookType)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const num = fbarVal.trim() === '' ? undefined : Number(fbarVal)
+                          handleApplyInput(selKey, isNaN(num as number) ? undefined : num, workbookType)
+                        }
+                      }}
                     />
                     {isOverriddenInput && (
                       <button className="btn ghost sm" onClick={() => handleApplyInput(selKey, undefined, workbookType)} title="Reset value override">
