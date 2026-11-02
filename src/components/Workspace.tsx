@@ -17,6 +17,7 @@ import { MembersPage } from './pages/MembersPage'
 import { OrganisationSettings } from './pages/OrganisationSettings'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { ClientsPage } from './pages/ClientsPage'
+import { ClientRelationsPage } from './pages/ClientRelationsPage'
 import { BusinessProfilePage } from './pages/BusinessProfilePage'
 import { StaffPerformancePage } from './pages/StaffPerformancePage'
 import { Logo } from './Screens'
@@ -713,6 +714,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
             {tab === 'dashboard' && 'Dashboard Overview'}
             {tab === 'projects' && 'Projects & Quotations'}
             {tab === 'clients' && 'Client Directory'}
+            {tab === 'client_relations' && 'Client & Staff Relations'}
             {tab === 'business' && 'Business Profile & PDF Branding'}
             {tab === 'staff_analytics' && 'Staff Quotation & Performance Analytics'}
             {tab === 'calculator' && (currentProject ? `Calculator — ${currentProject.name}` : 'Calculator')}
@@ -898,6 +900,23 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 setNewProjectName('QTY NO ')
                 setShowCreateModal(true)
               }}
+              onNavigate={(t) => setTab(t as NavTab)}
+            />
+          )}
+
+          {tab === 'client_relations' && (
+            <ClientRelationsPage
+              session={session}
+              org={org}
+              onOpenProject={handleOpenProject}
+              onCreateQuotationWithClient={(client) => {
+                setSelectedClientForNewProj(client.id)
+                setClientSearchTermForNewProj(client.name)
+                setClientDropdownOpen(false)
+                setNewProjectName('QTY NO ')
+                setShowCreateModal(true)
+              }}
+              onNavigate={(t) => setTab(t as NavTab)}
             />
           )}
 

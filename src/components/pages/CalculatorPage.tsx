@@ -588,6 +588,55 @@ export function CalculatorPage({
 
   const discountPct = overrides['__discount_pct'] !== undefined ? Number(overrides['__discount_pct']) : 0
 
+  const [profitInput, setProfitInput] = useState<string>(() => String(profitPct))
+  const [discountInput, setDiscountInput] = useState<string>(() => String(discountPct))
+
+  useEffect(() => {
+    setProfitInput(String(profitPct))
+  }, [profitPct])
+
+  useEffect(() => {
+    setDiscountInput(String(discountPct))
+  }, [discountPct])
+
+  const handleProfitInputChange = (val: string) => {
+    setProfitInput(val)
+    const num = parseFloat(val)
+    if (!isNaN(num) && num >= 0 && num <= 200) {
+      setProfitPct(num)
+    }
+  }
+
+  const handleProfitInputBlur = () => {
+    const num = parseFloat(profitInput)
+    if (isNaN(num) || num < 0) {
+      setProfitInput('25')
+      setProfitPct(25)
+    } else {
+      setProfitInput(String(num))
+      setProfitPct(num)
+    }
+  }
+
+  const handleDiscountInputChange = (val: string) => {
+    setDiscountInput(val)
+    const num = parseFloat(val)
+    if (!isNaN(num) && num >= 0 && num <= 100) {
+      setDiscountPct(num)
+    }
+  }
+
+  const handleDiscountInputBlur = () => {
+    const num = parseFloat(discountInput)
+    if (isNaN(num) || num < 0) {
+      setDiscountInput('0')
+      setDiscountPct(0)
+    } else {
+      setDiscountInput(String(num))
+      setDiscountPct(num)
+    }
+  }
+
   const includeInstallation = overrides['__include_installation'] !== undefined
 
     ? Boolean(Number(overrides['__include_installation']))
@@ -1394,11 +1443,10 @@ export function CalculatorPage({
   useEffect(() => {
     let active = true
     const abortController = new AbortController()
-    setServerCalculating(true)
-
-    // Responsive debounce: fast 180ms timer (fallback default was 500ms) with AbortController
+    // Responsive debounce: fast timer with AbortController
     const timer = setTimeout(async () => {
       try {
+        if (active) setServerCalculating(true)
         const effectiveSystems = getEffectiveSystems(overrides, formulaOverrides)
         const result = await api.calculateServer(session.token, {
           org_id: org.id,
@@ -4639,12 +4687,13 @@ export function CalculatorPage({
                             <input
                               type="number"
                               className="margin-num-input"
-                              value={profitPct}
+                              value={profitInput}
                               disabled={isApprovedLocked}
                               min={0}
                               max={200}
                               step={1}
-                              onChange={(e) => setProfitPct(parseFloat(e.target.value) || 0)}
+                              onChange={(e) => handleProfitInputChange(e.target.value)}
+                              onBlur={handleProfitInputBlur}
                             />
                             <span className="margin-pct-tag">%</span>
                           </div>
@@ -4670,12 +4719,13 @@ export function CalculatorPage({
                             <input
                               type="number"
                               className="margin-num-input discount-text"
-                              value={discountPct}
+                              value={discountInput}
                               disabled={isApprovedLocked}
                               min={0}
                               max={100}
                               step={1}
-                              onChange={(e) => setDiscountPct(parseFloat(e.target.value) || 0)}
+                              onChange={(e) => handleDiscountInputChange(e.target.value)}
+                              onBlur={handleDiscountInputBlur}
                             />
                             <span className="margin-pct-tag discount-tag">%</span>
                           </div>
@@ -4829,7 +4879,7 @@ export function CalculatorPage({
 
                           className="margin-num-input"
 
-                          value={summary.profitPct}
+                          value={profitInput}
 
                           disabled={isApprovedLocked}
 
@@ -4839,7 +4889,9 @@ export function CalculatorPage({
 
                           step={1}
 
-                          onChange={(e) => setProfitPct(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => handleProfitInputChange(e.target.value)}
+
+                          onBlur={handleProfitInputBlur}
 
                         />
 
@@ -4891,7 +4943,7 @@ export function CalculatorPage({
 
                           className="margin-num-input discount-text"
 
-                          value={summary.discountPct}
+                          value={discountInput}
 
                           disabled={isApprovedLocked}
 
@@ -4901,7 +4953,9 @@ export function CalculatorPage({
 
                           step={1}
 
-                          onChange={(e) => setDiscountPct(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => handleDiscountInputChange(e.target.value)}
+
+                          onBlur={handleDiscountInputBlur}
 
                         />
 
@@ -5043,12 +5097,13 @@ export function CalculatorPage({
                             <input
                               type="number"
                               className="margin-num-input discount-text"
-                              value={discountPct}
+                              value={discountInput}
                               disabled={isApprovedLocked}
                               min={0}
                               max={100}
                               step={1}
-                              onChange={(e) => setDiscountPct(parseFloat(e.target.value) || 0)}
+                              onChange={(e) => handleDiscountInputChange(e.target.value)}
+                              onBlur={handleDiscountInputBlur}
                             />
                             <span className="margin-pct-tag discount-tag">%</span>
                           </div>
@@ -5104,7 +5159,7 @@ export function CalculatorPage({
 
                           className="margin-num-input discount-text"
 
-                          value={summary.discountPct}
+                          value={discountInput}
 
                           disabled={isApprovedLocked}
 
@@ -5114,7 +5169,9 @@ export function CalculatorPage({
 
                           step={1}
 
-                          onChange={(e) => setDiscountPct(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => handleDiscountInputChange(e.target.value)}
+
+                          onBlur={handleDiscountInputBlur}
 
                         />
 

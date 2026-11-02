@@ -174,12 +174,15 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         if (scopeFilter === 'shared' && !isSharedWithMe) return false
 
         if (!showArchived && p.is_archived && statusFilter !== 'lost' && statusFilter !== 'loss') return false
-        if (statusFilter !== 'all') {
-          const isLoss = p.is_archived || p.status === 'loss' || p.status === 'archived' || p.status === 'lost'
-          const isWon = !p.is_archived && (p.status === 'won' || p.status === 'approved')
-          const isNegotiating = p.status === 'negotiating'
-          const isQuoted = p.status === 'quoted' || (!isLoss && !isWon && !isNegotiating)
+        const isLoss = p.is_archived || p.status === 'loss' || p.status === 'archived' || p.status === 'lost'
+        const isWon = !p.is_archived && (p.status === 'won' || p.status === 'approved')
+        const isNegotiating = p.status === 'negotiating'
+        const isQuoted = p.status === 'quoted' || (!isLoss && !isWon && !isNegotiating)
 
+        if (statusFilter === 'all') {
+          // Default ALL view only shows active pipeline (Quoted & Negotiating); excludes Won and Loss
+          if (isWon || isLoss) return false
+        } else {
           if ((statusFilter === 'won' || statusFilter === 'approved') && !isWon) return false
           if ((statusFilter === 'loss' || statusFilter === 'lost') && !isLoss) return false
           if (statusFilter === 'negotiating' && !isNegotiating) return false
@@ -662,7 +665,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
 
           <div className="status-tabs">
             {[
-              { id: 'all', label: 'ALL' },
+              { id: 'all', label: 'ACTIVE (QUOTED & NEGOTIATING)' },
               { id: 'quoted', label: 'QUOTED' },
               { id: 'negotiating', label: 'NEGOTIATING' },
               { id: 'won', label: 'WON' },

@@ -11,6 +11,19 @@ interface Props {
   onOpenProject?: (projectId: string) => void
 }
 
+function getPageNumbers(current: number, total: number): (number | string)[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total]
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total]
+}
+
 export function ActivityPage({ session, org, onOpenProject }: Props) {
   const { toast } = useUI()
   const [logs, setLogs] = useState<ActivityItem[]>([])
@@ -23,6 +36,8 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   const [clientIp, setClientIp] = useState<string>(getCachedClientIp())
   const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set())
   const [modalLog, setModalLog] = useState<ActivityItem | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 20
 
   const loadActivity = async () => {
     try {
@@ -38,7 +53,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
         if (p.name) pMap.set(p.name.toLowerCase().trim(), p)
       }
 
-      // Fetch revisions for all projects referenced in the audit logs to restore full change history
+      // Fetch revisions for projects referenced in the audit logs (optimized slice for fast loading)
       const uniqueProjectIds = Array.from(
         new Set(data.map((l) => l.project_id).filter(Boolean))
       ) as string[]
@@ -47,7 +62,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
       if (uniqueProjectIds.length > 0) {
         try {
           const fullProjs = await Promise.all(
-            uniqueProjectIds.slice(0, 25).map((pid) => api.projectGet(session.token, pid).catch(() => null))
+            uniqueProjectIds.slice(0, 12).map((pid) => api.projectGet(session.token, pid).catch(() => null))
           )
           for (const fp of fullProjs) {
             if (fp && fp.id) {
@@ -116,6 +131,19 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
     })
   }, [logs, filterAction, selectedStaff, search, ownerUsername])
 
+  // Reset to page 1 whenever filters or search change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filterAction, selectedStaff, search])
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE))
+  const activePage = Math.min(currentPage, totalPages)
+
+  const paginatedLogs = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE
+    return filteredLogs.slice(start, start + PAGE_SIZE)
+  }, [filteredLogs, activePage])
+
   const toggleExpand = (id: string) => {
     setExpandedLogIds((prev) => {
       const next = new Set(prev)
@@ -129,10 +157,10 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   }
 
   const handleExpandAll = () => {
-    if (expandedLogIds.size === filteredLogs.length) {
+    if (expandedLogIds.size === paginatedLogs.length) {
       setExpandedLogIds(new Set())
     } else {
-      setExpandedLogIds(new Set(filteredLogs.map((l) => l.id)))
+      setExpandedLogIds(new Set(paginatedLogs.map((l) => l.id)))
     }
   }
 
@@ -261,7 +289,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
           </div>
         ) : (
           <div className="activity-audit-list">
-            {filteredLogs.map((item, index) => {
+            {paginatedLogs.map((item, index) => {
               const { badgeClass, label } = getActionMeta(item.action)
               const proj = item.project_id
                 ? projectMap.get(item.project_id)
@@ -281,7 +309,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
               const extracted = extractLogChanges(
                 item,
                 index,
-                filteredLogs,
+                paginatedLogs,
                 projectMap,
                 projectRevisionsMap
               )
@@ -536,6 +564,72 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* Google-Style Pagination Footer (20 items per page) */}
+        {!loading && filteredLogs.length > 0 && (
+          <div className="google-pagination-container">
+            <div className="pagination-info">
+              Showing <strong>{(activePage - 1) * PAGE_SIZE + 1}</strong> – <strong>{Math.min(activePage * PAGE_SIZE, filteredLogs.length)}</strong> of <strong>{filteredLogs.length}</strong> audit records
+            </div>
+
+            {totalPages > 1 && (
+              <div className="google-pagination-controls">
+                <button
+                  type="button"
+                  className="pagination-nav-btn"
+                  disabled={activePage <= 1}
+                  onClick={() => {
+                    setCurrentPage((p) => Math.max(1, p - 1))
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                  title="Previous Page"
+                >
+                  ‹ Previous
+                </button>
+
+                <div className="pagination-numbers">
+                  {getPageNumbers(activePage, totalPages).map((p, idx) => {
+                    if (p === '...') {
+                      return (
+                        <span key={`dots-${idx}`} className="pagination-ellipsis">
+                          …
+                        </span>
+                      )
+                    }
+                    const pageNum = Number(p)
+                    const isActive = pageNum === activePage
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        className={`pagination-number-btn ${isActive ? 'active' : ''}`}
+                        onClick={() => {
+                          setCurrentPage(pageNum)
+                          window.scrollTo({ top: 0, behavior: 'smooth' })
+                        }}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  className="pagination-nav-btn"
+                  disabled={activePage >= totalPages}
+                  onClick={() => {
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                  title="Next Page"
+                >
+                  Next ›
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -287,7 +287,7 @@ export function computeUnitWiseBreakdown(
   })
 
   // Adjust sub-cent rounding against authoritative summary.beforeGst when present
-  if (isProfitOnExWorksOnly && summary?.beforeGst && rows.length > 0) {
+  if (summary?.beforeGst && rows.length > 0) {
     const roundingDiff = Number((summary.beforeGst - finalBeforeGst).toFixed(2))
     if (Math.abs(roundingDiff) > 0 && Math.abs(roundingDiff) <= 0.08) {
       rows[rows.length - 1].final_amount = Number((rows[rows.length - 1].final_amount + roundingDiff).toFixed(2))
@@ -1429,6 +1429,7 @@ export function OfficialQuotationDocument({
         amount: r.total_price_with_profit,
       }))
       const baseAmount = breakdownResult.finalBeforeGst || summary.beforeGst || 1843257
+      const preDiscAmount = breakdownResult.totalPriceWithProfit || (summary.subtotalWithProfit ?? baseAmount)
 
       return [
         {
@@ -1437,8 +1438,10 @@ export function OfficialQuotationDocument({
           set_label: '1 SET',
           quantity: 1,
           unit: 'SET',
-          rate: Math.round(baseAmount),
-          amount: Math.round(baseAmount),
+          rate: Math.round(preDiscAmount),
+          amount: Number(baseAmount.toFixed(2)),
+          pre_discount_rate: Math.round(preDiscAmount),
+          pre_discount_amount: Number(preDiscAmount.toFixed(2)),
           items: items.length > 0 ? items : [
             {
               id: '1',
@@ -1486,6 +1489,7 @@ export function OfficialQuotationDocument({
       amount: r.total_price_with_profit,
     }))
     const baseAmount = breakdownResult.finalBeforeGst || summary.beforeGst || 1843257
+    const preDiscAmount = breakdownResult.totalPriceWithProfit || (summary.subtotalWithProfit ?? baseAmount)
 
     return [
       {
@@ -1494,8 +1498,10 @@ export function OfficialQuotationDocument({
         set_label: '1 SET',
         quantity: 1,
         unit: 'SET',
-        rate: Math.round(baseAmount),
-        amount: Math.round(baseAmount),
+        rate: Math.round(preDiscAmount),
+        amount: Number(baseAmount.toFixed(2)),
+        pre_discount_rate: Math.round(preDiscAmount),
+        pre_discount_amount: Number(preDiscAmount.toFixed(2)),
         items,
       },
     ]
@@ -1666,6 +1672,9 @@ export function OfficialQuotationDocument({
 
   // Calculations
   const subtotal = useMemo(() => {
+    if (!isMultiSystem && summary?.beforeGst) {
+      return summary.beforeGst
+    }
     if (effectiveQuotationMode === 'set_wise') {
       return sets.reduce((acc, s) => acc + (Number(s.amount) || 0), 0)
     }
@@ -1673,7 +1682,7 @@ export function OfficialQuotationDocument({
       return breakdownResult.finalBeforeGst
     }
     return lineItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0)
-  }, [effectiveQuotationMode, sets, lineItems, breakdownResult])
+  }, [isMultiSystem, summary?.beforeGst, effectiveQuotationMode, sets, lineItems, breakdownResult])
 
   const gst18 = useMemo(() => subtotal * 0.18, [subtotal])
   const rawGrandTotal = subtotal + gst18
@@ -1699,10 +1708,14 @@ export function OfficialQuotationDocument({
       return { totalBeforeDiscount: subtotal, totalDiscountAmount: 0 }
     }
     let beforeDisc = 0
-    if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
+    if (!isMultiSystem && breakdownResult.totalPriceWithProfit > 0) {
+      beforeDisc = breakdownResult.totalPriceWithProfit
+    } else if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
       const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || 0), 0)
       if (setsPreDiscSum > 0) {
         beforeDisc = setsPreDiscSum
+      } else if (breakdownResult.totalPriceWithProfit > 0) {
+        beforeDisc = breakdownResult.totalPriceWithProfit
       } else {
         const factor = 1 - (effectiveDiscountPct / 100)
         beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal

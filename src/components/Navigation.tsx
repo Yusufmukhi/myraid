@@ -1,7 +1,7 @@
 import { Org } from '../lib/api'
 import { Icon } from './ui'
 
-export type NavTab = 'dashboard' | 'projects' | 'shared_projects' | 'clients' | 'calculator' | 'details' | 'approvals' | 'settings' | 'members' | 'activity' | 'business' | 'staff_analytics'
+export type NavTab = 'dashboard' | 'projects' | 'shared_projects' | 'clients' | 'client_relations' | 'calculator' | 'details' | 'approvals' | 'settings' | 'members' | 'activity' | 'business' | 'staff_analytics'
 
 interface Props {
   currentTab: NavTab
@@ -82,6 +82,15 @@ export function Navigation({
           <span className="nav-icon">{Icon.building}</span>
           <span className="nav-text">Client Directory</span>
           {typeof clientCount === 'number' && <span className="nav-badge">{clientCount}</span>}
+        </button>
+
+        <button
+          className={`nav-item ${currentTab === 'client_relations' ? 'active' : ''}`}
+          onClick={() => onSelectTab('client_relations')}
+          title="View client accounts, quotation assignments, and staff relationship matrix"
+        >
+          <span className="nav-icon">{Icon.users}</span>
+          <span className="nav-text">Client &amp; Staff Relations</span>
         </button>
       </div>
 

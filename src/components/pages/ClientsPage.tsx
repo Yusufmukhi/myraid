@@ -16,9 +16,10 @@ interface Props {
   session: Session
   org: Org
   onCreateQuotationWithClient?: (client: SavedClient) => void
+  onNavigate?: (tab: string) => void
 }
 
-export function ClientsPage({ session, org, onCreateQuotationWithClient }: Props) {
+export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavigate }: Props) {
   const { toast, confirm } = useUI()
   const copy = useCopy()
 
@@ -361,6 +362,22 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient }: Props
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {onNavigate && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => onNavigate('client_relations')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: 600,
+              }}
+              title="View Client and Staff Relations Matrix"
+            >
+              {Icon.users} Client &amp; Staff Relations
+            </button>
+          )}
           <button
             type="button"
             className="btn primary sm"
