@@ -440,6 +440,16 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isSavingProject, setIsSavingProject] = useState(false)
+  const [detailsSystemIdx, setDetailsSystemIdx] = useState<number>(0)
+
+  // Sync detailsSystemIdx when project changes
+  useEffect(() => {
+    if (currentProject?.summary?.active_system_idx !== undefined) {
+      setDetailsSystemIdx(Number(currentProject.summary.active_system_idx) || 0)
+    } else {
+      setDetailsSystemIdx(0)
+    }
+  }, [currentProject?.id])
 
   // Centralized project save that first calls server calculate and saves its summary and total
   const saveProjectToServer = useCallback(
@@ -696,6 +706,72 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     setHasUnsavedChanges(true)
   }
 
+  // Input override handler for a specific system in CalculationDetails
+  const handleSetSystemInput = (sysIdx: number, key: string, value: number | null | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {
+    if (!currentProject) return
+
+    const systems = [...(currentProject.summary?.systems || [])]
+    if (systems[sysIdx]) {
+      if (targetWorkbook === 'c2c') {
+        const c2cOvr = { ...(systems[sysIdx].c2c_overrides || {}) }
+        if (value === undefined || value === null) delete c2cOvr[key]
+        else c2cOvr[key] = value
+        systems[sysIdx] = { ...systems[sysIdx], c2c_overrides: c2cOvr }
+      } else {
+        const sysOvr = { ...(systems[sysIdx].overrides || {}) }
+        if (value === undefined || value === null) delete sysOvr[key]
+        else sysOvr[key] = value
+        systems[sysIdx] = { ...systems[sysIdx], overrides: sysOvr }
+      }
+    }
+
+    if (sysIdx === 0) {
+      handleSetInput(key, value, targetWorkbook)
+    } else {
+      setCurrentProject({
+        ...currentProject,
+        summary: {
+          ...(currentProject.summary || {}),
+          systems,
+        },
+      })
+      setHasUnsavedChanges(true)
+    }
+  }
+
+  // Formula override handler for a specific system in CalculationDetails
+  const handleSetSystemFormulaOverride = (sysIdx: number, key: string, formula: string | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {
+    if (!currentProject) return
+
+    const systems = [...(currentProject.summary?.systems || [])]
+    if (systems[sysIdx]) {
+      if (targetWorkbook === 'c2c') {
+        const c2cFO = { ...(systems[sysIdx].c2c_formula_overrides || {}) }
+        if (formula === undefined) delete c2cFO[key]
+        else c2cFO[key] = formula
+        systems[sysIdx] = { ...systems[sysIdx], c2c_formula_overrides: c2cFO }
+      } else {
+        const sysFO = { ...(systems[sysIdx].formulaOverrides || {}) }
+        if (formula === undefined) delete sysFO[key]
+        else sysFO[key] = formula
+        systems[sysIdx] = { ...systems[sysIdx], formulaOverrides: sysFO }
+      }
+    }
+
+    if (sysIdx === 0) {
+      handleSetFormulaOverride(key, formula, targetWorkbook)
+    } else {
+      setCurrentProject({
+        ...currentProject,
+        summary: {
+          ...(currentProject.summary || {}),
+          systems,
+        },
+      })
+      setHasUnsavedChanges(true)
+    }
+  }
+
   return (
     <div className="app-shell">
       {/* ---------------------------------------------------- Global Top Bar */}
@@ -934,7 +1010,13 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                   loadProjects()
                 }}
                 onSaveAsCopy={handleSaveAsCopy}
-                onNavigateToSheets={() => handleTabSwitch('details')}
+                onNavigateToSheets={(sysIdx) => {
+                  if (typeof sysIdx === 'number') {
+                    setDetailsSystemIdx(sysIdx)
+                  }
+                  handleTabSwitch('details')
+                }}
+                onSystemChange={(idx) => setDetailsSystemIdx(idx)}
                 onDirtyChange={(d) => setCalculatorDirty(d)}
                 saveTriggerRef={calculatorSaveRef}
               />
@@ -1011,12 +1093,17 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
               <CalculationDetails
                 wb={baseWb}
                 c2cWb={c2cWb}
+                systems={currentProject.summary?.systems}
+                activeSystemIndex={detailsSystemIdx}
+                onSelectSystem={(idx) => setDetailsSystemIdx(idx)}
                 overrides={currentProject.inputs}
                 formulaOverrides={currentProject.formula_overrides}
                 c2cOverrides={currentProject.summary?.c2c_overrides}
                 c2cFormulaOverrides={currentProject.summary?.c2c_formula_overrides}
                 setInput={handleSetInput}
                 setFormulaOverride={handleSetFormulaOverride}
+                onSystemInput={handleSetSystemInput}
+                onSystemFormulaOverride={handleSetSystemFormulaOverride}
                 isAdminOrOwner={isAdminOrOwner}
                 session={session}
                 org={org}

@@ -9,12 +9,17 @@ import { Icon, NumField, useUI } from '../ui'
 interface Props {
   wb: Workbook
   c2cWb?: Workbook
+  systems?: any[]
+  activeSystemIndex?: number
+  onSelectSystem?: (idx: number) => void
   overrides?: Overrides
   formulaOverrides?: Record<string, string>
   c2cOverrides?: Overrides
   c2cFormulaOverrides?: Record<string, string>
   setInput: (key: string, value: number | null | undefined, targetWorkbook?: 'actual' | 'c2c') => void
   setFormulaOverride: (key: string, formula: string | undefined, targetWorkbook?: 'actual' | 'c2c') => void
+  onSystemInput?: (systemIdx: number, key: string, value: number | null | undefined, targetWorkbook?: 'actual' | 'c2c') => void
+  onSystemFormulaOverride?: (systemIdx: number, key: string, formula: string | undefined, targetWorkbook?: 'actual' | 'c2c') => void
   isAdminOrOwner?: boolean
   session?: Session
   org?: Org
@@ -42,12 +47,17 @@ const DEFAULT_METADATA: Record<string, { desc: string; category: string }> = {
 export function CalculationDetails({
   wb,
   c2cWb,
+  systems,
+  activeSystemIndex,
+  onSelectSystem,
   overrides = {},
   formulaOverrides = {},
   c2cOverrides = {},
   c2cFormulaOverrides = {},
   setInput,
   setFormulaOverride,
+  onSystemInput,
+  onSystemFormulaOverride,
   isAdminOrOwner = true,
   session,
   org,
@@ -68,6 +78,73 @@ export function CalculationDetails({
         </p>
       </div>
     )
+  }
+
+  const [currentSystemIdx, setCurrentSystemIdx] = useState<number>(() => {
+    if (typeof activeSystemIndex === 'number' && activeSystemIndex >= 0) return activeSystemIndex
+    return 0
+  })
+
+  useEffect(() => {
+    if (typeof activeSystemIndex === 'number' && activeSystemIndex >= 0) {
+      setCurrentSystemIdx(activeSystemIndex)
+    }
+  }, [activeSystemIndex])
+
+  const selectedSys = systems && systems[currentSystemIdx] ? systems[currentSystemIdx] : null
+
+  const effectiveSysOverrides = useMemo(() => {
+    if (selectedSys && selectedSys.overrides && Object.keys(selectedSys.overrides).length > 0) {
+      return selectedSys.overrides
+    }
+    return currentSystemIdx === 0 ? overrides : {}
+  }, [selectedSys, currentSystemIdx, overrides])
+
+  const effectiveSysFormulaOverrides = useMemo(() => {
+    if (selectedSys && selectedSys.formulaOverrides && Object.keys(selectedSys.formulaOverrides).length > 0) {
+      return selectedSys.formulaOverrides
+    }
+    return currentSystemIdx === 0 ? formulaOverrides : {}
+  }, [selectedSys, currentSystemIdx, formulaOverrides])
+
+  const effectiveSysC2COverrides = useMemo(() => {
+    if (selectedSys && selectedSys.c2c_overrides) {
+      return selectedSys.c2c_overrides
+    }
+    return currentSystemIdx === 0 ? c2cOverrides : {}
+  }, [selectedSys, currentSystemIdx, c2cOverrides])
+
+  const effectiveSysC2CFormulaOverrides = useMemo(() => {
+    if (selectedSys && selectedSys.c2c_formula_overrides) {
+      return selectedSys.c2c_formula_overrides
+    }
+    return currentSystemIdx === 0 ? c2cFormulaOverrides : {}
+  }, [selectedSys, currentSystemIdx, c2cFormulaOverrides])
+
+  const handleApplyInput = (key: string, value: number | null | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {
+    if (onSystemInput) {
+      onSystemInput(currentSystemIdx, key, value, targetWorkbook)
+    } else {
+      setInput(key, value, targetWorkbook)
+    }
+  }
+
+  const handleApplyFormulaOverride = (key: string, formula: string | undefined, targetWorkbook: 'actual' | 'c2c' = 'actual') => {
+    if (onSystemFormulaOverride) {
+      onSystemFormulaOverride(currentSystemIdx, key, formula, targetWorkbook)
+    } else {
+      setFormulaOverride(key, formula, targetWorkbook)
+    }
+  }
+
+  const handleSwitchSystemTab = (idx: number) => {
+    setCurrentSystemIdx(idx)
+    onSelectSystem?.(idx)
+    setSel(null)
+    setEditFormulaMode(false)
+    setInlineKey(null)
+    const sysName = systems?.[idx]?.name || `SYSTEM ${String.fromCharCode(65 + idx)}`
+    toast(`Viewing Excel sheet for ${sysName}`)
   }
 
   const [workbookType, setWorkbookType] = useState<'actual' | 'c2c'>(initialWorkbookType || 'actual')
@@ -98,10 +175,10 @@ export function CalculationDetails({
         if (!active) return
         const act = new Workbook(res.actual_workbook, res.named_constants)
         const c2c = new Workbook(res.c2c_workbook, res.named_constants)
-        act.setOverrides(overrides)
-        act.setFormulaOverrides(formulaOverrides)
-        c2c.setOverrides({ ...filterCutToCutOverrides(overrides), ...c2cOverrides })
-        c2c.setFormulaOverrides({ ...formulaOverrides, ...c2cFormulaOverrides })
+        act.setOverrides(effectiveSysOverrides)
+        act.setFormulaOverrides(effectiveSysFormulaOverrides)
+        c2c.setOverrides({ ...filterCutToCutOverrides(effectiveSysOverrides), ...effectiveSysC2COverrides })
+        c2c.setFormulaOverrides({ ...effectiveSysFormulaOverrides, ...effectiveSysC2CFormulaOverrides })
         setServerWb({ actual: act, c2c })
         if (res.metadata) setServerMeta(res.metadata)
       })
@@ -121,21 +198,29 @@ export function CalculationDetails({
   // Synchronize overrides into active server workbooks
   useEffect(() => {
     if (serverWb) {
-      serverWb.actual.setOverrides(overrides)
-      serverWb.actual.setFormulaOverrides(formulaOverrides)
-      serverWb.c2c.setOverrides({ ...filterCutToCutOverrides(overrides), ...c2cOverrides })
-      serverWb.c2c.setFormulaOverrides({ ...formulaOverrides, ...c2cFormulaOverrides })
+      serverWb.actual.setOverrides(effectiveSysOverrides)
+      serverWb.actual.setFormulaOverrides(effectiveSysFormulaOverrides)
+      serverWb.c2c.setOverrides({ ...filterCutToCutOverrides(effectiveSysOverrides), ...effectiveSysC2COverrides })
+      serverWb.c2c.setFormulaOverrides({ ...effectiveSysFormulaOverrides, ...effectiveSysC2CFormulaOverrides })
+      setRenderVer((v) => v + 1)
+    } else {
+      wb.setOverrides(effectiveSysOverrides)
+      wb.setFormulaOverrides(effectiveSysFormulaOverrides)
+      if (c2cWb) {
+        c2cWb.setOverrides({ ...filterCutToCutOverrides(effectiveSysOverrides), ...effectiveSysC2COverrides })
+        c2cWb.setFormulaOverrides({ ...effectiveSysFormulaOverrides, ...effectiveSysC2CFormulaOverrides })
+      }
       setRenderVer((v) => v + 1)
     }
-  }, [serverWb, overrides, formulaOverrides, c2cOverrides, c2cFormulaOverrides])
+  }, [serverWb, effectiveSysOverrides, effectiveSysFormulaOverrides, effectiveSysC2COverrides, effectiveSysC2CFormulaOverrides, wb, c2cWb])
 
   const activeOverrides = workbookType === 'c2c'
-    ? { ...filterCutToCutOverrides(overrides), ...c2cOverrides }
-    : overrides
+    ? { ...filterCutToCutOverrides(effectiveSysOverrides), ...effectiveSysC2COverrides }
+    : effectiveSysOverrides
 
   const activeFormulaOverrides = workbookType === 'c2c'
-    ? { ...formulaOverrides, ...c2cFormulaOverrides }
-    : formulaOverrides
+    ? { ...effectiveSysFormulaOverrides, ...effectiveSysC2CFormulaOverrides }
+    : effectiveSysFormulaOverrides
 
   const activeWb: Workbook = serverWb
     ? (workbookType === 'c2c' ? serverWb.c2c : serverWb.actual)
@@ -191,7 +276,7 @@ export function CalculationDetails({
     setSel(null)
     setEditFormulaMode(false)
     setInlineKey(null)
-  }, [name, workbookType])
+  }, [name, workbookType, currentSystemIdx])
 
   const selKey = sel ? Workbook.key(name, sel.r, sel.c) : ''
   const selVal = sel ? activeWb.value(name, sel.r, sel.c) : null
@@ -214,14 +299,14 @@ export function CalculationDetails({
       toast('Formula must start with =', 'err')
       return
     }
-    setFormulaOverride(selKey, f, workbookType)
+    handleApplyFormulaOverride(selKey, f, workbookType)
     setEditFormulaMode(false)
     toast(workbookType === 'c2c' ? 'Cut-to-Cut formula override applied' : 'Project-specific formula override applied')
   }
 
   const handleResetFormula = () => {
     if (!sel) return
-    setFormulaOverride(selKey, undefined, workbookType)
+    handleApplyFormulaOverride(selKey, undefined, workbookType)
     setEditFormulaMode(false)
     toast('Reverted to template default formula')
   }
@@ -246,8 +331,38 @@ export function CalculationDetails({
               (Server sync notice: {fetchError})
             </span>
           )}
+
+          {/* System Switcher (when multiple systems exist) */}
+          {systems && systems.length > 1 && (
+            <div style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 3, background: '#f1f5f9', padding: '2px 4px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#475569', padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.2px' }}>
+                System:
+              </span>
+              {systems.map((sys: any, idx: number) => {
+                const isCurrent = idx === currentSystemIdx
+                const sysLabel = sys.name || `SYSTEM ${String.fromCharCode(65 + idx)}`
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`btn xs ${isCurrent ? 'primary' : 'ghost'}`}
+                    onClick={() => handleSwitchSystemTab(idx)}
+                    style={
+                      isCurrent
+                        ? { background: '#2563eb', borderColor: '#2563eb', color: '#fff', fontWeight: 700, fontSize: '11px', padding: '3px 8px' }
+                        : { fontSize: '11px', padding: '3px 7px', color: '#475569' }
+                    }
+                    title={`View Excel calculation sheets for ${sysLabel}`}
+                  >
+                    📦 {sysLabel}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {(c2cWb || serverWb) && (
-            <div style={{ marginLeft: 12, display: 'inline-flex', gap: 4, background: '#f1f5f9', padding: '2px 4px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+            <div style={{ marginLeft: 8, display: 'inline-flex', gap: 4, background: '#f1f5f9', padding: '2px 4px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
               <button
                 type="button"
                 className={`btn xs ${workbookType === 'actual' ? 'primary' : 'ghost'}`}
@@ -331,12 +446,12 @@ export function CalculationDetails({
                 <NumField
                   className="fbar-input"
                   value={typeof selVal === 'number' ? selVal : null}
-                  onChange={(v) => setInput(selKey, v, workbookType)}
+                  onChange={(v) => handleApplyInput(selKey, v, workbookType)}
                 />
                 {isOverriddenInput && (
                   <button
                     className="btn ghost sm"
-                    onClick={() => setInput(selKey, undefined, workbookType)}
+                    onClick={() => handleApplyInput(selKey, undefined, workbookType)}
                     title="Reset to template default"
                   >
                     {Icon.reset} Reset Default
@@ -369,11 +484,11 @@ export function CalculationDetails({
                     <NumField
                       className="fbar-input"
                       value={isOverriddenInput ? (typeof selVal === 'number' ? selVal : null) : null}
-                      onChange={(v) => setInput(selKey, v, workbookType)}
+                      onChange={(v) => handleApplyInput(selKey, v, workbookType)}
                       placeholder="Custom val"
                     />
                     {isOverriddenInput && (
-                      <button className="btn ghost sm" onClick={() => setInput(selKey, undefined, workbookType)} title="Reset value override">
+                      <button className="btn ghost sm" onClick={() => handleApplyInput(selKey, undefined, workbookType)} title="Reset value override">
                         {Icon.reset}
                       </button>
                     )}
@@ -466,13 +581,13 @@ export function CalculationDetails({
                             onChange={(e) => setInlineVal(e.target.value)}
                             onBlur={() => {
                               const num = inlineVal.trim() === '' ? undefined : Number(inlineVal)
-                              setInput(key, isNaN(num as number) ? undefined : num, workbookType)
+                              handleApplyInput(key, isNaN(num as number) ? undefined : num, workbookType)
                               setInlineKey(null)
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 const num = inlineVal.trim() === '' ? undefined : Number(inlineVal)
-                                setInput(key, isNaN(num as number) ? undefined : num, workbookType)
+                                handleApplyInput(key, isNaN(num as number) ? undefined : num, workbookType)
                                 setInlineKey(null)
                               } else if (e.key === 'Escape') {
                                 setInlineKey(null)

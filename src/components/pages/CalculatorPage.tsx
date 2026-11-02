@@ -49,7 +49,9 @@ interface Props {
 
   onSaveAsCopy: (name: string) => void
 
-  onNavigateToSheets: () => void
+  onNavigateToSheets: (systemIdx?: number) => void
+
+  onSystemChange?: (idx: number) => void
 
   onDirtyChange?: (dirty: boolean) => void
 
@@ -350,6 +352,8 @@ export function CalculatorPage({
   onSaveAsCopy,
 
   onNavigateToSheets,
+
+  onSystemChange,
 
   onDirtyChange,
 
@@ -786,6 +790,8 @@ export function CalculatorPage({
     setOverrides(targetOverrides)
 
     if (target.formulaOverrides) setFormulaOverrides(target.formulaOverrides)
+
+    onSystemChange?.(targetIdx)
 
     toast(`Switched to ${target.name} Matrix`)
 
@@ -2429,11 +2435,11 @@ export function CalculatorPage({
   const handleNavigateToSheets = () => {
     if (dirty) {
       toast('Please save your changes first', 'err')
-      setPendingLeaveAction(() => () => onNavigateToSheets())
+      setPendingLeaveAction(() => () => onNavigateToSheets(activeSystemIdx))
       setShowUnsavedLeaveModal(true)
       return
     }
-    onNavigateToSheets()
+    onNavigateToSheets(activeSystemIdx)
   }
 
 
