@@ -1345,11 +1345,36 @@ export function CalculatorPage({
     return null
   })
 
-  // Authoritative totals from server calculate function, with immediate live response during editing
+  // Authoritative totals from server calculate function, with profit margin applied on Direct Cost Base
   const summary: Summary = useMemo(() => {
-    if (serverQuote?.summary?.models) return serverQuote.summary
-    return actualSummary || (project.summary ?? null)
-  }, [serverQuote, serverCalculating, actualSummary, project.summary])
+    const raw: Summary = serverQuote?.summary?.models ? serverQuote.summary : (actualSummary || (project.summary ?? null))
+    if (!raw) return raw
+
+    // Re-apply profit margin on Direct Cost Base (costBase = Ex-Works + Transport + Accommodation + Installation + Extra)
+    const effectiveCostBase = raw.costBase ?? (raw.subtotal + (raw.installation || 0) + (raw.transport || 0) + (raw.accommodation || 0) + (raw.extraAmount || 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))
+    const effectiveProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (raw.profitPct || 25)
+    const effectiveDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (raw.discountPct || 0)
+
+    const profitAmount = effectiveCostBase * (effectiveProfitPct / 100)
+    const subtotalWithProfit = effectiveCostBase + profitAmount
+    const discountAmount = subtotalWithProfit * (effectiveDiscountPct / 100)
+    const beforeGst = subtotalWithProfit - discountAmount
+    const gst = beforeGst * 0.18
+    const sales = Math.round(beforeGst + gst)
+
+    return {
+      ...raw,
+      costBase: effectiveCostBase,
+      profitPct: effectiveProfitPct,
+      profitAmount,
+      subtotalWithProfit,
+      discountPct: effectiveDiscountPct,
+      discountAmount,
+      beforeGst,
+      gst,
+      sales,
+    }
+  }, [serverQuote, serverCalculating, actualSummary, project.summary, profitPct, discountPct])
 
   const c2cSummary: Summary | null = useMemo(() => {
     if (!isAdminOrOwner) return null
@@ -1463,7 +1488,35 @@ export function CalculatorPage({
         }, abortController.signal)
 
         if (active && (result?.summary || result)) {
-          setServerQuote(result)
+          const rawSum = result.summary || result
+          const effCostBase = rawSum.costBase ?? (rawSum.subtotal + (rawSum.installation || 0) + (rawSum.transport || 0) + (rawSum.accommodation || 0) + (rawSum.extraAmount || 0) * (rawSum.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))
+          const effProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (rawSum.profitPct || 25)
+          const effDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (rawSum.discountPct || 0)
+          const pAmount = effCostBase * (effProfitPct / 100)
+          const subWithP = effCostBase + pAmount
+          const dAmount = subWithP * (effDiscountPct / 100)
+          const bGst = subWithP - dAmount
+          const g = bGst * 0.18
+          const s = Math.round(bGst + g)
+
+          const normalizedSummary = {
+            ...rawSum,
+            costBase: effCostBase,
+            profitPct: effProfitPct,
+            profitAmount: pAmount,
+            subtotalWithProfit: subWithP,
+            discountPct: effDiscountPct,
+            discountAmount: dAmount,
+            beforeGst: bGst,
+            gst: g,
+            sales: s,
+          }
+
+          setServerQuote({
+            ...result,
+            summary: normalizedSummary,
+            computed_total: systems.length > 1 ? (result.computed_total ?? s) : s,
+          })
           setServerSynced(true)
         }
       } catch (err: any) {
@@ -1804,17 +1857,33 @@ export function CalculatorPage({
 
 
         if (serverResult && serverResult.summary) {
+          const rawSum = serverResult.summary
+          const effCostBase = rawSum.costBase ?? (rawSum.subtotal + (rawSum.installation || 0) + (rawSum.transport || 0) + (rawSum.accommodation || 0) + (rawSum.extraAmount || 0) * (rawSum.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))
+          const effProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (rawSum.profitPct || 25)
+          const effDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (rawSum.discountPct || 0)
+          const pAmount = effCostBase * (effProfitPct / 100)
+          const subWithP = effCostBase + pAmount
+          const dAmount = subWithP * (effDiscountPct / 100)
+          const bGst = subWithP - dAmount
+          const g = bGst * 0.18
+          const s = Math.round(bGst + g)
 
-          serverSummary = serverResult.summary
-
-          serverTotal = serverResult.computed_total ?? serverResult.summary.sales
-
+          serverSummary = {
+            ...rawSum,
+            costBase: effCostBase,
+            profitPct: effProfitPct,
+            profitAmount: pAmount,
+            subtotalWithProfit: subWithP,
+            discountPct: effDiscountPct,
+            discountAmount: dAmount,
+            beforeGst: bGst,
+            gst: g,
+            sales: s,
+          }
+          serverTotal = systems.length > 1 ? (serverResult.computed_total ?? s) : s
           serverCleanedOverrides = serverResult.cleaned_overrides ?? cleaned
-
           serverSystems = serverResult.systems || []
-
           serverTotalBodies = serverResult.total_combined_bodies || totalCombinedBodies
-
         }
 
       } catch (calcErr) {
