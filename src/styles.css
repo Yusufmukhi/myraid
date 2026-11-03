@@ -1071,7 +1071,7 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 .top-project-bar {
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
+  padding: 8px 14px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -1082,34 +1082,46 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
 }
 
 .top-project-content-left {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  gap: 6px;
   flex: 1;
   min-width: 0;
 }
 
+/* LINE 1: Project Identity, Status, Version, Saved Status - Strictly 1 Line */
 .top-project-first-part {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding-bottom: 8px;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 5px;
   border-bottom: 1px solid #f1f5f9;
+  scrollbar-width: none;
+}
+.top-project-first-part::-webkit-scrollbar {
+  display: none;
 }
 
+/* LINE 2: Toolbar, Format Selector, PDF, Save - Strictly 1 Line (NEVER wraps to line 3) */
 .top-project-second-part {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   padding-top: 2px;
+  scrollbar-width: none;
+}
+.top-project-second-part::-webkit-scrollbar {
+  display: none;
 }
 
 .top-project-c2c-wrapper {
@@ -1162,13 +1174,14 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   background: #f8fafc;
   border: 1.5px solid #cbd5e1;
   border-radius: 8px;
-  padding: 0 10px;
-  height: 36px;
-  gap: 8px;
-  min-width: 220px;
-  max-width: 360px;
+  padding: 0 8px;
+  height: 32px;
+  gap: 6px;
+  min-width: 170px;
+  max-width: 270px;
   flex: 1;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .top-name-wrapper:focus-within {
@@ -1222,9 +1235,9 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 .top-toolbar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 11px;
-  font-size: 11.5px;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
   font-weight: 600;
   color: #334155;
   background: transparent;
@@ -1233,6 +1246,7 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .top-toolbar-btn:hover {
@@ -1252,31 +1266,33 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   display: inline-flex;
   align-items: center;
   background: #f8fafc;
-  padding: 3px 4px;
-  border-radius: 8px;
+  padding: 2px 3px;
+  border-radius: 7px;
   border: 1px solid #cbd5e1;
-  gap: 3px;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .top-format-label {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   color: #475569;
-  padding: 0 6px;
+  padding: 0 4px;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
 }
 
 .top-format-btn {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  padding: 5px 10px;
-  border-radius: 6px;
+  padding: 3.5px 7px;
+  border-radius: 5px;
   border: 1px solid transparent;
   cursor: pointer;
   background: transparent;
   color: #475569;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .top-format-btn:hover {
@@ -1303,14 +1319,16 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   background: #0f172a !important;
   border-color: #0f172a !important;
   color: #ffffff !important;
-  height: 36px;
-  padding: 0 14px;
+  height: 32px;
+  padding: 0 11px;
+  font-size: 11.5px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   border-radius: 6px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .top-pdf-btn:hover {
@@ -1321,16 +1339,18 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   background: #2563eb !important;
   border-color: #2563eb !important;
   color: #ffffff !important;
-  height: 36px;
-  min-width: 90px;
-  padding: 0 14px;
+  height: 32px;
+  min-width: 78px;
+  padding: 0 12px;
+  font-size: 12px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   border-radius: 6px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .top-save-btn:hover {
