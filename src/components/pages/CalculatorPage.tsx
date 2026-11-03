@@ -2996,170 +2996,172 @@ export function CalculatorPage({
 
       {/* ------------------------------------------------ TOP TIER 1: Clean Project Header & Controls */}
       <div className="card top-project-bar">
-        {/* Upper Row: Project Identity, Status Pills, and Toolbar Group */}
-        <div className="top-project-row top-project-row-upper">
-          <div className="top-project-left">
-            <div className="top-name-wrapper" title="Quotation Name">
-              <span className="top-name-icon">{Icon.fileText}</span>
-              <input
-                ref={nameInputRef}
-                type="text"
-                className="top-name-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Project name…"
-                disabled={isApprovedLocked}
-              />
-            </div>
+        <div className="top-project-main-layout">
+          {/* Main Left Content: Part 1 (Upper) & Part 2 (Lower) */}
+          <div className="top-project-content-left">
+            {/* FIRST PART: Project Identity, Status Dropdown, Version, Saved Status */}
+            <div className="top-project-first-part">
+              <div className="top-name-wrapper" title="Quotation Name">
+                <span className="top-name-icon">{Icon.fileText}</span>
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  className="top-name-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Project name…"
+                  disabled={isApprovedLocked}
+                />
+              </div>
 
-            <div className="top-pills">
-              <select
-                className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
-                value={status === 'draft' ? 'quoted' : status === 'lost' || status === 'archived' ? 'loss' : status === 'approved' ? 'won' : status}
-                onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-                title="Quotation Status"
-              >
-                <option value="quoted">Quoted</option>
-                <option value="negotiating">Negotiating</option>
-                <option value="won">Won</option>
-                <option value="loss">Loss</option>
-              </select>
-
-              {isAdminOrOwner ? (
-                <button
-                  className="chip version-chip"
-                  onClick={openRecalcModal}
-                  title="Click to switch template version"
+              <div className="top-pills">
+                <select
+                  className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
+                  value={status === 'draft' ? 'quoted' : status === 'lost' || status === 'archived' ? 'loss' : status === 'approved' ? 'won' : status}
+                  onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+                  title="Quotation Status"
                 >
-                  {Icon.layers} v{project.template_version}
-                </button>
-              ) : (
-                <span className="chip version-chip" title="Template Version">
-                  {Icon.layers} v{project.template_version}
-                </span>
-              )}
+                  <option value="quoted">Quoted</option>
+                  <option value="negotiating">Negotiating</option>
+                  <option value="won">Won</option>
+                  <option value="loss">Loss</option>
+                </select>
 
-              {isAdminOrOwner && hasNewerTemplate && (
+                {isAdminOrOwner ? (
+                  <button
+                    className="chip version-chip"
+                    onClick={openRecalcModal}
+                    title="Click to switch template version"
+                  >
+                    {Icon.layers} v{project.template_version}
+                  </button>
+                ) : (
+                  <span className="chip version-chip" title="Template Version">
+                    {Icon.layers} v{project.template_version}
+                  </span>
+                )}
+
+                {isAdminOrOwner && hasNewerTemplate && (
+                  <button
+                    className="chip warn-btn"
+                    onClick={openRecalcModal}
+                    title="Newer template version available"
+                  >
+                    {Icon.refresh} v{org.current_template_version}
+                  </button>
+                )}
+
+                {dirty ? (
+                  <span className="chip warn">● Unsaved</span>
+                ) : (
+                  <span className="chip ok">{Icon.check} Saved</span>
+                )}
+
+                {isAdminOrOwner && formulaOverridesCount > 0 && (
+                  <span className="chip purple font-mono">
+                    {formulaOverridesCount} Rule{formulaOverridesCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+
+                {revInfo.currentRev ? (
+                  <span className="chip primary font-mono font-bold" title={`Quotation Revision: Rev ${revInfo.currentRev}`}>
+                    Rev {revInfo.currentRev}
+                  </span>
+                ) : null}
+
+                {!isAdminOrOwner && (
+                  <span className="chip warning font-mono">Member View</span>
+                )}
+              </div>
+            </div>
+
+            {/* SECOND PART: Sheets, Share, Revise (A), Copy, Format Selector, Official Quotation (PDF), Save */}
+            <div className="top-project-second-part">
+              <div className="top-toolbar-group">
+                {isAdminOrOwner && (
+                  <button className="top-toolbar-btn" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
+                    {Icon.grid} Sheets
+                  </button>
+                )}
                 <button
-                  className="chip warn-btn"
-                  onClick={openRecalcModal}
-                  title="Newer template version available"
+                  className="top-toolbar-btn"
+                  onClick={openShareModal}
+                  title="Share this quotation with other staff"
                 >
-                  {Icon.refresh} v{org.current_template_version}
+                  {Icon.users} Share
                 </button>
-              )}
+                <button
+                  className="top-toolbar-btn"
+                  onClick={() => {
+                    setReviseName(parseRevision(name || project.name).nextName)
+                    setShowReviseModal(true)
+                  }}
+                  title={`Create new revision Rev ${revInfo.nextRev}`}
+                >
+                  {Icon.refresh} Revise ({revInfo.nextRev})
+                </button>
+                <button className="top-toolbar-btn" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
+                  {Icon.copy} Copy
+                </button>
+              </div>
 
-              {dirty ? (
-                <span className="chip warn">● Unsaved</span>
-              ) : (
-                <span className="chip ok">{Icon.check} Saved</span>
-              )}
+              <div className="top-format-selector">
+                <span className="top-format-label">Format:</span>
+                <button
+                  type="button"
+                  className={`top-format-btn ${quotationMode === 'set_wise' ? 'active' : ''}`}
+                  onClick={() => handleQuotationModeChange('set_wise')}
+                  title="System / Set-Wise: SYSTEM A, B, C (1 SET rate)"
+                >
+                  📦 System / Set-Wise
+                </button>
+                <button
+                  type="button"
+                  className={`top-format-btn ${quotationMode === 'unit_wise' ? 'active' : ''}`}
+                  onClick={() => handleQuotationModeChange('unit_wise')}
+                  title="Individual Unit-Wise: Line-by-line model rates (DFMU, SFMU, SFFU) including transportation & extra amount"
+                >
+                  📊 Individual Unit-Wise
+                </button>
+              </div>
 
-              {isAdminOrOwner && formulaOverridesCount > 0 && (
-                <span className="chip purple font-mono">
-                  {formulaOverridesCount} Rule{formulaOverridesCount !== 1 ? 's' : ''}
-                </span>
-              )}
-
-              {revInfo.currentRev ? (
-                <span className="chip primary font-mono font-bold" title={`Quotation Revision: Rev ${revInfo.currentRev}`}>
-                  Rev {revInfo.currentRev}
-                </span>
-              ) : null}
-
-              {!isAdminOrOwner && (
-                <span className="chip warning font-mono">Member View</span>
-              )}
-            </div>
-          </div>
-
-          <div className="top-toolbar-group">
-            {isAdminOrOwner && (
-              <button className="top-toolbar-btn" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
-                {Icon.grid} Sheets
-              </button>
-            )}
-            <button
-              className="top-toolbar-btn"
-              onClick={openShareModal}
-              title="Share this quotation with other staff"
-            >
-              {Icon.users} Share
-            </button>
-            <button
-              className="top-toolbar-btn"
-              onClick={() => {
-                setReviseName(parseRevision(name || project.name).nextName)
-                setShowReviseModal(true)
-              }}
-              title={`Create new revision Rev ${revInfo.nextRev}`}
-            >
-              {Icon.refresh} Revise ({revInfo.nextRev})
-            </button>
-            <button className="top-toolbar-btn" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
-              {Icon.copy} Copy
-            </button>
-          </div>
-        </div>
-
-        {/* Lower Row: Quotation Presentation Format & Primary Actions */}
-        <div className="top-project-row top-project-row-lower">
-          <div className="top-project-lower-left">
-            <div className="top-format-selector">
-              <span className="top-format-label">Format:</span>
               <button
-                type="button"
-                className={`top-format-btn ${quotationMode === 'set_wise' ? 'active' : ''}`}
-                onClick={() => handleQuotationModeChange('set_wise')}
-                title="System / Set-Wise: SYSTEM A, B, C (1 SET rate)"
+                className="top-pdf-btn"
+                onClick={() => setShowOfficialQuotation(true)}
+                title="View & Print Official Myriad Storage Quotation Document"
               >
-                📦 System / Set-Wise
+                {Icon.fileText} Official Quotation (PDF)
               </button>
-              <button
-                type="button"
-                className={`top-format-btn ${quotationMode === 'unit_wise' ? 'active' : ''}`}
-                onClick={() => handleQuotationModeChange('unit_wise')}
-                title="Individual Unit-Wise: Line-by-line model rates (DFMU, SFMU, SFFU) including transportation & extra amount"
-              >
-                📊 Individual Unit-Wise
+
+              <button className="top-save-btn" disabled={saving} onClick={() => save()}>
+                {saving ? <Spinner size={14} /> : Icon.save} Save
               </button>
             </div>
           </div>
 
-          <div className="top-project-lower-right">
-            <button
-              className="top-pdf-btn"
-              onClick={() => setShowOfficialQuotation(true)}
-              title="View & Print Official Myriad Storage 2-Page Quotation"
-            >
-              {Icon.fileText} Official Quotation (PDF)
-            </button>
-            <button className="top-save-btn" disabled={saving} onClick={() => save()}>
-              {saving ? <Spinner size={14} /> : Icon.save} Save
-            </button>
-
-            {/* Admin Cut-to-Cut 3-Line Summary: Profit, Total, Ratio */}
-            {isAdminOrOwner && c2cSummary && (
+          {/* C2C CALCULATION BADGE: Spanning across first and second part in the same box */}
+          {isAdminOrOwner && c2cSummary && (
+            <div className="top-project-c2c-wrapper">
               <div
                 className="c2c-top-summary-badge"
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
                   background: 'linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%)',
                   border: '1.5px solid #c084fc',
                   borderRadius: '8px',
-                  padding: '4px 12px',
-                  minWidth: '150px',
+                  padding: '6px 14px',
+                  minWidth: '165px',
+                  height: '100%',
                   boxSizing: 'border-box',
                   boxShadow: '0 2px 6px rgba(124, 58, 237, 0.12)',
-                  gap: '2px',
-                  flexShrink: 0,
+                  gap: '3px',
                 }}
                 title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+                  <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
                     {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYSTEMS)` : 'C2C ANALYSIS'}
                   </span>
                   {serverCalculating ? (
@@ -3186,12 +3188,10 @@ export function CalculatorPage({
                   <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span></span>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
-
-
 
       {/* ------------------------------------------------ TOP TIER 2: Excel Top Metrics Bar */}
 

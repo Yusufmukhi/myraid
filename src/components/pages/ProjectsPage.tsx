@@ -337,7 +337,20 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     if (!nm) return toast('Duplicate project name cannot be empty', 'err')
     try {
       const res = await api.projectDuplicate(session.token, duplicateProj.id, nm, dupUseLatest)
-      toast(`Project duplicated with template v${res.template_version}`)
+      try {
+        await api.projectUpdate(
+          session.token,
+          res.id,
+          nm,
+          'quoted',
+          duplicateProj.inputs,
+          duplicateProj.formula_overrides,
+          duplicateProj.total,
+          duplicateProj.summary,
+          `Quotation ${nm} created as copy - Status set to Quoted`,
+        )
+      } catch {}
+      toast(`Project copied successfully (Status: Quoted)`)
       setDuplicateProj(null)
       await loadProjects()
       onProjectsChanged?.()

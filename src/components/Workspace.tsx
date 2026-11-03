@@ -337,7 +337,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           `Revision ${res.name} created`,
         )
       }
-      toast(`Quotation revision “${res.name}” created (Status: Negotiating)!`)
+      toast(`Quotation “${res.name}” copied successfully (Status: Quoted)!`)
       await loadProjects(res.id)
       const newProj = await api.projectGet(session.token, res.id)
       setCurrentProject(newProj)
