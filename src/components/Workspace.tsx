@@ -6,7 +6,7 @@ import { DEFAULT_NAMED_CONSTANTS, Overrides, SheetData, Workbook } from '../lib/
 import { inr, timeAgo } from '../lib/format'
 import { cleanOverrides, extractTemplateDefaults, summarize, filterCutToCutOverrides } from '../lib/model'
 import { formatInitialProjectName, parseRevision } from '../lib/revision'
-import { getSavedClients } from '../lib/clientDirectory'
+import { getSavedClients, fetchClientsFromSupabase, SavedClient } from '../lib/clientDirectory'
 import { Navigation, NavTab } from './Navigation'
 import { ActivityPage } from './pages/ActivityPage'
 import { ApprovalsPage } from './pages/ApprovalsPage'
@@ -93,6 +93,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   // Profile Modal state
   const [showProfileModal, setShowProfileModal] = useState(Boolean(session.must_change_password))
   const [profileUsername, setProfileUsername] = useState(session.username)
+  const [profileEmail, setProfileEmail] = useState(session.email || '')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -107,7 +108,52 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const [clientSearchTermForNewProj, setClientSearchTermForNewProj] = useState<string>('')
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false)
   const [creating, setCreating] = useState(false)
-  const savedClients = useMemo(() => getSavedClients(org.id), [org.id, showCreateModal])
+  const [savedClients, setSavedClients] = useState<SavedClient[]>(() => getSavedClients(org.id))
+
+  // Fetch latest clients from Supabase cloud immediately on mount & org switch
+  useEffect(() => {
+    let active = true
+    setSavedClients(getSavedClients(org.id))
+    fetchClientsFromSupabase(session.token, org.id)
+      .then((loaded) => {
+        if (active && Array.isArray(loaded)) {
+          setSavedClients(loaded)
+        }
+      })
+      .catch(() => {})
+
+    const handleClientsUpdated = (e: any) => {
+      if (active) {
+        setSavedClients(e?.detail?.clients || getSavedClients(org.id))
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('examcalc:clients-updated', handleClientsUpdated)
+    }
+
+    return () => {
+      active = false
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('examcalc:clients-updated', handleClientsUpdated)
+      }
+    }
+  }, [org.id, session.token])
+
+  // Also verify clients are fetched when create modal opens
+  useEffect(() => {
+    if (showCreateModal) {
+      const current = getSavedClients(org.id)
+      setSavedClients(current)
+      if (current.length === 0) {
+        fetchClientsFromSupabase(session.token, org.id)
+          .then((loaded) => {
+            if (Array.isArray(loaded)) setSavedClients(loaded)
+          })
+          .catch(() => {})
+      }
+    }
+  }, [showCreateModal, org.id, session.token])
 
   const filteredClientsForNewProj = useMemo(() => {
     const q = clientSearchTermForNewProj.trim().toLowerCase()
@@ -367,20 +413,30 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       return toast('Passwords do not match', 'err')
     }
 
+    const trimmedEmail = profileEmail.trim()
+    if (trimmedEmail && (!trimmedEmail.includes('@') || !trimmedEmail.includes('.'))) {
+      return toast('Please enter a valid email address', 'err')
+    }
+
     setUpdatingProfile(true)
     try {
       const res = await api.updateProfile(
         session.token,
         trimmedUser !== session.username ? trimmedUser : undefined,
         newPassword || undefined,
-        undefined,
+        trimmedEmail !== (session.email || '') ? (trimmedEmail || undefined) : undefined,
         currentPassword || undefined,
       )
       if (res && res.username) {
         session.username = res.username
       }
+      if (res && res.email !== undefined) {
+        session.email = res.email
+      } else if (trimmedEmail) {
+        session.email = trimmedEmail
+      }
       session.must_change_password = false
-      toast('Security credentials updated successfully!')
+      toast('Profile updated successfully!')
       setShowProfileModal(false)
       setCurrentPassword('')
       setNewPassword('')
@@ -855,6 +911,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           className="btn ghost sm"
           onClick={() => {
             setProfileUsername(session.username)
+            setProfileEmail(session.email || '')
             setNewPassword('')
             setConfirmPassword('')
             setShowProfileModal(true)
@@ -921,6 +978,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                     className="menu-item"
                     onClick={() => {
                       setProfileUsername(session?.username || '')
+                      setProfileEmail(session?.email || '')
                       setNewPassword('')
                       setConfirmPassword('')
                       setShowProfileModal(true)
@@ -1388,13 +1446,6 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
             )}
 
             <form onSubmit={handleUpdateProfile} className="form mt-3">
-              {session?.email && (
-                <div style={{ padding: '8px 10px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', marginBottom: 12 }}>
-                  <div className="tiny muted font-bold">Login Email:</div>
-                  <div className="font-mono text-sm" style={{ color: '#0f172a', fontWeight: 600 }}>{session.email}</div>
-                </div>
-              )}
-
               <label>
                 <span>Username</span>
                 <input
@@ -1405,6 +1456,19 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                   autoFocus={!session.must_change_password}
                   required
                 />
+              </label>
+
+              <label>
+                <span>Email Address</span>
+                <input
+                  type="email"
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
+                  placeholder="e.g. user@myriadstoragesystem.com"
+                />
+                <span className="tiny muted block mt-1" style={{ fontSize: 11 }}>
+                  Your email address for quotation communication and notifications.
+                </span>
               </label>
 
               {newPassword.length > 0 && !session.must_change_password && (
