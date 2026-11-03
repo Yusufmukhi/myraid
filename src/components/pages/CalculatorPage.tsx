@@ -74,10 +74,12 @@ function computeProjectSnapshot(
   currentLiveFormulaOverrides: Record<string, string>,
   liveExtraAmount: number,
   liveIncludeInstallation: boolean,
+  wbInstance?: Workbook,
 ) {
   const normalizedSystems = (systemsList || []).map((sys, idx) => {
     const isCurrent = idx === currentActiveIdx
     const rawOv = isCurrent ? currentLiveOverrides : (sys.overrides || {})
+    const cleanedOv = wbInstance ? cleanOverrides(wbInstance, rawOv) : rawOv
     const rawFo = isCurrent ? currentLiveFormulaOverrides : (sys.formulaOverrides || {})
     const inc = isCurrent ? liveIncludeInstallation : (sys.includeInstallation ?? true)
     const extra = isCurrent ? liveExtraAmount : (sys.extraAmount ?? 0)
@@ -85,11 +87,11 @@ function computeProjectSnapshot(
     const unit = sys.unit ?? 'SET'
     const name = sys.name ?? `SYSTEM ${String.fromCharCode(65 + idx)}`
 
-    const sortedOvKeys = Object.keys(rawOv).sort()
+    const sortedOvKeys = Object.keys(cleanedOv).sort()
     const sortedOv: Record<string, any> = {}
     for (const k of sortedOvKeys) {
-      if (rawOv[k] !== undefined && rawOv[k] !== null && rawOv[k] !== '') {
-        sortedOv[k] = rawOv[k]
+      if (cleanedOv[k] !== undefined && cleanedOv[k] !== null && cleanedOv[k] !== '') {
+        sortedOv[k] = cleanedOv[k]
       }
     }
 
@@ -395,21 +397,27 @@ export function CalculatorPage({
             name: 'SYSTEM A',
             quantity: 1,
             unit: 'SET',
-            overrides: sanitizeOverrides(project.inputs ?? {}),
+            overrides: cleanOverrides(wb, sanitizeOverrides(project.inputs ?? {})),
             formulaOverrides: project.formula_overrides ?? {},
             includeInstallation: project.inputs?.['__include_installation'] !== 0,
             extraAmount: Number(project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0),
           },
         ]
       : (project.summary?.systems && Array.isArray(project.summary.systems) && project.summary.systems.length > 0)
-      ? project.summary.systems
+      ? project.summary.systems.map((s: any) => ({
+          ...s,
+          overrides: cleanOverrides(wb, sanitizeOverrides(s.overrides || {})),
+          formulaOverrides: s.formulaOverrides || {},
+          includeInstallation: s.includeInstallation ?? (project.inputs?.['__include_installation'] !== 0),
+          extraAmount: Number(s.extraAmount ?? project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0),
+        }))
       : [
           {
             id: '1',
             name: 'SYSTEM A',
             quantity: 1,
             unit: 'SET',
-            overrides: sanitizeOverrides(project.inputs ?? {}),
+            overrides: cleanOverrides(wb, sanitizeOverrides(project.inputs ?? {})),
             formulaOverrides: project.formula_overrides ?? {},
             includeInstallation: project.inputs?.['__include_installation'] !== 0,
             extraAmount: Number(project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0),
@@ -422,10 +430,11 @@ export function CalculatorPage({
       project.summary?.quotation_mode || 'set_wise',
       initSystems,
       0,
-      sanitizeOverrides(project.inputs ?? {}),
+      cleanOverrides(wb, sanitizeOverrides(project.inputs ?? {})),
       project.formula_overrides ?? {},
       Number(project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0),
       project.inputs?.['__include_installation'] !== 0,
+      wb,
     )
   })
 
@@ -1700,6 +1709,7 @@ export function CalculatorPage({
       formulaOverrides,
       extraAmount,
       includeInstallation,
+      wb,
     )
   }, [name, status, quotationMode, systems, activeSystemIdx, wb, overrides, formulaOverrides, extraAmount, includeInstallation])
 
@@ -2099,6 +2109,7 @@ export function CalculatorPage({
           formulaOverrides,
           extraAmount,
           includeInstallation,
+          wb,
         ),
       )
 
@@ -2324,7 +2335,35 @@ export function CalculatorPage({
 
     onProjectUpdated(updatedProject)
 
+    const finalCleanOverrides = cleanOverrides(wb, nextOverrides)
+    const effectiveSets = (sets && Array.isArray(sets)) ? sets : []
+    const updatedSystemsList = systems.map((sys, i) => {
+      const matchSet = effectiveSets[i]
+      const isCur = i === activeSystemIdx
+      return {
+        ...sys,
+        name: matchSet?.system_title || sys.name,
+        quantity: matchSet?.quantity || sys.quantity,
+        unit: matchSet?.unit || sys.unit,
+        overrides: isCur ? finalCleanOverrides : (sys.overrides || {}),
+        extraAmount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount,
+      }
+    })
 
+    setBaseline(
+      computeProjectSnapshot(
+        name,
+        status,
+        extraSettings?.quotation_mode || quotationMode,
+        updatedSystemsList,
+        activeSystemIdx,
+        finalCleanOverrides,
+        formulaOverrides,
+        extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount,
+        includeInstallation,
+        wb,
+      ),
+    )
 
     api.projectUpdate(
 

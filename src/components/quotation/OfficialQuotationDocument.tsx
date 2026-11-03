@@ -29,6 +29,7 @@ export interface QuotationTermItem {
 }
 
 export interface QuotationClientInfo {
+  client_id?: string
   qtn_no: string
   date: string
   buyer_name: string
@@ -61,6 +62,206 @@ export interface QuotationClientInfo {
   amc_terms?: string
   extra_fields?: QuotationExtraField[]
   terms_list?: QuotationTermItem[]
+}
+
+
+export interface CompactorTechnicalSpecs {
+  mainTitle: string
+  subTitle: string
+  mobileRacksTitle: string
+  mobileRacksIntro: string
+  undercarriageTitle: string
+  baseFrame: string
+  tracks: string
+  superStructureTitle: string
+  superStructureIntro: string
+  shelves: string
+  verticalPanel: string
+  middlePanel: string
+  topPanel: string
+  centrePartition: string
+  endPanel: string
+  centralLocking: string
+  mechanicalTitle: string
+  powderCoating: string
+  indexArrangement: string
+  shaft: string
+  pedestalBearing: string
+  wheel: string
+  chain: string
+  openableShutter: string
+}
+
+export interface PowderCoatingSpecs {
+  mainTitle: string
+  plantOverview: string
+  machineryTitle: string
+  pretreatmentPlant: string
+  tankList: string[]
+  compressorsA: string
+  compressorsB: string
+  powderCoating: string
+  oven: string
+  miscEquipments: string
+  instructionsTitle: string
+  pretreatmentSecTitle: string
+  pretreatmentIntro: string
+  degreasingTitle: string
+  degreasingLines: string[]
+  waterRinse1: string
+  derustingTitle: string
+  derustingLines: string[]
+  waterRinse2: string
+}
+
+export interface PretreatmentQCSpecs {
+  mainTitle: string
+  activationTitle: string
+  activationLines: string[]
+  zincPhosphatingTitle: string
+  zincPhosphatingLines: string[]
+  waterRinse3: string
+  passivationTitle: string
+  passivationLines: string[]
+  parametersTitle: string
+  parametersList: string[]
+  qcMainTitle: string
+  qcArrivalTitle: string
+  qcArrivalLines: string[]
+  qcProductionTitle: string
+  qcProductionLines: string[]
+  qcFinalTitle: string
+  qcFinalLines: string[]
+  qcTestingTitle: string
+  qcTestingLines: string[]
+}
+
+export interface QuotationProposalSpecs {
+  page3: CompactorTechnicalSpecs
+  page4: PowderCoatingSpecs
+  page5: PretreatmentQCSpecs
+}
+
+export const DEFAULT_PROPOSAL_SPECS: QuotationProposalSpecs = {
+  page3: {
+    mainTitle: 'COMPACTOR TECHNICAL SPECIFICATION',
+    subTitle: 'DELUXE MODEL',
+    mobileRacksTitle: 'Technical Specification For Mobile Racks:',
+    mobileRacksIntro: 'Manually operated & mechanically assisted Mobile Racks sliding smoothly & effortlessly on a pair of rails & providing maximum storage capacity by compaction.',
+    undercarriageTitle: 'THE UNDERCARRIAGE:',
+    baseFrame: 'Channel type Base Frame fabricated in one part. Each Wheel is provided with TWO Support Channels, Made from 2.5 mm thick M.S. Sheet (size of Channel: 25mm x 100mm x 40mm).',
+    tracks: "The guide rails shall be made out of 28mm Bright Bar placed on 0.8mm thick M.S. Plate with 6 Bends placed above the floor and are as per the international standard of safety. No's of Tracks as per Drawing.",
+    superStructureTitle: 'SUPER STRUCTURE:',
+    superStructureIntro: 'Super structure of the Mobile storage system will consist of Knock Down Type Panels (Not Slotted Angle Type). All the components such as shelves, front panel, end panel, vertical rear panel, central partition etc. will act as an integral member of the unit.',
+    shelves: 'Adjustable Shelves made of 1.2 MM with stiffner thick Prime Quality C.R.C.A. sheet having 10 folds, each design to carry a U.D.L. of 200 kgs. Per Level.',
+    verticalPanel: 'Vertical Panel made out of 0.8 MM thick C.R.C.A. Prime Quality Mild Steel having 8 Folds (36X15X12MM) & designed carry full load of entire unit with Overlapping Provisions for Dust Resistant.',
+    middlePanel: 'Made out of 0.8 MM thick C.R.C.A Prime Quality Steel having 16 Folds (36X15X12MM) & designed to carry full load of entire unit.',
+    topPanel: 'Made out of 0.8 mm thick C.R.C.A Prime Quality Steel having 8 Folds, (27MM X 12MM) with Overlapping provision for Dust Resistant.',
+    centrePartition: 'The centre partition will comprise of full C.R.C.A. Prime Quality Mild Steel 0.8 mm Sheet.',
+    endPanel: 'Made out of 0.8 mm thick C.R.C.A Prime Quality Steel having 8 Folds (72 X 15 X 12).',
+    centralLocking: 'System will be provided with individual rack locking as well as Centralized locking Arrangement on the last unit when all units are brought together. Central lock when operated gets locked with the floor & does not allow access to the unit.',
+    mechanicalTitle: 'MECHANICAL & DRIVE ASSEMBLY:',
+    powderCoating: 'Nine Tank Process Powder Coated, Structure Finishing 50 to 60 Microns.',
+    indexArrangement: 'Acrylic card holders (2 Nos.) provided on the front panel for easy identification & retrieval.',
+    shaft: '20 mm thick Full Length Solid Bright Bar Shaft.',
+    pedestalBearing: 'Entire mechanism on Pedestal Bearing, Each wheel provided with 2 Bearing Pedestal for Smooth movement as per International Standard.',
+    wheel: 'Made by Casting Material OD 125mm & Thickness 36mm.',
+    chain: '0.5" Heavy Duty Industrial Roller Chain.',
+    openableShutter: 'Made by 1 mm sheet with Shifter with high security single key lock with up and down and site locking agreement with in-built handle.',
+  },
+  page4: {
+    mainTitle: 'POWDER COATING SPECIFICATION',
+    plantOverview: 'Our powder coating plant in Vasai features a 5,500 Sq. Ft. operational working area and 8,500 Litres chemical tank capacity.\nTank Size: 10 Ft X 8 Ft X 4 Ft  |  Oven Sizes: 16 Ft X 6.5 Ft X 8.25 Ft, 6.5 Ft X 6 Ft X 7.5 Ft & 12 Ft X 6.5 Ft X 9.25 Ft',
+    machineryTitle: 'LIST OF MACHINERY & EQUIPMENTS FOR POWDER COATING',
+    pretreatmentPlant: '7 Tank cold process Zinc Phosphate coating Dipping type process (8,500 Ltr. Capacity)',
+    tankList: [
+      '1. Degreasing (Alkaline dip)',
+      '5. Activation / Predip (V-CHEM S.M.)',
+      '2. Water Rinse (Continuous Ambient)',
+      '6. Zinc Phosphating (V-CHEM ZP Cold)',
+      '3. Derusting / Pickling',
+      '7. Water Rinse (Continuous Ambient)',
+      '4. Water Rinse (Continuous Ambient)',
+      '8. Passivation: V-CHEM PASSI',
+    ],
+    compressorsA: 'A) 2 No 7.5 KV / 400 Ltr. Capacity filter Regulators & Air dryer',
+    compressorsB: 'B) 2 No 10 KV / 600 Ltr. Capacity filter Regulators & Air dryer',
+    powderCoating: "4 No Gema System, Recovery booth size 5' X 5' X 4' = 5 nos",
+    oven: 'a) 16 Ft X 6.5 Ft X 8.25 Ft  |  b) 6.5 Ft X 6 Ft X 7.5 Ft  |  c) 12 Ft X 6.5 Ft X 9.25 Ft',
+    miscEquipments: 'For Laboratory of chemicals, phosphate Coating & Finished component inspection.',
+    instructionsTitle: 'METHODS OF INSTRUCTION (M.S. ITEMS ONLY)',
+    pretreatmentSecTitle: '1. PRETREATMENT',
+    pretreatmentIntro: 'Pretreatment process followed should be as per IS 3618 Class C. M.S. Material must be zinc phosphated. Under given process should be followed for pretreatment of M.S. material. If heavy deposition of grease or oil is observed, prewiping with Turpentine or washing thinner is necessary followed by a dry wipe with a cotton rag. The same cotton rag must not be used for a prolonged time.',
+    degreasingTitle: '1.1 Degreasing:',
+    degreasingLines: [
+      '• Bath Strength: 25% Concentration',
+      '• Dip Time: 10 - 20 mins (Dip time can be increased or reduced depending upon oil deposition)',
+      '• Minimum Pointage: 15 - 18 0.1N H2SO4 (can exceed to 100 - 110 ml 0.1N H2SO4)',
+      '• Chemical Replenishment: Add for each one point less and add 65 Ltr chemical.',
+    ],
+    waterRinse1: 'Continuous overflowing water air agitation  |  Dip Time: 1 min  |  pH: 5 - 7',
+    derustingTitle: '1.3 Derusting:',
+    derustingLines: [
+      '• Bath Strength: 25% Concentration',
+      '• Dip Time: 10 - 20 mins (Depending upon oil & black scale quantity)',
+      '• Minimum Pointage: 50 - 60 0.1N H2SO4 (can exceed to 100 - 110 ml 0.1N H2SO4)',
+      '• Chemical Replenishment: Add for each one point less and add 65 Ltr chemical.',
+    ],
+    waterRinse2: 'Continuous overflowing water air agitation  |  Dip Time: 1 min  |  pH: 5 - 7',
+  },
+  page5: {
+    mainTitle: 'PRETREATMENT PROCESS & PARAMETERS',
+    activationTitle: '1.5 Activation: V-CHEM S.M.',
+    activationLines: [
+      '• Bath Strength: 0.5%  |  Temp: Room Temperature (R.T.)  |  Dip Time: 1 min  |  pH: 2 - 3',
+      '• Function: Prepares uniform micro-crystalline nucleation sites for zinc phosphate coating.',
+    ],
+    zincPhosphatingTitle: '1.6 Zinc Phosphating: V-CHEM ZP (COLD) LP',
+    zincPhosphatingLines: [
+      '• Bath Strength: 5 - 6%  |  Temp: Room Temperature (R.T.)  |  Dip Time: 15 - 20 mins',
+      '• T.A. (Total Acid): 25 - 30 NaOH (can exceed to 30 - 34 ml 0.1N NaOH)',
+      '• Accelerator: V-CHEM Accelerator  |  Test: Starch Iodide paper turns light blue.',
+    ],
+    waterRinse3: 'Continuous overflowing water air agitation  |  Dip Time: 1 min  |  pH: 5 - 7',
+    passivationTitle: '1.8 Passivation: V-CHEM PASSI',
+    passivationLines: [
+      '• Bath Strength: 0.1%  |  Temp: Room Temperature (R.T.)  |  Dip Time: 1 min',
+      '• Function: Seals microscopic pores in phosphate layer for maximum corrosion resistance.',
+    ],
+    parametersTitle: 'Parameters to be controlled on the line of pretreatment:',
+    parametersList: [
+      '1. Bath strength pointage and replenishment.',
+      '4. Sludge removal and filtration.',
+      '2. Dip time compliance for each stage.',
+      '5. Carry over of chemical prevention.',
+      '3. pH of water rinse, activation and passivation.',
+      '6. Air pocketing elimination by proper racking.',
+    ],
+    qcMainTitle: 'QUALITY CONTROL',
+    qcArrivalTitle: 'I. ON ARRIVAL OF MATERIAL',
+    qcArrivalLines: [
+      'a) After arrival of material it is stocked and stored properly in order to prevent it from damages.',
+      'b) Before processing the material is checked for dent marks, deep scratches and other fabrication defects.',
+    ],
+    qcProductionTitle: 'II. DURING PRODUCTION',
+    qcProductionLines: [
+      'a) While in process the material is checked visually for removal of oil, grease, rust, scale etc.',
+      'b) The pretreatment baths are maintained as per requirement and pointages, pH, temperatures are checked and recorded.',
+      'c) After phosphating and before painting/powder coating, the material is again checked for phosphate coating uniformity.',
+      'd) While baking, the temperature controller is per requirement to prevent under/over baking. A digital timer ensures the oven shuts off after the set time.',
+    ],
+    qcFinalTitle: 'III. FINAL CONTROL',
+    qcFinalLines: [
+      'a) After baking the material is re-inspected for covering pattern, film thickness, gloss etc.',
+      'b) Finally the material is touched up in delicate corners and stacked properly for dispatch.',
+    ],
+    qcTestingTitle: 'IV. TESTING EQUIPMENTS',
+    qcTestingLines: [
+      'a) Pretreatment baths are checked on a regular interval and pointage, pH and temperatures are maintained.',
+      'b) The phosphate coating is checked as per IS 3618 specification for salt spray test.',
+      'c) Painted components are checked for film thickness using calibrated digital magnetic gauges.',
+    ],
+  },
 }
 
 export interface QuotationLineItem {
@@ -692,6 +893,7 @@ export function OfficialQuotationDocument({
     const defaultLodgingTerms = 'At your scope.'
 
     return {
+      client_id: saved.client_id || dirMatch?.id || '',
       qtn_no: effectiveQtnNo,
       date: saved.date || today,
       buyer_name: effectiveBuyerName,
@@ -740,7 +942,20 @@ export function OfficialQuotationDocument({
 
   const { toast } = useUI()
   const [clientInfo, setClientInfo] = useState<QuotationClientInfo>(initialClientInfo)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'options' | 'breakdown' | 'client' | 'terms' | 'body'>('options')
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'options' | 'breakdown' | 'client' | 'terms' | 'body' | 'specs'>('options')
+  const [specsSubTab, setSpecsSubTab] = useState<'page3' | 'page4' | 'page5'>('page3')
+  const [justSaved, setJustSaved] = useState(false)
+  const [proposalSpecs, setProposalSpecs] = useState<QuotationProposalSpecs>(() => {
+    const saved = project.summary?.proposal_specs
+    if (saved && saved.page3 && saved.page4 && saved.page5) {
+      return {
+        page3: { ...DEFAULT_PROPOSAL_SPECS.page3, ...saved.page3 },
+        page4: { ...DEFAULT_PROPOSAL_SPECS.page4, ...saved.page4 },
+        page5: { ...DEFAULT_PROPOSAL_SPECS.page5, ...saved.page5 },
+      }
+    }
+    return DEFAULT_PROPOSAL_SPECS
+  })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Business Profile & PDF Branding State (dynamic organisation details)
@@ -774,6 +989,7 @@ export function OfficialQuotationDocument({
   }, [savedClients, username, role, userId])
 
   const [selectedClientId, setSelectedClientId] = useState<string>(() => {
+    if (initialClientInfo.client_id) return initialClientInfo.client_id
     const matching = getVisibleClientsForUser(getSavedClients(effectiveOrgId), username, role, userId).find(
       (c) => c.name.trim().toLowerCase() === (initialClientInfo.buyer_name || '').trim().toLowerCase(),
     )
@@ -950,8 +1166,15 @@ export function OfficialQuotationDocument({
     }
 
     try {
+      const normName = clientInfo.buyer_name.trim().toLowerCase()
+      const existingClient = savedClients.find(
+        (c) => (selectedClientId && c.id === selectedClientId) || (c.name && c.name.trim().toLowerCase() === normName)
+      )
+      const targetId = selectedClientId || clientInfo.client_id || existingClient?.id
+
       const saved = await saveClientToDirectoryAsync(
         {
+          id: targetId,
           name: clientInfo.buyer_name.trim(),
           address: clientInfo.buyer_address || '',
           gst: clientInfo.buyer_gst || '',
@@ -968,7 +1191,9 @@ export function OfficialQuotationDocument({
       )
 
       setSelectedClientId(saved.id)
-      toast(`Saved "${saved.name}" to Client Directory!`)
+      setClientInfo((prev) => ({ ...prev, client_id: saved.id }))
+      setSavedClients(getSavedClients(effectiveOrgId))
+      toast(targetId ? `Updated "${saved.name}" in Client Directory!` : `Saved "${saved.name}" to Client Directory!`)
     } catch (err: any) {
       toast(err?.message || 'Client already exists', 'err')
     }
@@ -1022,6 +1247,12 @@ export function OfficialQuotationDocument({
       return
     }
 
+    const normName = newClientData.name.trim().toLowerCase()
+    const existingClient = savedClients.find(
+      (c) => c.name && c.name.trim().toLowerCase() === normName
+    )
+    const targetId = existingClient?.id
+
     const initialContactList = (newClientData.kind_att || newClientData.contact) ? [{
       id: `cp_${Date.now()}_1`,
       name: newClientData.kind_att || '',
@@ -1032,6 +1263,7 @@ export function OfficialQuotationDocument({
     try {
       const saved = await saveClientToDirectoryAsync(
         {
+          id: targetId,
           ...newClientData,
           contacts: initialContactList,
         },
@@ -1046,6 +1278,7 @@ export function OfficialQuotationDocument({
 
       setClientInfo((prev) => ({
         ...prev,
+        client_id: saved.id,
         buyer_name: saved.name,
         buyer_address: saved.address,
         buyer_gst: saved.gst || '',
@@ -1057,6 +1290,7 @@ export function OfficialQuotationDocument({
       }))
 
       setSelectedClientId(saved.id)
+      setSavedClients(getSavedClients(effectiveOrgId))
       setShowAddClientModal(false)
       setNewClientData({
         name: '',
@@ -1067,7 +1301,7 @@ export function OfficialQuotationDocument({
         email: '',
       })
 
-      toast(`New client "${saved.name}" saved to directory and applied!`)
+      toast(targetId ? `Existing client "${saved.name}" updated and applied!` : `New client "${saved.name}" saved to directory and applied!`)
     } catch (err: any) {
       toast(err?.message || 'Client already exists', 'err')
     }
@@ -1445,7 +1679,7 @@ export function OfficialQuotationDocument({
       ]
     }
 
-    if (!isUnsavedWarning && project.summary?.quotation_sets && Array.isArray(project.summary.quotation_sets) && project.summary.quotation_sets.length > 0) {
+    if ((!isUnsavedWarning || justSaved) && project.summary?.quotation_sets && Array.isArray(project.summary.quotation_sets) && project.summary.quotation_sets.length > 0) {
       return project.summary.quotation_sets.map((s: any, idx: number) => ({
         ...s,
         system_title: s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`),
@@ -2027,6 +2261,8 @@ export function OfficialQuotationDocument({
         freight_terms: isTransportZero ? 'At your scope.' : clientInfo.freight_terms,
         lodging_terms: isAccommodationZero ? 'At your scope.' : clientInfo.lodging_terms,
       }
+      setJustSaved(true)
+      toast('Quotation changes saved successfully!')
       onSaveClientInfo(cleanClientInfo, lineItems, bodyItems, sets, {
         quotation_mode: effectiveQuotationMode,
         body_table_on_page_1: placeBodyOnPage1,
@@ -2034,6 +2270,7 @@ export function OfficialQuotationDocument({
         include_installation: includeInstallation,
         terms_list: cleanTerms,
         red_specs: redSpecs,
+        proposal_specs: proposalSpecs,
         extra_amount: extraAmount,
         __profit_pct: profitPct,
       })
@@ -2210,7 +2447,7 @@ export function OfficialQuotationDocument({
           THE EXACT OFFICIAL 5-PAGE PROPOSAL DOCUMENT
           ========================================================================= */}
       <div className={`official-document-scroll-container ${mobileView === 'sidebar' ? 'mobile-hidden' : ''}`} id="official-quotation-pages">
-        {isUnsavedWarning && (
+        {isUnsavedWarning && !justSaved && (
           <div className="no-print" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '8px 14px', fontSize: '12px', borderRadius: '6px', margin: '0 auto 12px auto', maxWidth: '210mm', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>⚠️</span>
             <span><strong>Showing saved quotation data.</strong> Click <strong>Save</strong> in the calculator to apply unsaved edits.</span>
@@ -2772,71 +3009,333 @@ export function OfficialQuotationDocument({
               {renderOfficialHeader()}
 
               <div className="pdf-spec-container">
-                <div className="pdf-spec-main-title">COMPACTOR TECHNICAL SPECIFICATION</div>
-                <div className="pdf-spec-sub-title">DELUXE MODEL</div>
-
-                <div className="pdf-spec-sec-title">Technical Specification For Mobile Racks:</div>
-                <div className="pdf-spec-para">
-                  Manually operated &amp; mechanically assisted Mobile Racks sliding smoothly &amp; effortlessly on a pair of rails &amp; providing maximum storage capacity by compaction.
+                {/* PRETREATMENT PROCESS &amp; PARAMETERS */}
+                <div
+                  className="pdf-spec-main-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, mainTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.mainTitle}
+                </div>
+                <div
+                  className="pdf-spec-sub-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, subTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.subTitle}
                 </div>
 
-                <div className="pdf-spec-sec-title">THE UNDERCARRIAGE:</div>
-                <div className="pdf-spec-row">
-                  <strong>BASE FRAME :</strong> Channel type Base Frame fabricated in one part. Each Wheel is provided with TWO Support Channels, Made from 2.5 mm thick M.S. Sheet (size of Channel: 25mm x 100mm x 40mm).
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, mobileRacksTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.mobileRacksTitle}
                 </div>
-                <div className="pdf-spec-row">
-                  <strong>TRACKS:</strong> The guide rails shall be made out of 28mm Bright Bar placed on 0.8mm thick M.S. Plate with 6 Bends placed above the floor and are as per the international standard of safety. No&apos;s of Tracks as per Drawing.
-                </div>
-
-                <div className="pdf-spec-sec-title">SUPER STRUCTURE:</div>
-                <div className="pdf-spec-para">
-                  Super structure of the Mobile storage system will consist of Knock Down Type Panels (Not Slotted Angle Type). All the components such as shelves, front panel, end panel, vertical rear panel, central partition etc. will act as an integral member of the unit.
-                </div>
-
-                <div className="pdf-spec-row">
-                  <strong>SHELVES:</strong> Adjustable Shelves made of 1.2 MM with stiffner thick Prime Quality C.R.C.A. sheet having 10 folds, each design to carry a U.D.L. of 200 kgs. Per Level.
-                </div>
-                <div className="pdf-spec-row">
-                  <strong>VERTICAL PANEL:</strong> Vertical Panel made out of 0.8 MM thick C.R.C.A. Prime Quality Mild Steel having 8 Folds (36X15X12MM) &amp; designed carry full load of entire unit with Overlapping Provisions for Dust Resistant.
-                </div>
-                <div className="pdf-spec-row">
-                  <strong>MIDDLE PANEL:</strong> Made out of 0.8 MM thick C.R.C.A Prime Quality Steel having 16 Folds (36X15X12MM) &amp; designed to carry full load of entire unit.
-                </div>
-                <div className="pdf-spec-row">
-                  <strong>TOP PANEL:</strong> Made out of 0.8 mm thick C.R.C.A Prime Quality Steel having 8 Folds, (27MM X 12MM) with Overlapping provision for Dust Resistant.
-                </div>
-                <div className="pdf-spec-row">
-                  <strong>CENTRE PARTITION:</strong> The centre partition will comprise of full C.R.C.A. Prime Quality Mild Steel 0.8 mm Sheet.
-                </div>
-                <div className="pdf-spec-row">
-                  <strong>END PANEL:</strong> Made out of 0.8 mm thick C.R.C.A Prime Quality Steel having 8 Folds (72 X 15 X 12).
-                </div>
-                <div className="pdf-spec-row">
-                  <strong>CENTRAL LOCKING:</strong> System will be provided with individual rack locking as well as Centralized locking Arrangement on the last unit when all units are brought together. Central lock when operated gets locked with the floor &amp; does not allow access to the unit.
+                <div
+                  className="pdf-spec-para"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, mobileRacksIntro: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.mobileRacksIntro}
                 </div>
 
-                {/* Merged from Page 4: Mechanical & Drive Specs */}
-                <div className="pdf-spec-sec-title" style={{ marginTop: '7px' }}>MECHANICAL &amp; DRIVE ASSEMBLY:</div>
-                <div className="pdf-spec-row">
-                  <strong>POWDER COATING:</strong> Nine Tank Process Powder Coated, Structure Finishing 50 to 60 Microns.
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, undercarriageTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.undercarriageTitle}
                 </div>
                 <div className="pdf-spec-row">
-                  <strong>INDEX ARRANGEMENT:</strong> Acrylic card holders (2 Nos.) provided on the front panel for easy identification &amp; retrieval.
+                  <strong>BASE FRAME : </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, baseFrame: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.baseFrame}
+                  </span>
                 </div>
                 <div className="pdf-spec-row">
-                  <strong>SHAFT:</strong> 20 mm thick Full Length Solid Bright Bar Shaft.
+                  <strong>TRACKS: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, tracks: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.tracks}
+                  </span>
+                </div>
+
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, superStructureTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.superStructureTitle}
+                </div>
+                <div
+                  className="pdf-spec-para"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, superStructureIntro: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.superStructureIntro}
+                </div>
+
+                <div className="pdf-spec-row">
+                  <strong>SHELVES: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, shelves: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.shelves}
+                  </span>
                 </div>
                 <div className="pdf-spec-row">
-                  <strong>PEDESTAL BEARING:</strong> Entire mechanism on Pedestal Bearing, Each wheel provided with 2 Bearing Pedestal for Smooth movement as per International Standard.
+                  <strong>VERTICAL PANEL: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, verticalPanel: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.verticalPanel}
+                  </span>
                 </div>
                 <div className="pdf-spec-row">
-                  <strong>WHEEL:</strong> Made by Casting Material OD 125mm &amp; Thickness 36mm.
+                  <strong>MIDDLE PANEL: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, middlePanel: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.middlePanel}
+                  </span>
                 </div>
                 <div className="pdf-spec-row">
-                  <strong>CHAIN:</strong> 0.5&quot; Heavy Duty Industrial Roller Chain.
+                  <strong>TOP PANEL: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, topPanel: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.topPanel}
+                  </span>
                 </div>
                 <div className="pdf-spec-row">
-                  <strong>OPEN ABLE SHUTTER:</strong> Made by 1 mm sheet with Shifter with high security single key lock with up and down and site locking agreement with in-built handle.
+                  <strong>CENTRE PARTITION: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, centrePartition: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.centrePartition}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>END PANEL: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, endPanel: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.endPanel}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>CENTRAL LOCKING: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, centralLocking: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.centralLocking}
+                  </span>
+                </div>
+
+                {/* Merged from Page 4: Mechanical & Drive Specs - MECHANICAL &amp; DRIVE ASSEMBLY: */}
+                <div
+                  className="pdf-spec-sec-title"
+                  style={{ marginTop: '7px' }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, mechanicalTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page3.mechanicalTitle}
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>POWDER COATING: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, powderCoating: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.powderCoating}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>INDEX ARRANGEMENT: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, indexArrangement: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.indexArrangement}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>SHAFT: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, shaft: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.shaft}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>PEDESTAL BEARING: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, pedestalBearing: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.pedestalBearing}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>WHEEL: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, wheel: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.wheel}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>CHAIN: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, chain: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.chain}
+                  </span>
+                </div>
+                <div className="pdf-spec-row">
+                  <strong>OPEN ABLE SHUTTER: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, openableShutter: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page3.openableShutter}
+                  </span>
                 </div>
               </div>
 
@@ -2849,84 +3348,290 @@ export function OfficialQuotationDocument({
               {renderOfficialHeader()}
 
               <div className="pdf-spec-container">
-                <div className="pdf-spec-main-title">POWDER COATING SPECIFICATION</div>
-                <div className="pdf-spec-para" style={{ marginTop: '4px' }}>
-                  Our powder coating plant in Vasai features a 5,500 Sq. Ft. operational working area and 8,500 Litres chemical tank capacity.<br />
-                  Tank Size: 10 Ft X 8 Ft X 4 Ft &nbsp;|&nbsp; Oven Sizes: 16 Ft X 6.5 Ft X 8.25 Ft, 6.5 Ft X 6 Ft X 7.5 Ft &amp; 12 Ft X 6.5 Ft X 9.25 Ft
+                {/* PRETREATMENT PROCESS &amp; PARAMETERS */}
+                <div
+                  className="pdf-spec-main-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, mainTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page4.mainTitle}
+                </div>
+                <div
+                  className="pdf-spec-para"
+                  style={{ marginTop: '4px', whiteSpace: 'pre-line' }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, plantOverview: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page4.plantOverview}
                 </div>
 
-                <div className="pdf-spec-sec-title">LIST OF MACHINERY &amp; EQUIPMENTS FOR POWDER COATING</div>
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, machineryTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page4.machineryTitle}
+                </div>
                 <div className="pdf-spec-row">
-                  <strong>1. PRETREATMENT PLANT :</strong> 7 Tank cold process Zinc Phosphate coating Dipping type process (8,500 Ltr. Capacity)
+                  <strong>1. PRETREATMENT PLANT : </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, pretreatmentPlant: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.pretreatmentPlant}
+                  </span>
                 </div>
                 <div className="pdf-spec-grid-2" style={{ marginLeft: '12px' }}>
-                  <div>1. Degreasing (Alkaline dip)</div>
-                  <div>5. Activation / Predip (V-CHEM S.M.)</div>
-                  <div>2. Water Rinse (Continuous Ambient)</div>
-                  <div>6. Zinc Phosphating (V-CHEM ZP Cold)</div>
-                  <div>3. Derusting / Pickling</div>
-                  <div>7. Water Rinse (Continuous Ambient)</div>
-                  <div>4. Water Rinse (Continuous Ambient)</div>
-                  <div>8. Passivation: V-CHEM PASSI</div>
+                  {proposalSpecs.page4.tankList.map((tank, tIdx) => (
+                    <div
+                      key={tIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextTanks = [...prev.page4.tankList]
+                          nextTanks[tIdx] = text
+                          return { ...prev, page4: { ...prev.page4, tankList: nextTanks } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {tank}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="pdf-spec-row">
                   <strong>2. COMPRESSORS:</strong>
                 </div>
                 <div className="pdf-spec-sub-box">
-                  <div>A) 2 No 7.5 KV / 400 Ltr. Capacity filter Regulators &amp; Air dryer</div>
-                  <div>B) 2 No 10 KV / 600 Ltr. Capacity filter Regulators &amp; Air dryer</div>
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, compressorsA: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.compressorsA}
+                  </div>
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, compressorsB: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.compressorsB}
+                  </div>
                 </div>
 
                 <div className="pdf-spec-row">
-                  <strong>3. POWDER COATING:</strong> 4 No Gema System, Recovery booth size 5&apos; X 5&apos; X 4&apos; = 5 nos
+                  <strong>3. POWDER COATING: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, powderCoating: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.powderCoating}
+                  </span>
                 </div>
 
                 <div className="pdf-spec-row">
-                  <strong>4. OVEN:</strong> 1 No GAS oven with inside working dimension of Oven size:
+                  <strong>4. OVEN: </strong>
+                  <span style={{ fontSize: '9px', color: '#475569' }}>Inside working dimensions:</span>
                 </div>
                 <div className="pdf-spec-sub-box">
-                  <div>a) 16 Ft X 6.5 Ft X 8.25 Ft &nbsp;|&nbsp; b) 6.5 Ft X 6 Ft X 7.5 Ft &nbsp;|&nbsp; c) 12 Ft X 6.5 Ft X 9.25 Ft</div>
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, oven: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.oven}
+                  </div>
                 </div>
 
                 <div className="pdf-spec-row">
-                  <strong>5. MISCELLANEOUS EQUIPMENTS:</strong> For Laboratory of chemicals, phosphate Coating &amp; Finished component inspection.
+                  <strong>5. MISCELLANEOUS EQUIPMENTS: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, miscEquipments: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.miscEquipments}
+                  </span>
                 </div>
 
                 {/* Merged from Page 6: Methods of Instruction */}
-                <div className="pdf-spec-main-title" style={{ marginTop: '8px' }}>METHODS OF INSTRUCTION (M.S. ITEMS ONLY)</div>
-
-                <div className="pdf-spec-sec-title">1. PRETREATMENT</div>
-                <div className="pdf-spec-para">
-                  Pretreatment process followed should be as per IS 3618 Class C. M.S. Material must be zinc phosphated. Under given process should be followed for pretreatment of M.S. material. If heavy deposition of grease or oil is observed, prewiping with Turpentine or washing thinner is necessary followed by a dry wipe with a cotton rag. The same cotton rag must not be used for a prolonged time.
+                <div
+                  className="pdf-spec-main-title"
+                  style={{ marginTop: '8px' }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, instructionsTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page4.instructionsTitle}
                 </div>
 
-                <div className="pdf-spec-row">
-                  <strong>1.1 Degreasing:</strong>
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, pretreatmentSecTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page4.pretreatmentSecTitle}
+                </div>
+                <div
+                  className="pdf-spec-para"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, pretreatmentIntro: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page4.pretreatmentIntro}
+                </div>
+
+                <div
+                  className="pdf-spec-row"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, degreasingTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  <strong>{proposalSpecs.page4.degreasingTitle}</strong>
                 </div>
                 <div className="pdf-spec-sub-box">
-                  <div>• Bath Strength: 25% Concentration</div>
-                  <div>• Dip Time: 10 - 20 mins (Dip time can be increased or reduced depending upon oil deposition)</div>
-                  <div>• Minimum Pointage: 15 - 18 0.1N H2SO4 (can exceed to 100 - 110 ml 0.1N H2SO4)</div>
-                  <div>• Chemical Replenishment: Add for each one point less and add 65 Ltr chemical.</div>
+                  {proposalSpecs.page4.degreasingLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page4.degreasingLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page4: { ...prev.page4, degreasingLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="pdf-spec-row">
-                  <strong>1.2 Water Rinse:</strong> Continuous overflowing water air agitation &nbsp;|&nbsp; Dip Time: 1 min &nbsp;|&nbsp; pH: 5 - 7
+                  <strong>1.2 Water Rinse: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, waterRinse1: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.waterRinse1}
+                  </span>
                 </div>
 
-                <div className="pdf-spec-row">
-                  <strong>1.3 Derusting:</strong>
+                <div
+                  className="pdf-spec-row"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, derustingTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  <strong>{proposalSpecs.page4.derustingTitle}</strong>
                 </div>
                 <div className="pdf-spec-sub-box">
-                  <div>• Bath Strength: 25% Concentration</div>
-                  <div>• Dip Time: 10 - 20 mins (Depending upon oil &amp; black scale quantity)</div>
-                  <div>• Minimum Pointage: 50 - 60 0.1N H2SO4 (can exceed to 100 - 110 ml 0.1N H2SO4)</div>
-                  <div>• Chemical Replenishment: Add for each one point less and add 65 Ltr chemical.</div>
+                  {proposalSpecs.page4.derustingLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page4.derustingLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page4: { ...prev.page4, derustingLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="pdf-spec-row">
-                  <strong>1.4 Water Rinse:</strong> Continuous overflowing water air agitation &nbsp;|&nbsp; Dip Time: 1 min &nbsp;|&nbsp; pH: 5 - 7
+                  <strong>1.4 Water Rinse: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, waterRinse2: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page4.waterRinse2}
+                  </span>
                 </div>
               </div>
 
@@ -2939,75 +3644,313 @@ export function OfficialQuotationDocument({
               {renderOfficialHeader()}
 
               <div className="pdf-spec-container">
-                <div className="pdf-spec-main-title">PRETREATMENT PROCESS &amp; PARAMETERS</div>
+                {/* PRETREATMENT PROCESS &amp; PARAMETERS */}
+                <div
+                  className="pdf-spec-main-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, mainTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.mainTitle}
+                </div>
 
-                <div className="pdf-spec-row" style={{ marginTop: '5px' }}>
-                  <strong>1.5 Activation: V-CHEM S.M.</strong>
+                <div
+                  className="pdf-spec-row"
+                  style={{ marginTop: '5px' }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, activationTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  <strong>{proposalSpecs.page5.activationTitle}</strong>
                 </div>
                 <div className="pdf-spec-sub-box">
-                  <div>• Bath Strength: 0.5% &nbsp;|&nbsp; Temp: Room Temperature (R.T.) &nbsp;|&nbsp; Dip Time: 1 min &nbsp;|&nbsp; pH: 2 - 3</div>
-                  <div>• Function: Prepares uniform micro-crystalline nucleation sites for zinc phosphate coating.</div>
+                  {proposalSpecs.page5.activationLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.activationLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, activationLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  className="pdf-spec-row"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, zincPhosphatingTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  <strong>{proposalSpecs.page5.zincPhosphatingTitle}</strong>
+                </div>
+                <div className="pdf-spec-sub-box">
+                  {proposalSpecs.page5.zincPhosphatingLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.zincPhosphatingLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, zincPhosphatingLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="pdf-spec-row">
-                  <strong>1.6 Zinc Phosphating: V-CHEM ZP (COLD) LP</strong>
+                  <strong>1.7 Water Rinse: </strong>
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText
+                      setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, waterRinse3: text } }))
+                    }}
+                    title="Click to edit text"
+                  >
+                    {proposalSpecs.page5.waterRinse3}
+                  </span>
+                </div>
+
+                <div
+                  className="pdf-spec-row"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, passivationTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  <strong>{proposalSpecs.page5.passivationTitle}</strong>
                 </div>
                 <div className="pdf-spec-sub-box">
-                  <div>• Bath Strength: 5 - 6% &nbsp;|&nbsp; Temp: Room Temperature (R.T.) &nbsp;|&nbsp; Dip Time: 15 - 20 mins</div>
-                  <div>• T.A. (Total Acid): 25 - 30 NaOH (can exceed to 30 - 34 ml 0.1N NaOH)</div>
-                  <div>• Accelerator: V-CHEM Accelerator &nbsp;|&nbsp; Test: Starch Iodide paper turns light blue.</div>
+                  {proposalSpecs.page5.passivationLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.passivationLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, passivationLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
 
-                <div className="pdf-spec-row">
-                  <strong>1.7 Water Rinse:</strong> Continuous overflowing water air agitation &nbsp;|&nbsp; Dip Time: 1 min &nbsp;|&nbsp; pH: 5 - 7
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, parametersTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.parametersTitle}
                 </div>
-
-                <div className="pdf-spec-row">
-                  <strong>1.8 Passivation: V-CHEM PASSI</strong>
-                </div>
-                <div className="pdf-spec-sub-box">
-                  <div>• Bath Strength: 0.1% &nbsp;|&nbsp; Temp: Room Temperature (R.T.) &nbsp;|&nbsp; Dip Time: 1 min</div>
-                  <div>• Function: Seals microscopic pores in phosphate layer for maximum corrosion resistance.</div>
-                </div>
-
-                <div className="pdf-spec-sec-title">Parameters to be controlled on the line of pretreatment:</div>
                 <div className="pdf-spec-grid-2" style={{ marginLeft: '4px' }}>
-                  <div>1. Bath strength pointage and replenishment.</div>
-                  <div>4. Sludge removal and filtration.</div>
-                  <div>2. Dip time compliance for each stage.</div>
-                  <div>5. Carry over of chemical prevention.</div>
-                  <div>3. pH of water rinse, activation and passivation.</div>
-                  <div>6. Air pocketing elimination by proper racking.</div>
+                  {proposalSpecs.page5.parametersList.map((param, pIdx) => (
+                    <div
+                      key={pIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextParams = [...prev.page5.parametersList]
+                          nextParams[pIdx] = text
+                          return { ...prev, page5: { ...prev.page5, parametersList: nextParams } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {param}
+                    </div>
+                  ))}
                 </div>
 
                 {/* Merged from Page 8: Quality Control */}
-                <div className="pdf-spec-main-title" style={{ marginTop: '8px' }}>QUALITY CONTROL</div>
-
-                <div className="pdf-spec-sec-title">I. ON ARRIVAL OF MATERIAL</div>
-                <div className="pdf-spec-para">
-                  a) After arrival of material it is stocked and stored properly in order to prevent it from damages.<br />
-                  b) Before processing the material is checked for dent marks, deep scratches and other fabrication defects.
+                <div
+                  className="pdf-spec-main-title"
+                  style={{ marginTop: '8px' }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, qcMainTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.qcMainTitle}
                 </div>
 
-                <div className="pdf-spec-sec-title">II. DURING PRODUCTION</div>
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, qcArrivalTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.qcArrivalTitle}
+                </div>
                 <div className="pdf-spec-para">
-                  a) While in process the material is checked visually for removal of oil, grease, rust, scale etc.<br />
-                  b) The pretreatment baths are maintained as per requirement and pointages, pH, temperatures are checked and recorded.<br />
-                  c) After phosphating and before painting/powder coating, the material is again checked for phosphate coating uniformity.<br />
-                  d) While baking, the temperature controller is per requirement to prevent under/over baking. A digital timer ensures the oven shuts off after the set time.
+                  {proposalSpecs.page5.qcArrivalLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.qcArrivalLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, qcArrivalLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
 
-                <div className="pdf-spec-sec-title">III. FINAL CONTROL</div>
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, qcProductionTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.qcProductionTitle}
+                </div>
                 <div className="pdf-spec-para">
-                  a) After baking the material is re-inspected for covering pattern, film thickness, gloss etc.<br />
-                  b) Finally the material is touched up in delicate corners and stacked properly for dispatch.
+                  {proposalSpecs.page5.qcProductionLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.qcProductionLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, qcProductionLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
 
-                <div className="pdf-spec-sec-title">IV. TESTING EQUIPMENTS</div>
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, qcFinalTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.qcFinalTitle}
+                </div>
                 <div className="pdf-spec-para">
-                  a) Pretreatment baths are checked on a regular interval and pointage, pH and temperatures are maintained.<br />
-                  b) The phosphate coating is checked as per IS 3618 specification for salt spray test.<br />
-                  c) Painted components are checked for film thickness using calibrated digital magnetic gauges.
+                  {proposalSpecs.page5.qcFinalLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.qcFinalLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, qcFinalLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  className="pdf-spec-sec-title"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const text = e.currentTarget.innerText
+                    setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, qcTestingTitle: text } }))
+                  }}
+                  title="Click to edit text"
+                >
+                  {proposalSpecs.page5.qcTestingTitle}
+                </div>
+                <div className="pdf-spec-para">
+                  {proposalSpecs.page5.qcTestingLines.map((line, lIdx) => (
+                    <div
+                      key={lIdx}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText
+                        setProposalSpecs((prev) => {
+                          const nextLines = [...prev.page5.qcTestingLines]
+                          nextLines[lIdx] = text
+                          return { ...prev, page5: { ...prev.page5, qcTestingLines: nextLines } }
+                        })
+                      }}
+                      title="Click to edit text"
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -3155,6 +4098,14 @@ export function OfficialQuotationDocument({
                   onClick={() => setActiveSidebarTab('terms')}
                 >
                   📋 Terms
+                </button>
+                <button
+                  type="button"
+                  className={`sidebar-tab-btn ${activeSidebarTab === 'specs' ? 'active' : ''}`}
+                  onClick={() => setActiveSidebarTab('specs')}
+                  title="Edit Technical Proposal Specs (Pages 3 to 5)"
+                >
+                  📑 Tech Specs
                 </button>
                 {!isMultiSystem && (
                   <button
@@ -4820,6 +5771,664 @@ export function OfficialQuotationDocument({
                   <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 600 }}>
                     Total Bodies: {totalBodies}
                   </div>
+                </div>
+              )}
+
+              {/* TAB: TECHNICAL PROPOSAL SPECIFICATIONS (Pages 3 to 5) */}
+              {activeSidebarTab === 'specs' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span className="tiny font-bold">Proposal Tech Specs (Pages 3-5)</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn ghost xs"
+                      style={{ fontSize: '11px', padding: '3px 8px', color: '#dc2626', border: '1px solid #fca5a5', background: '#fef2f2' }}
+                      onClick={() => {
+                        if (window.confirm('Reset all technical proposal specifications back to factory defaults?')) {
+                          setProposalSpecs(DEFAULT_PROPOSAL_SPECS)
+                          toast('Technical proposal specs reset to defaults!')
+                        }
+                      }}
+                      title="Reset all fields to factory defaults"
+                    >
+                      ↺ Reset to Default
+                    </button>
+                  </div>
+
+                  {/* Sub-tab Pills for Pages 3, 4, 5 */}
+                  <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: '6px' }}>
+                    <button
+                      type="button"
+                      className={`option-pill ${specsSubTab === 'page3' ? 'active' : ''}`}
+                      style={{ flex: 1, fontSize: '11px', padding: '5px 4px', textAlign: 'center' }}
+                      onClick={() => setSpecsSubTab('page3')}
+                    >
+                      Page 3: Compactor
+                    </button>
+                    <button
+                      type="button"
+                      className={`option-pill ${specsSubTab === 'page4' ? 'active' : ''}`}
+                      style={{ flex: 1, fontSize: '11px', padding: '5px 4px', textAlign: 'center' }}
+                      onClick={() => setSpecsSubTab('page4')}
+                    >
+                      Page 4: Powder
+                    </button>
+                    <button
+                      type="button"
+                      className={`option-pill ${specsSubTab === 'page5' ? 'active' : ''}`}
+                      style={{ flex: 1, fontSize: '11px', padding: '5px 4px', textAlign: 'center' }}
+                      onClick={() => setSpecsSubTab('page5')}
+                    >
+                      Page 5: QC
+                    </button>
+                  </div>
+
+                  {/* PAGE 3 EDITOR */}
+                  {specsSubTab === 'page3' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Page 3 Titles &amp; Introduction
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Main Title</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.mainTitle}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, mainTitle: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Sub Title</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.subTitle}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, subTitle: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Mobile Racks Intro</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.mobileRacksIntro}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, mobileRacksIntro: e.target.value } }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          The Undercarriage
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Base Frame</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.baseFrame}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, baseFrame: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Tracks</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.tracks}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, tracks: e.target.value } }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Super Structure
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Super Structure Intro</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.superStructureIntro}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, superStructureIntro: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Shelves</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.shelves}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, shelves: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Vertical Panel</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.verticalPanel}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, verticalPanel: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Middle Panel</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.middlePanel}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, middlePanel: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Top Panel</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.topPanel}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, topPanel: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Centre Partition</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.centrePartition}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, centrePartition: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">End Panel</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.endPanel}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, endPanel: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Central Locking</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.centralLocking}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, centralLocking: e.target.value } }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Mechanical &amp; Drive Assembly
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Powder Coating (Microns)</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.powderCoating}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, powderCoating: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Index Arrangement</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.indexArrangement}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, indexArrangement: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Shaft</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.shaft}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, shaft: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Pedestal Bearing</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.pedestalBearing}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, pedestalBearing: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Wheel</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.wheel}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, wheel: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Chain</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page3.chain}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, chain: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Openable Shutter</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={2}
+                              value={proposalSpecs.page3.openableShutter}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page3: { ...prev.page3, openableShutter: e.target.value } }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PAGE 4 EDITOR */}
+                  {specsSubTab === 'page4' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Page 4: Powder Coating Plant &amp; Machinery
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Main Title</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.mainTitle}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, mainTitle: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Plant Overview &amp; Ovens</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={3}
+                              value={proposalSpecs.page4.plantOverview}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, plantOverview: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Pretreatment Plant Spec</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.pretreatmentPlant}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, pretreatmentPlant: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Pretreatment Tanks (8 Tanks)</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page4.tankList.map((tank, tIdx) => (
+                                <input
+                                  key={tIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={tank}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page4.tankList]
+                                      next[tIdx] = val
+                                      return { ...prev, page4: { ...prev.page4, tankList: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Compressors A</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.compressorsA}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, compressorsA: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Compressors B</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.compressorsB}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, compressorsB: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Powder Coating System</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.powderCoating}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, powderCoating: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Oven Dimensions</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.oven}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, oven: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Misc Equipments</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.miscEquipments}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, miscEquipments: e.target.value } }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Methods of Instruction &amp; Parameters
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Pretreatment Intro (IS 3618)</label>
+                            <textarea
+                              className="option-input-field"
+                              rows={3}
+                              value={proposalSpecs.page4.pretreatmentIntro}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, pretreatmentIntro: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Degreasing Parameters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page4.degreasingLines.map((line, lIdx) => (
+                                <input
+                                  key={lIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page4.degreasingLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page4: { ...prev.page4, degreasingLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Water Rinse 1</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.waterRinse1}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, waterRinse1: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Derusting Parameters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page4.derustingLines.map((line, lIdx) => (
+                                <input
+                                  key={lIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page4.derustingLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page4: { ...prev.page4, derustingLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Water Rinse 2</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page4.waterRinse2}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page4: { ...prev.page4, waterRinse2: e.target.value } }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PAGE 5 EDITOR */}
+                  {specsSubTab === 'page5' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Pretreatment Parameters &amp; Passivation
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">Activation Parameters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.activationLines.map((line, lIdx) => (
+                                <input
+                                  key={lIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.activationLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, activationLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Zinc Phosphating Parameters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.zincPhosphatingLines.map((line, lIdx) => (
+                                <input
+                                  key={lIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.zincPhosphatingLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, zincPhosphatingLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Water Rinse 3</label>
+                            <input
+                              type="text"
+                              className="option-input-field"
+                              value={proposalSpecs.page5.waterRinse3}
+                              onChange={(e) => setProposalSpecs((prev) => ({ ...prev, page5: { ...prev.page5, waterRinse3: e.target.value } }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Passivation Parameters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.passivationLines.map((line, lIdx) => (
+                                <input
+                                  key={lIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.passivationLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, passivationLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">Line Control Parameters (6 Points)</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.parametersList.map((param, pIdx) => (
+                                <input
+                                  key={pIdx}
+                                  type="text"
+                                  className="option-input-field"
+                                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                                  value={param}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.parametersList]
+                                      next[pIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, parametersList: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="option-group-card">
+                        <span className="tiny font-bold" style={{ display: 'block', marginBottom: '6px', color: '#1e293b' }}>
+                          Quality Control Procedures
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label className="tiny text-muted font-bold">I. On Arrival of Material</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.qcArrivalLines.map((line, lIdx) => (
+                                <textarea
+                                  key={lIdx}
+                                  className="option-input-field"
+                                  rows={2}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.qcArrivalLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, qcArrivalLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">II. During Production</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.qcProductionLines.map((line, lIdx) => (
+                                <textarea
+                                  key={lIdx}
+                                  className="option-input-field"
+                                  rows={2}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.qcProductionLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, qcProductionLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">III. Final Control</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.qcFinalLines.map((line, lIdx) => (
+                                <textarea
+                                  key={lIdx}
+                                  className="option-input-field"
+                                  rows={2}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.qcFinalLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, qcFinalLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold">IV. Testing Equipments</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {proposalSpecs.page5.qcTestingLines.map((line, lIdx) => (
+                                <textarea
+                                  key={lIdx}
+                                  className="option-input-field"
+                                  rows={2}
+                                  value={line}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setProposalSpecs((prev) => {
+                                      const next = [...prev.page5.qcTestingLines]
+                                      next[lIdx] = val
+                                      return { ...prev, page5: { ...prev.page5, qcTestingLines: next } }
+                                    })
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

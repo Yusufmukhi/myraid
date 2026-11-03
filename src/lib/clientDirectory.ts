@@ -301,10 +301,19 @@ export async function saveClientToDirectoryAsync(
     }
   }
 
+  // Reuse existing ID if client with same name or GST already exists to prevent duplicates
+  const clientDataToSave = {
+    ...clientData,
+    id: clientData.id || existingDup?.id,
+  }
+
   // 2. Server-side validation via RPC if online
   if (activeToken && orgId) {
     try {
-      await api.clientUpsert(activeToken, orgId, clientData)
+      const serverRes = await api.clientUpsert(activeToken, orgId, clientDataToSave)
+      if (serverRes && typeof serverRes === 'object' && serverRes.id) {
+        clientDataToSave.id = serverRes.id
+      }
     } catch (err: any) {
       if (/Client already exists/i.test(err?.message || '')) {
         throw new Error('Client already exists')
@@ -314,7 +323,7 @@ export async function saveClientToDirectoryAsync(
   }
 
   // 3. Save to local storage
-  return saveClientToDirectory(clientData, orgId, username, role)
+  return saveClientToDirectory(clientDataToSave, orgId, username, role)
 }
 
 /**
