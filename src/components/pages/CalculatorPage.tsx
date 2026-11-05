@@ -475,13 +475,6 @@ export function CalculatorPage({
   const [showShareModal, setShowShareModal] = useState(false)
 
   const [showOfficialQuotation, setShowOfficialQuotation] = useState(false)
-  const handleOpenOfficialQuotation = () => {
-    if (serverCalculating) {
-      toast('Calculating latest rates from server. Please wait a moment before opening PDF…', 'err')
-      return
-    }
-    handleOpenOfficialQuotation()
-  }
 
   const [shareMembers, setShareMembers] = useState<any[]>([])
 
@@ -1366,6 +1359,14 @@ export function CalculatorPage({
   }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, wbVersion, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides])
 
   const [serverCalculating, setServerCalculating] = useState(false)
+
+  const handleOpenOfficialQuotation = () => {
+    if (serverCalculating) {
+      toast('Calculating latest rates from server. Please wait a moment before opening PDF…', 'err')
+      return
+    }
+    setShowOfficialQuotation(true)
+  }
   const [serverSynced, setServerSynced] = useState(false)
   const [serverQuote, setServerQuote] = useState<any>(() => {
     if (project.summary && project.summary.sales && Array.isArray(project.summary.models)) {
