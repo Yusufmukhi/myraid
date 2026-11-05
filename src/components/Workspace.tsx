@@ -352,37 +352,46 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   }, [currentProject?.id, currentProject?.template_id, currentProject?.template_version, currentProject?.template_snapshot, org.id, session.token])
 
   // Save copy / revision flow from calculator
-  const handleSaveAsCopy = async (copyName: string) => {
+  const handleSaveAsCopy = async (
+    copyName: string,
+    latestData?: { inputs?: any; formula_overrides?: any; total?: number; summary?: any }
+  ) => {
     if (!currentProject) return
     try {
       const res = await api.projectDuplicate(session.token, currentProject.id, copyName, false)
+      const inputsToSave = latestData?.inputs || currentProject.inputs
+      const foToSave = latestData?.formula_overrides || currentProject.formula_overrides
+      const totalToSave = latestData?.total ?? currentProject.total
+      const summaryToSave = latestData?.summary
+        ? { ...currentProject.summary, ...latestData.summary }
+        : currentProject.summary
+
       try {
         await api.projectUpdate(
           session.token,
           res.id,
           res.name,
           'quoted',
-          currentProject.inputs,
-          currentProject.formula_overrides,
-          currentProject.total,
-          currentProject.summary,
-          `Quotation ${res.name} created as copy - Status set to Quoted`,
+          inputsToSave,
+          foToSave,
+          totalToSave,
+          summaryToSave,
+          `Quotation ${res.name} created as revision - Status set to Quoted`,
         )
       } catch (err) {
-        // Safe fallback if database check constraint is pending migration
         await api.projectUpdate(
           session.token,
           res.id,
           res.name,
           'quoted',
-          currentProject.inputs,
-          currentProject.formula_overrides,
-          currentProject.total,
-          currentProject.summary,
+          inputsToSave,
+          foToSave,
+          totalToSave,
+          summaryToSave,
           `Revision ${res.name} created`,
         )
       }
-      toast(`Quotation “${res.name}” copied successfully (Status: Quoted)!`)
+      toast(`Quotation “${res.name}” created successfully (Status: Quoted)!`)
       await loadProjects(res.id)
       const newProj = await api.projectGet(session.token, res.id)
       setCurrentProject(newProj)

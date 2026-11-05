@@ -47,7 +47,7 @@ interface Props {
 
     onProjectUpdated: (p: Project) => void
 
-  onSaveAsCopy: (name: string) => void
+  onSaveAsCopy: (name: string, payload?: { inputs?: any; formula_overrides?: any; total?: number; summary?: any }) => void
 
   onNavigateToSheets: (systemIdx?: number) => void
 
@@ -2838,7 +2838,7 @@ export function CalculatorPage({
 
   // Single active system C2C metrics
   const singleC2CProfit = c2cSummary
-    ? (summary.subtotalWithProfit * activeSysQty) - (c2cSummary.costBase * activeSysQty)
+    ? (summary.beforeGst * activeSysQty) - (c2cSummary.costBase * activeSysQty)
     : 0
 
   const singleC2CTotal = c2cSummary
@@ -5705,10 +5705,29 @@ export function CalculatorPage({
                   if (!reviseName.trim()) return
                   const revTarget = reviseName.trim()
                   setShowReviseModal(false)
+                  const liveCleanedOverrides = cleanOverrides(wb, overrides)
+                  const liveSystems = getEffectiveSystems(overrides, formulaOverrides)
+                  const liveSummary = {
+                    ...project.summary,
+                    ...summary,
+                    systems: liveSystems,
+                    quotation_sets: compiledSets,
+                    quotation_mode: quotationMode,
+                    extra_amount: extraAmount,
+                    include_installation: includeInstallation,
+                    profit_pct: profitPct,
+                    discount_pct: discountPct,
+                  }
+                  const livePayload = {
+                    inputs: liveCleanedOverrides,
+                    formula_overrides: formulaOverrides,
+                    total: summary.sales,
+                    summary: liveSummary,
+                  }
                   if (dirty) {
-                    save().then(() => onSaveAsCopy(revTarget)).catch(() => onSaveAsCopy(revTarget))
+                    save().then(() => onSaveAsCopy(revTarget, livePayload)).catch(() => onSaveAsCopy(revTarget, livePayload))
                   } else {
-                    onSaveAsCopy(revTarget)
+                    onSaveAsCopy(revTarget, livePayload)
                   }
 
                 }}
@@ -5788,10 +5807,29 @@ export function CalculatorPage({
                   if (!copyName.trim()) return
                   const copyTarget = copyName.trim()
                   setShowCopyModal(false)
+                  const liveCleanedOverrides = cleanOverrides(wb, overrides)
+                  const liveSystems = getEffectiveSystems(overrides, formulaOverrides)
+                  const liveSummary = {
+                    ...project.summary,
+                    ...summary,
+                    systems: liveSystems,
+                    quotation_sets: compiledSets,
+                    quotation_mode: quotationMode,
+                    extra_amount: extraAmount,
+                    include_installation: includeInstallation,
+                    profit_pct: profitPct,
+                    discount_pct: discountPct,
+                  }
+                  const livePayload = {
+                    inputs: liveCleanedOverrides,
+                    formula_overrides: formulaOverrides,
+                    total: summary.sales,
+                    summary: liveSummary,
+                  }
                   if (dirty) {
-                    save().then(() => onSaveAsCopy(copyTarget)).catch(() => onSaveAsCopy(copyTarget))
+                    save().then(() => onSaveAsCopy(copyTarget, livePayload)).catch(() => onSaveAsCopy(copyTarget, livePayload))
                   } else {
-                    onSaveAsCopy(copyTarget)
+                    onSaveAsCopy(copyTarget, livePayload)
                   }
 
                 }}
