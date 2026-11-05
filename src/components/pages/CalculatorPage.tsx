@@ -1671,16 +1671,16 @@ export function CalculatorPage({
       }
 
       const rate = Math.round(sysBreakdown?.finalBeforeGst || sysSummary?.beforeGst || 0)
-      const amount = Math.round(rate * (sys.quantity || 1))
-      const preDiscTotal = sysBreakdown?.totalPriceWithProfit || sysSummary?.subtotalWithProfit || (rate / Math.max(0.01, 1 - (discountPct / 100)))
-      const preDiscRate = Math.round(preDiscTotal / Math.max(1, sys.quantity || 1))
-      const preDiscAmount = Math.round(preDiscRate * (sys.quantity || 1))
+      const sysQty = Math.max(1, Number(sys.quantity) || 1)
+      const amount = Math.round(rate * sysQty)
+      const preDiscRate = Math.round(sysBreakdown?.totalPriceWithProfit || sysSummary?.subtotalWithProfit || (rate / Math.max(0.01, 1 - (discountPct / 100))))
+      const preDiscAmount = Math.round(preDiscRate * sysQty)
       const activeRows = sysBreakdown?.rows && sysBreakdown.rows.length > 0 ? sysBreakdown.rows : []
 
       return {
         id: sys.id || String(idx + 1),
         system_title: sys.name || ('SYSTEM ' + String.fromCharCode(65 + idx)),
-        set_label: String(sys.quantity || 1) + ' ' + (sys.unit || 'SET'),
+        set_label: (sysQty > 1 ? `${sysQty} ${sys.unit || 'SET'}S` : `1 ${sys.unit || 'SET'}`),
         quantity: sys.quantity || 1,
         unit: sys.unit || 'SET',
         rate,
@@ -3380,8 +3380,8 @@ export function CalculatorPage({
             {/* Pure Single Calculator Mode (when in individual unit-wise or single system) */}
             <div className="excel-kpi-card" style={{ minWidth: '140px' }}>
               <span className="kpi-label">TOTAL BODIES</span>
-              <strong className="kpi-val">{count(displaySummary.bodies)}</strong>
-              <span className="kpi-sub">{count(displaySummary.compartments)} Compartments</span>
+              <strong className="kpi-val">{count(displaySummary.bodies * activeSysQty)}</strong>
+              <span className="kpi-sub">{count(displaySummary.compartments * activeSysQty)} Compartments{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
             </div>
 
             <div className="excel-kpi-card">
@@ -3779,9 +3779,24 @@ export function CalculatorPage({
 
                 min={1}
 
-                value={systems[activeSystemIdx]?.quantity || 1}
+                value={systems[activeSystemIdx]?.quantity ?? 1}
 
-                onChange={(e) => handleUpdateSystemMeta(activeSystemIdx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === '') {
+                    handleUpdateSystemMeta(activeSystemIdx, { quantity: '' })
+                    return
+                  }
+                  const num = parseInt(val, 10)
+                  handleUpdateSystemMeta(activeSystemIdx, { quantity: isNaN(num) ? 1 : Math.max(1, num) })
+                }}
+
+                onBlur={() => {
+                  const cur = systems[activeSystemIdx]?.quantity
+                  if (!cur || isNaN(Number(cur)) || Number(cur) < 1) {
+                    handleUpdateSystemMeta(activeSystemIdx, { quantity: 1 })
+                  }
+                }}
 
                 style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', border: '1px solid #cbd5e1', borderRadius: 4, width: 50, textAlign: 'center' }}
 

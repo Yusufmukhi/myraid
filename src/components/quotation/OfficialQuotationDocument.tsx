@@ -1639,19 +1639,22 @@ export function OfficialQuotationDocument({
         rate: r.unit_rate_with_profit,
         amount: r.total_price_with_profit,
       }))
-      const baseAmount = breakdownResult.finalBeforeGst || summary.beforeGst || 1843257
-      const preDiscAmount = breakdownResult.totalPriceWithProfit || (summary.subtotalWithProfit ?? baseAmount)
+      const sysQty = initialSets?.[0]?.quantity ? Math.max(1, Number(initialSets[0].quantity)) : (project.summary?.systems?.[0]?.quantity ? Math.max(1, Number(project.summary.systems[0].quantity)) : 1)
+      const unitRate = Math.round(breakdownResult.finalBeforeGst || summary.beforeGst || 1843257)
+      const baseAmount = unitRate * sysQty
+      const preDiscRate = Math.round(breakdownResult.totalPriceWithProfit || (summary.subtotalWithProfit ?? unitRate))
+      const preDiscAmount = preDiscRate * sysQty
 
       return [
         {
           id: '1',
           system_title: '', // EMPTY so no "SYSTEM A" row in the table!
-          set_label: '1 SET',
-          quantity: 1,
-          unit: 'SET',
-          rate: Math.round(preDiscAmount),
+          set_label: sysQty > 1 ? `${sysQty} ${initialSets?.[0]?.unit || 'SET'}S` : `1 ${initialSets?.[0]?.unit || 'SET'}`,
+          quantity: sysQty,
+          unit: initialSets?.[0]?.unit || 'SET',
+          rate: unitRate,
           amount: Number(baseAmount.toFixed(2)),
-          pre_discount_rate: Math.round(preDiscAmount),
+          pre_discount_rate: preDiscRate,
           pre_discount_amount: Number(preDiscAmount.toFixed(2)),
           items: items.length > 0 ? items : [
             {
@@ -1903,7 +1906,8 @@ export function OfficialQuotationDocument({
       return breakdownResult.finalBeforeGst
     }
     if (!isMultiSystem && summary?.beforeGst) {
-      return summary.beforeGst
+      const q = sets[0]?.quantity ? Math.max(1, Number(sets[0].quantity)) : 1
+      return summary.beforeGst * q
     }
     return lineItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0)
   }, [isMultiSystem, summary?.beforeGst, effectiveQuotationMode, sets, lineItems, breakdownResult])
@@ -1941,7 +1945,8 @@ export function OfficialQuotationDocument({
         beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
       }
     } else if (!isMultiSystem && breakdownResult.totalPriceWithProfit > 0) {
-      beforeDisc = breakdownResult.totalPriceWithProfit
+      const q = sets[0]?.quantity ? Math.max(1, Number(sets[0].quantity)) : 1
+      beforeDisc = breakdownResult.totalPriceWithProfit * q
     } else if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
       const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || 0), 0)
       if (setsPreDiscSum > 0) {
