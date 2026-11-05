@@ -475,6 +475,13 @@ export function CalculatorPage({
   const [showShareModal, setShowShareModal] = useState(false)
 
   const [showOfficialQuotation, setShowOfficialQuotation] = useState(false)
+  const handleOpenOfficialQuotation = () => {
+    if (serverCalculating) {
+      toast('Calculating latest rates from server. Please wait a moment before opening PDF…', 'err')
+      return
+    }
+    handleOpenOfficialQuotation()
+  }
 
   const [shareMembers, setShareMembers] = useState<any[]>([])
 
@@ -3127,7 +3134,7 @@ export function CalculatorPage({
 
               <button
                 className="top-pdf-btn"
-                onClick={() => setShowOfficialQuotation(true)}
+                onClick={handleOpenOfficialQuotation}
                 title="View & Print Official Myriad Storage Quotation Document"
               >
                 {Icon.fileText} Official Quotation (PDF)
@@ -3237,11 +3244,11 @@ export function CalculatorPage({
                 <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                   {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                 </span>
-                {kg(displaySummary.steel.spTotal * activeSysQty)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal * activeSysQty)}
               </strong>
               <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {kg(displayAllSystemsTotals.spTotal)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.spTotal)}
               </span>
             </div>
 
@@ -3251,11 +3258,11 @@ export function CalculatorPage({
                 <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                   {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                 </span>
-                {kg(displaySummary.trolley.total * activeSysQty)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.trolley.total * activeSysQty)}
               </strong>
               <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {kg(displayAllSystemsTotals.trolleyTotal)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.trolleyTotal)}
               </span>
             </div>
 
@@ -3265,11 +3272,11 @@ export function CalculatorPage({
                 <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                   {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                 </span>
-                {kg(displaySummary.totalWeight * activeSysQty)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight * activeSysQty)}
               </strong>
               <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {kg(displayAllSystemsTotals.totalWeight)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.totalWeight)}
               </span>
             </div>
 
@@ -3279,11 +3286,11 @@ export function CalculatorPage({
                 <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                   {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                 </span>
-                {kg(displaySummary.weightWithMachine * activeSysQty)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.weightWithMachine * activeSysQty)}
               </strong>
               <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {kg(displayAllSystemsTotals.weightWithMachine)}
+                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.weightWithMachine)}
               </span>
             </div>
 
@@ -3295,11 +3302,11 @@ export function CalculatorPage({
                     <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                       {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                     </span>
-                    {inr(displaySummary.labourSubtotal * activeSysQty)}
+                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.labourSubtotal * activeSysQty)}
                   </strong>
                   <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
                     <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                    {inr(displayAllSystemsTotals.labourSubtotal)}
+                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : inr(displayAllSystemsTotals.labourSubtotal)}
                   </span>
                 </div>
 
@@ -3309,11 +3316,11 @@ export function CalculatorPage({
                     <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
                       {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
                     </span>
-                    {inr(displaySummary.powderTotal * activeSysQty)}
+                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.powderTotal * activeSysQty)}
                   </strong>
                   <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
                     <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                    {inr(displayAllSystemsTotals.powderTotal)}
+                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : inr(displayAllSystemsTotals.powderTotal)}
                   </span>
                 </div>
 
@@ -3378,25 +3385,25 @@ export function CalculatorPage({
 
             <div className="excel-kpi-card">
               <span className="kpi-label">SP TOTAL</span>
-              <strong className="kpi-val">{kg(displaySummary.steel.spTotal)}</strong>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal)}</strong>
               <span className="kpi-sub">{isAdminOrOwner ? 'C2C Steel Weight' : 'Body Steel Weight'}</span>
             </div>
 
             <div className="excel-kpi-card">
               <span className="kpi-label">TROLLY STEEL</span>
-              <strong className="kpi-val">{kg(displaySummary.trolley.total)}</strong>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.trolley.total)}</strong>
               <span className="kpi-sub">{isAdminOrOwner ? 'C2C Trolley Weight' : 'Trolley Weight'}</span>
             </div>
 
             <div className="excel-kpi-card">
               <span className="kpi-label">TOTAL WEIGHT</span>
-              <strong className="kpi-val">{kg(displaySummary.totalWeight)}</strong>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight)}</strong>
               <span className="kpi-sub">{isAdminOrOwner ? 'C2C SP + Trolley' : 'SP + Trolley Steel'}</span>
             </div>
 
             <div className="excel-kpi-card highlight-mech">
               <span className="kpi-label">WT WITH MACHINE</span>
-              <strong className="kpi-val">{kg(displaySummary.weightWithMachine)}</strong>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.weightWithMachine)}</strong>
               <span className="kpi-sub">{isAdminOrOwner ? 'C2C Total + Mech' : 'Total + Mechanism'}</span>
             </div>
 
@@ -3404,13 +3411,13 @@ export function CalculatorPage({
               <>
                 <div className="excel-kpi-card">
                   <span className="kpi-label">LABOUR</span>
-                  <strong className="kpi-val">{inr(displaySummary.labourSubtotal)}</strong>
+                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.labourSubtotal)}</strong>
                   <span className="kpi-sub">C2C Total Labour</span>
                 </div>
 
                 <div className="excel-kpi-card">
                   <span className="kpi-label">POWDER COATING</span>
-                  <strong className="kpi-val">{inr(displaySummary.powderTotal)}</strong>
+                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.powderTotal)}</strong>
                   <span className="kpi-sub">C2C PC Amount</span>
                 </div>
 
@@ -3754,7 +3761,8 @@ export function CalculatorPage({
 
                 type="text"
 
-                value={systems[activeSystemIdx]?.name || `SYSTEM ${String.fromCharCode(65 + activeSystemIdx)}`}
+                value={systems[activeSystemIdx]?.name ?? ''}
+                placeholder={`SYSTEM ${String.fromCharCode(65 + activeSystemIdx)}`}
 
                 onChange={(e) => handleUpdateSystemMeta(activeSystemIdx, { name: e.target.value })}
 
@@ -5511,7 +5519,7 @@ export function CalculatorPage({
 
           className="btn ghost sm"
 
-          onClick={() => setShowOfficialQuotation(true)}
+          onClick={handleOpenOfficialQuotation}
 
           title="View & Print Official Quotation (Exact Myriad Storage 2-Page Document)"
 
@@ -5694,10 +5702,13 @@ export function CalculatorPage({
                 onClick={() => {
 
                   if (!reviseName.trim()) return
-
+                  const revTarget = reviseName.trim()
                   setShowReviseModal(false)
-
-                  onSaveAsCopy(reviseName.trim())
+                  if (dirty) {
+                    save().then(() => onSaveAsCopy(revTarget)).catch(() => onSaveAsCopy(revTarget))
+                  } else {
+                    onSaveAsCopy(revTarget)
+                  }
 
                 }}
 
@@ -5774,10 +5785,13 @@ export function CalculatorPage({
                 onClick={() => {
 
                   if (!copyName.trim()) return
-
+                  const copyTarget = copyName.trim()
                   setShowCopyModal(false)
-
-                  onSaveAsCopy(copyName.trim())
+                  if (dirty) {
+                    save().then(() => onSaveAsCopy(copyTarget)).catch(() => onSaveAsCopy(copyTarget))
+                  } else {
+                    onSaveAsCopy(copyTarget)
+                  }
 
                 }}
 

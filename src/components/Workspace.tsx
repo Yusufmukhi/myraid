@@ -101,7 +101,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
 
   // Create Project Modal state
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [newProjectName, setNewProjectName] = useState('QTY NO ')
+  const [newProjectName, setNewProjectName] = useState('QTN NO ')
   const [availableTemplates, setAvailableTemplates] = useState<Template[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedClientForNewProj, setSelectedClientForNewProj] = useState<string>('')
@@ -176,7 +176,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
 
   const openCreateModal = async () => {
     setShowCreateModal(true)
-    setNewProjectName('QTY NO ')
+    setNewProjectName('QTN NO ')
     setSelectedTemplateId('')
     setSelectedClientForNewProj('')
     setClientSearchTermForNewProj('')
@@ -303,7 +303,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       )
       toast(`Created quotation “${res.name}”`)
       setShowCreateModal(false)
-      setNewProjectName('QTY NO ')
+      setNewProjectName('QTN NO ')
       setSelectedTemplateId('')
       setSelectedClientForNewProj('')
       const fullProj = await api.projectGet(session.token, res.id)
@@ -356,18 +356,17 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     if (!currentProject) return
     try {
       const res = await api.projectDuplicate(session.token, currentProject.id, copyName, false)
-      // When revised from calculator, automatically set status to 'negotiating'
       try {
         await api.projectUpdate(
           session.token,
           res.id,
           res.name,
-          'negotiating',
+          'quoted',
           currentProject.inputs,
           currentProject.formula_overrides,
           currentProject.total,
           currentProject.summary,
-          `Revision ${res.name} created - Status set to Negotiating`,
+          `Quotation ${res.name} created as copy - Status set to Quoted`,
         )
       } catch (err) {
         // Safe fallback if database check constraint is pending migration
@@ -1055,7 +1054,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 setSelectedClientForNewProj(client.id)
                 setClientSearchTermForNewProj(client.name)
                 setClientDropdownOpen(false)
-                setNewProjectName('QTY NO ')
+                setNewProjectName('QTN NO ')
                 setShowCreateModal(true)
               }}
               onNavigate={(t) => setTab(t as NavTab)}
@@ -1071,7 +1070,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 setSelectedClientForNewProj(client.id)
                 setClientSearchTermForNewProj(client.name)
                 setClientDropdownOpen(false)
-                setNewProjectName('QTY NO ')
+                setNewProjectName('QTN NO ')
                 setShowCreateModal(true)
               }}
               onNavigate={(t) => setTab(t as NavTab)}
@@ -1255,7 +1254,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 <input
                   type="text"
                   autoFocus
-                  placeholder="e.g. QTY NO 102"
+                  placeholder="e.g. QTN NO 102"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}

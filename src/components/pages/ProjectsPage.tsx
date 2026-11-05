@@ -279,21 +279,19 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     if (!nm) return toast('Revision name cannot be empty', 'err')
     try {
       const res = await api.projectDuplicate(session.token, reviseProj.id, nm, false)
-      // Automatically set newly revised project to 'negotiating'
       try {
         await api.projectUpdate(
           session.token,
           res.id,
           res.name,
-          'negotiating',
+          'quoted',
           reviseProj.inputs,
           reviseProj.formula_overrides,
           reviseProj.total,
           reviseProj.summary,
-          `Revision ${res.name} created - Status set to Negotiating`,
+          `Revision ${res.name} created - Status set to Quoted`,
         )
       } catch (err) {
-        // Safe fallback if database check constraint is pending migration
         await api.projectUpdate(
           session.token,
           res.id,
@@ -306,7 +304,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           `Revision ${res.name} created`,
         )
       }
-      toast(`Created revision “${res.name}” (Status: Negotiating)`)
+      toast(`Created revision “${res.name}” (Status: Quoted)`)
       setReviseProj(null)
       await loadProjects()
       onProjectsChanged?.()

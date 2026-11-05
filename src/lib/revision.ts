@@ -162,7 +162,7 @@ export function parseRevision(name: string): RevisionInfo {
   }
 
   // 3. Default when no revision suffix exists yet (e.g. "QTY NO 123")
-  const base = trimmed || 'QTY NO'
+  const base = trimmed || 'QTN NO'
   return {
     baseName: base,
     currentRev: '',
@@ -176,7 +176,7 @@ export function parseRevision(name: string): RevisionInfo {
  * Formats a newly created project name without forcing - Rev A.
  */
 export function formatInitialProjectName(name: string): string {
-  return (name || '').trim() || 'QTY NO'
+  return (name || '').trim() || 'QTN NO'
 }
 
 /**

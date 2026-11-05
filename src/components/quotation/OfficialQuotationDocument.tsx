@@ -1866,7 +1866,18 @@ export function OfficialQuotationDocument({
   })
 
   // Full 5-Page Proposal toggle (Page 1: Commercial; Page 2: Terms; Page 3: Compactor Specs [merged p3+p4]; Page 4: Powder Coating [merged p5+p6]; Page 5: QC [merged p7+p8])
-  const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(true)
+  const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(() => {
+    if (project.summary?.include_full_proposal !== undefined) {
+      return Boolean(project.summary.include_full_proposal)
+    }
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const savedPref = localStorage.getItem('examcalc_default_include_5_page_proposal')
+      if (savedPref !== null) {
+        return savedPref === 'true'
+      }
+    }
+    return true
+  })
 
   const totalPages = includeFullProposal ? 5 : 2
 
@@ -4173,7 +4184,15 @@ export function OfficialQuotationDocument({
                       <input
                         type="checkbox"
                         checked={includeFullProposal}
-                        onChange={(e) => setIncludeFullProposal(e.target.checked)}
+                        onChange={(e) => {
+                          const val = e.target.checked
+                          setIncludeFullProposal(val)
+                          if (typeof window !== 'undefined' && window.localStorage) {
+                            try {
+                              localStorage.setItem('examcalc_default_include_5_page_proposal', String(val))
+                            } catch {}
+                          }
+                        }}
                       />
                       <span style={{ fontSize: '12px' }}>Include Full 5-Page Technical Proposal</span>
                     </label>
