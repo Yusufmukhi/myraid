@@ -1024,41 +1024,42 @@ export function OfficialQuotationDocument({
 
   // Available contact persons for quick selection by Name dropdown
   const contactPersonOptions = useMemo(() => {
-    const list: { id: string; name: string; phone: string; label: string }[] = []
+    const list: { id: string; name: string; phone: string; email?: string; label: string }[] = []
     const seen = new Set<string>()
 
-    const addOption = (id: string, name?: string, phone?: string, tag?: string) => {
+    const addOption = (id: string, name?: string, phone?: string, tag?: string, email?: string) => {
       const cleanName = (name || '').trim()
       const cleanPhone = (phone || '').trim()
-      if (!cleanName && !cleanPhone) return
-      const key = `${cleanName.toLowerCase()}|${cleanPhone}`
+      const cleanEmail = (email || '').trim()
+      if (!cleanName && !cleanPhone && !cleanEmail) return
+      const key = `${cleanName.toLowerCase()}|${cleanPhone}|${cleanEmail.toLowerCase()}`
       if (seen.has(key)) return
       seen.add(key)
-      const label = `${cleanName}${cleanPhone ? ` · ${cleanPhone}` : ''}${tag ? ` (${tag})` : ''}`
-      list.push({ id, name: cleanName, phone: cleanPhone, label })
+      const label = `${cleanName}${cleanPhone ? ` · ${cleanPhone}` : ''}${cleanEmail ? ` · ${cleanEmail}` : ''}${tag ? ` (${tag})` : ''}`
+      list.push({ id, name: cleanName, phone: cleanPhone, email: cleanEmail, label })
     }
 
     // 1. Saved client from directory (primary contact)
     const savedCl = visibleSavedClients.find((c) => c.id === selectedClientId)
     if (savedCl && (savedCl.kind_att?.trim() || savedCl.contact?.trim())) {
-      addOption(`saved_primary_${savedCl.id}`, savedCl.kind_att, savedCl.contact, 'Primary Contact')
+      addOption(`saved_primary_${savedCl.id}`, savedCl.kind_att, savedCl.contact, 'Primary Contact', savedCl.email)
     }
 
     // 2. Current quotation primary contact
     if (clientInfo.kind_att?.trim() || clientInfo.buyer_contact?.trim()) {
-      addOption('primary', clientInfo.kind_att, clientInfo.buyer_contact, 'Primary Contact')
+      addOption('primary', clientInfo.kind_att, clientInfo.buyer_contact, 'Primary Contact', clientInfo.buyer_email)
     }
 
     // 3. Saved client additional contacts from directory
     if (savedCl && Array.isArray(savedCl.contacts)) {
       for (const cp of savedCl.contacts) {
-        addOption(`saved_cp_${cp.id}`, cp.name, cp.phone)
+        addOption(`saved_cp_${cp.id}`, cp.name, cp.phone, undefined, cp.email)
       }
     }
 
     // 4. Current quotation additional contacts
     for (const cp of (clientInfo.contacts || [])) {
-      addOption(cp.id || `cp_${cp.name}`, cp.name, cp.phone)
+      addOption(cp.id || `cp_${cp.name}`, cp.name, cp.phone, undefined, cp.email)
     }
 
     return list
@@ -1098,7 +1099,8 @@ export function OfficialQuotationDocument({
             buyer_name: matching.name,
             buyer_address: matching.address || prev.buyer_address,
             buyer_gst: matching.gst || prev.buyer_gst,
-            buyer_email: matching.email || prev.buyer_email,
+            buyer_email: matching.email !== undefined ? matching.email : prev.buyer_email,
+            show_buyer_email: Boolean(matching.email || prev.buyer_email),
             kind_att: matching.kind_att || prev.kind_att,
             buyer_contact: matching.contact || prev.buyer_contact,
             contacts: loadedContacts,
@@ -1141,7 +1143,8 @@ export function OfficialQuotationDocument({
         buyer_name: cl.name,
         buyer_address: cl.address,
         buyer_gst: cl.gst || '',
-        buyer_email: cl.email || prev.buyer_email,
+        buyer_email: cl.email !== undefined ? cl.email : '',
+        show_buyer_email: Boolean(cl.email),
         kind_att: cl.kind_att || '',
         buyer_contact: cl.contact || '',
         contacts: loadedContacts,
@@ -1222,6 +1225,13 @@ export function OfficialQuotationDocument({
         role,
       )
 
+      setSavedClients(getSavedClients(effectiveOrgId))
+      setClientInfo((prev) => ({
+        ...prev,
+        client_id: saved.id,
+        buyer_email: saved.email || prev.buyer_email,
+        show_buyer_email: Boolean(saved.email || prev.buyer_email),
+      }))
       toast(`Updated "${saved.name}" in Client Directory!`)
     } catch (err: any) {
       toast(err?.message || 'Client already exists', 'err')
@@ -1543,7 +1553,7 @@ export function OfficialQuotationDocument({
         return saved
       }
     }
-    return generateDefaultBodyItems(summary, wb, project.inputs, isMultiSystem ? initialSets : undefined)
+    return generateDefaultBodyItems(summary, wb, project.inputs, (initialSets && initialSets.length > 0) ? initialSets : undefined)
   }, [project, summary, wb, initialSets, isMultiSystem])
 
   const [bodyItems, setBodyItems] = useState<InstallationBodyItem[]>(defaultBodyItems)
@@ -1556,7 +1566,8 @@ export function OfficialQuotationDocument({
   // In unit_wise mode or single system, it uses the single system's bodies (pure single calculator matrix)
   const effectiveTotalBodies = useMemo(() => {
     if (!isMultiSystem || effectiveQuotationMode === 'unit_wise' || effectiveQuotationMode === 'unit_breakdown') {
-      return totalBodies
+      const q = initialSets?.[0]?.quantity ? Math.max(1, Number(initialSets[0].quantity)) : 1
+      return totalBodies > 0 ? (totalBodies * (initialSets && initialSets.length > 0 && !isMultiSystem && !bodyItems.some(b => b.sub_label?.includes('SETS')) ? q : 1)) : totalBodies
     }
     if (propTotalCombinedBodies && propTotalCombinedBodies > 0) {
       return propTotalCombinedBodies
@@ -2515,7 +2526,7 @@ export function OfficialQuotationDocument({
 
             <div className="pdf-buyer-contact-block">
               {clientInfo.show_buyer_email !== false && clientInfo.buyer_email?.trim() ? (
-                <div><strong>email :</strong> {clientInfo.buyer_email}</div>
+                <div><strong>Email :</strong> {clientInfo.buyer_email}</div>
               ) : null}
               {clientInfo.show_kind_att !== false && clientInfo.kind_att?.trim() ? (
                 <div><strong>Kind Att :</strong> {clientInfo.kind_att}</div>
@@ -5236,8 +5247,8 @@ export function OfficialQuotationDocument({
                       type="email"
                       className="option-input-field"
                       placeholder="e.g. stores@company.com"
-                      value={clientInfo.buyer_email}
-                      onChange={(e) => setClientInfo({ ...clientInfo, buyer_email: e.target.value })}
+                      value={clientInfo.buyer_email || ''}
+                      onChange={(e) => setClientInfo({ ...clientInfo, buyer_email: e.target.value, show_buyer_email: true })}
                     />
                   </div>
 
@@ -5272,12 +5283,13 @@ export function OfficialQuotationDocument({
                             )?.id || ''
                           }
                           onChange={(e) => {
-                            const chosen = contactPersonOptions.find((opt) => opt.id === e.target.value)
+                            const chosen = (contactPersonOptions as any[]).find((opt) => opt.id === e.target.value)
                             if (chosen) {
                               setClientInfo({
                                 ...clientInfo,
                                 kind_att: chosen.name,
                                 buyer_contact: chosen.phone,
+                                ...(chosen.email ? { buyer_email: chosen.email, show_buyer_email: true } : {}),
                               })
                             }
                           }}

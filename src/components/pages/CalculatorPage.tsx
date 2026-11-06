@@ -1339,8 +1339,10 @@ export function CalculatorPage({
   const liveC2cSummary: Summary | null = useMemo(() => {
     if (!isAdminOrOwner) return null
     const targetWb = c2cWb || wb
-    const c2cCustom = project.summary?.c2c_overrides || {}
-    const c2cCustomFormulas = project.summary?.c2c_formula_overrides || {}
+    const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
+    const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
+    const c2cCustom = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
+    const c2cCustomFormulas = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
     const c2cOv = { ...filterCutToCutOverrides(overrides), ...c2cCustom }
     const labourPerBody = overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300)
     c2cOv['Total cal!B49'] = labourPerBody
@@ -1442,7 +1444,8 @@ export function CalculatorPage({
 
     if (quotationMode === 'unit_wise') {
 
-      return summary.bodies || 36
+      const q = Math.max(1, Number(systems[activeSystemIdx]?.quantity) || 1)
+      return (summary.bodies || 36) * q
 
     }
 
@@ -1476,7 +1479,7 @@ export function CalculatorPage({
 
   const calcBreakdown = useMemo(() => {
 
-    const effectiveBodies = quotationMode === 'unit_wise' ? (summary.bodies || 36) : totalCombinedBodies
+    const effectiveBodies = quotationMode === 'unit_wise' ? ((summary.bodies || 36) * activeSysQty) : totalCombinedBodies
 
     return computeUnitWiseBreakdown(
 
@@ -1507,6 +1510,8 @@ export function CalculatorPage({
             ...sys,
             overrides: { ...liveOverrides },
             formulaOverrides: { ...liveFO },
+            c2c_overrides: sys.c2c_overrides || (idx === 0 ? project.summary?.c2c_overrides : undefined),
+            c2c_formula_overrides: sys.c2c_formula_overrides || (idx === 0 ? project.summary?.c2c_formula_overrides : undefined),
             includeInstallation,
             extraAmount,
           }
@@ -1523,6 +1528,11 @@ export function CalculatorPage({
       try {
         if (active) setServerCalculating(true)
         const effectiveSystems = getEffectiveSystems(overrides, formulaOverrides)
+        const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
+        const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
+        const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
+        const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
+
         const result = await api.calculateServer(session.token, {
           org_id: org.id,
           inputs: overrides,
@@ -1533,8 +1543,8 @@ export function CalculatorPage({
           profit_pct: profitPct,
           discount_pct: discountPct,
           formula_overrides: formulaOverrides,
-          c2c_overrides: project.summary?.c2c_overrides,
-          c2c_formula_overrides: project.summary?.c2c_formula_overrides,
+          c2c_overrides: Object.keys(mergedC2COv).length > 0 ? mergedC2COv : undefined,
+          c2c_formula_overrides: Object.keys(mergedC2CFO).length > 0 ? mergedC2CFO : undefined,
         }, abortController.signal)
 
         if (active && (result?.summary || result)) {
@@ -1841,6 +1851,11 @@ export function CalculatorPage({
 
       const currentClean = cleanOverrides(wb, overrides)
 
+      const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
+      const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
+      const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
+      const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
+
       const systemsPayload = systems.map((sys, idx) => ({
 
         name: sys.name || `SYSTEM ${String.fromCharCode(65 + idx)}`,
@@ -1852,6 +1867,10 @@ export function CalculatorPage({
         overrides: idx === activeSystemIdx ? currentClean : (sys.overrides || {}),
 
         formulaOverrides: idx === activeSystemIdx ? formulaOverrides : (sys.formulaOverrides || {}),
+
+        c2c_overrides: idx === activeSystemIdx ? mergedC2COv : (sys.c2c_overrides || {}),
+
+        c2c_formula_overrides: idx === activeSystemIdx ? mergedC2CFO : (sys.c2c_formula_overrides || {}),
 
       }))
 
@@ -1902,6 +1921,10 @@ export function CalculatorPage({
           extra_amount: extraAmount,
 
           systems: systemsPayload.length > 0 ? systemsPayload : undefined,
+
+          c2c_overrides: Object.keys(mergedC2COv).length > 0 ? mergedC2COv : undefined,
+
+          c2c_formula_overrides: Object.keys(mergedC2CFO).length > 0 ? mergedC2CFO : undefined,
 
         }, org.id)
 
@@ -2061,7 +2084,9 @@ export function CalculatorPage({
 
         include_installation: includeInstallation,
 
-        total_combined_bodies: quotationMode === 'unit_wise' ? (serverSummary.bodies || 36) : serverTotalBodies,
+        total_combined_bodies: quotationMode === 'unit_wise' ? (serverSummary.bodies || 36) * activeSysQty : serverTotalBodies,
+        c2c_overrides: systems[activeSystemIdx]?.c2c_overrides || project.summary?.c2c_overrides,
+        c2c_formula_overrides: systems[activeSystemIdx]?.c2c_formula_overrides || project.summary?.c2c_formula_overrides,
 
         profit_pct: profitPct,
 
@@ -2757,7 +2782,17 @@ export function CalculatorPage({
       const q = Math.max(1, Number(sys.quantity) || 1)
 
       const targetWb = c2cWb || wb
-      const sysOv: Overrides = filterCutToCutOverrides(isCurrent ? overrides : (sys.overrides || {}))
+      const sysCustomC2C = isCurrent
+        ? { ...(project.summary?.c2c_overrides || {}), ...(sys.c2c_overrides || {}) }
+        : (sys.c2c_overrides || {})
+      const sysCustomC2CFO = isCurrent
+        ? { ...(project.summary?.c2c_formula_overrides || {}), ...(sys.c2c_formula_overrides || {}) }
+        : (sys.c2c_formula_overrides || {})
+
+      const sysOv: Overrides = {
+        ...filterCutToCutOverrides(isCurrent ? overrides : (sys.overrides || {})),
+        ...sysCustomC2C,
+      }
       // In set-wise multi-system mode, Transport and Accommodation are shared project logistics added once at project level
       sysOv['Total cal!N24'] = 0
       sysOv['Total cal!N25'] = 0
@@ -4612,7 +4647,7 @@ export function CalculatorPage({
 
               <strong className="c-val">
 
-                {systems.length > 1 ? `${summary.bodies} (Order Total: ${totalCombinedBodies})` : summary.bodies} / {summary.compartments}
+                {activeSysQty > 1 ? `${summary.bodies * activeSysQty} (${activeSysQty} Sets)` : (systems.length > 1 ? `${summary.bodies} (Order Total: ${totalCombinedBodies})` : summary.bodies)} / {summary.compartments * activeSysQty}
 
               </strong>
 

@@ -568,6 +568,8 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
             unit: String(sys.unit || 'SET'),
             overrides: (sys.overrides && Object.keys(sys.overrides).length > 0) ? sys.overrides : (idx === 0 ? (proj.inputs || {}) : {}),
             formulaOverrides: (sys.formulaOverrides && Object.keys(sys.formulaOverrides).length > 0) ? sys.formulaOverrides : (idx === 0 ? (proj.formula_overrides || {}) : {}),
+            c2c_overrides: sys.c2c_overrides || (idx === 0 ? summary.c2c_overrides : undefined),
+            c2c_formula_overrides: sys.c2c_formula_overrides || (idx === 0 ? summary.c2c_formula_overrides : undefined),
           }))
         : undefined
 
