@@ -1,3 +1,30 @@
+function generateRandom10CharPassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower = 'abcdefghjkmnpqrstuvwxyz'
+  const digits = '23456789'
+  const allChars = upper + lower + digits
+
+  const chars = [
+    upper[Math.floor(Math.random() * upper.length)],
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+  ]
+
+  while (chars.length < 10) {
+    chars.push(allChars[Math.floor(Math.random() * allChars.length)])
+  }
+
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+
+  return chars.join('')
+}
+
 import { useEffect, useState, useMemo } from 'react'
 import { api, Member, Org, Session } from '../../lib/api'
 import { timeAgo } from '../../lib/format'
@@ -83,7 +110,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
         newRole === 'viewer' || newRole === 'floor_operator'
           ? 'Floor Operator'
           : newRole === 'admin'
-          ? 'Administrator'
+          ? 'Admin'
           : 'Staff Member'
       toast(`Updated ${member.username} role to ${roleLabel}`)
       loadMembers()
@@ -118,7 +145,23 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     const targetEmail = inviteEmail.trim()
     try {
       const res = await api.orgInviteMember(session.token, org.id, targetEmail, inviteRole)
-      setCreatedUser(res)
+      let finalPassword = res.password
+
+      if (res.is_new && res.password) {
+        const clean10CharPassword = generateRandom10CharPassword()
+        try {
+          const tempSession = await api.login(res.username, res.password)
+          if (tempSession && tempSession.token) {
+            await api.updateProfile(tempSession.token, undefined, clean10CharPassword)
+            await api.logout(tempSession.token)
+            finalPassword = clean10CharPassword
+          }
+        } catch (pwErr) {
+          console.warn('Could not auto-update to clean 10-char password:', pwErr)
+        }
+      }
+
+      setCreatedUser({ ...res, password: finalPassword })
       setInviteEmail('')
       loadMembers()
       toast(res.is_new ? `Staff account created for ${res.email}!` : `Existing user ${res.email} added to organisation!`)
@@ -132,7 +175,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
   const getLoginMessage = () => {
     if (!createdUser) return ''
     const loginUrl = window.location.origin
-    return `Hello,\n\nYou have been added to ${createdUser.org_name || org.name} on the Apollo Storage Quotation Portal.\n\nPortal URL: ${loginUrl}\nLogin Email: ${createdUser.email}\nUsername: ${createdUser.username}\n${createdUser.password ? `Temporary Password: ${createdUser.password}\n\nPlease sign in and change your username and password anytime in My Profile.` : 'You can sign in using your existing account credentials.'}\n\nBest regards,\n${session.username} (${org.name})`
+    return `Hello,\n\nYou have been added to ${createdUser.org_name || org.name} Quotation Portal.\n\nPortal URL: ${loginUrl}\nLogin Email: ${createdUser.email}\nUsername: ${createdUser.username}\n${createdUser.password ? `Temporary Password: ${createdUser.password}\n\nPlease sign in and update your profile anytime.` : 'You can sign in using your existing account credentials.'}\n\nBest regards,\n${session.username} (${org.name})`
   }
 
   const handleCopyCredentials = () => {
@@ -225,7 +268,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
           </div>
           <div className="members-stat-info">
             <span className="members-stat-value">{counts.admin}</span>
-            <span className="members-stat-label">Administrators</span>
+            <span className="members-stat-label">Admins</span>
           </div>
         </div>
 
@@ -272,7 +315,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
           <div className="role-guide-item">
             <div className="role-guide-title">
               <span>🛡️</span>
-              <span>Administrator</span>
+              <span>Admin</span>
             </div>
             <div className="role-guide-desc">
               Access to all 15 calculation sheets, custom formula overrides, template switching, and team role updates.
@@ -333,7 +376,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
               title="Select Role for new account"
             >
               <option value="member">💼 Staff Member</option>
-              <option value="admin">🛡️ Administrator</option>
+              <option value="admin">🛡️ Admin</option>
               <option value="viewer">🏭 Floor Operator</option>
             </select>
 
@@ -529,7 +572,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                             onChange={(e) => handleRoleChange(m, e.target.value)}
                             title={`Change role for ${m.username}`}
                           >
-                            <option value="admin">🛡️ Administrator</option>
+                            <option value="admin">🛡️ Admin</option>
                             <option value="member">💼 Staff Member</option>
                             <option value="viewer">🏭 Floor Operator</option>
                           </select>

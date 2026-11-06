@@ -147,6 +147,13 @@ export function AuthScreen({ onAuth }: { onAuth: (s: Session) => void }) {
     setBusy(true)
     try {
       const s = await api.login(username, password)
+      try {
+        const me = await api.me(s.token)
+        if (me?.email) s.email = me.email
+      } catch {}
+      if (!s.email && username.includes('@')) {
+        s.email = username.trim()
+      }
       // Save token according to remember me preference
       try {
         const { tokenStore } = await import('../lib/api')

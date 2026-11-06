@@ -1,3 +1,16 @@
+function validateMixedPassword(pwd: string): { valid: boolean; error?: string } {
+  if (!pwd || pwd.length < 10) {
+    return { valid: false, error: 'Password must be at least 10 characters long.' }
+  }
+  const hasUpper = /[A-Z]/.test(pwd)
+  const hasLower = /[a-z]/.test(pwd)
+  const hasDigit = /[0-9]/.test(pwd)
+  if (!hasUpper || !hasLower || !hasDigit) {
+    return { valid: false, error: 'Password must contain a mix of uppercase letters, lowercase letters, and numbers.' }
+  }
+  return { valid: true }
+}
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import data from '../lib/clientWorkbook.json'
 import c2cData from '../lib/clientWorkbook_c2c.json'
@@ -111,6 +124,18 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const [savedClients, setSavedClients] = useState<SavedClient[]>(() => getSavedClients(org.id))
 
   // Fetch latest clients from Supabase cloud immediately on mount & org switch
+  // Ensure current user email is always loaded from server
+  useEffect(() => {
+    if (session?.token && !session.email) {
+      api.me(session.token).then((me) => {
+        if (me?.email) {
+          session.email = me.email
+          setProfileEmail(me.email)
+        }
+      }).catch(() => {})
+    }
+  }, [session?.token])
+
   useEffect(() => {
     let active = true
     setSavedClients(getSavedClients(org.id))
@@ -408,11 +433,14 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     if (!trimmedUser || trimmedUser.length < 3) {
       return toast('Username must be at least 3 characters', 'err')
     }
-    if (newPassword && newPassword.length < 10) {
-      return toast('New password must be at least 10 characters long', 'err')
+    if (newPassword) {
+      const check = validateMixedPassword(newPassword)
+      if (!check.valid) {
+        return toast(check.error!, 'err')
+      }
     }
     if (session.must_change_password && !newPassword) {
-      return toast('You must set a new password of at least 10 characters', 'err')
+      return toast('You must set a new password of at least 10 characters with mixed letters and numbers', 'err')
     }
     if (newPassword && !session.must_change_password && !currentPassword) {
       return toast('Current password is required to change your password', 'err')
@@ -919,12 +947,26 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         {/* User Profile Quick Access */}
         <button
           className="btn ghost sm"
-          onClick={() => {
+          onClick={async () => {
+            let emailToShow = session.email || ''
+            if (!emailToShow && members) {
+              const match = members.find((m) => m.username === session.username || (m.id && m.id === session.user_id))
+              if (match?.email) emailToShow = match.email
+            }
             setProfileUsername(session.username)
-            setProfileEmail(session.email || '')
+            setProfileEmail(emailToShow)
             setNewPassword('')
             setConfirmPassword('')
             setShowProfileModal(true)
+            if (session?.token) {
+              try {
+                const me = await api.me(session.token)
+                if (me?.email) {
+                  session.email = me.email
+                  setProfileEmail(me.email)
+                }
+              } catch {}
+            }
           }}
           title="My Profile & Password"
           style={{ gap: 7, height: 32, padding: '0 10px', marginRight: 4 }}
@@ -986,13 +1028,27 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                   <span className="label">Account</span>
                   <button
                     className="menu-item"
-                    onClick={() => {
+                    onClick={async () => {
+                      let emailToShow = session?.email || ''
+                      if (!emailToShow && members) {
+                        const match = members.find((m) => m.username === session?.username || (m.id && m.id === session?.user_id))
+                        if (match?.email) emailToShow = match.email
+                      }
                       setProfileUsername(session?.username || '')
-                      setProfileEmail(session?.email || '')
+                      setProfileEmail(emailToShow)
                       setNewPassword('')
                       setConfirmPassword('')
                       setShowProfileModal(true)
                       setOrgMenu(false)
+                      if (session?.token) {
+                        try {
+                          const me = await api.me(session.token)
+                          if (me?.email) {
+                            session.email = me.email
+                            setProfileEmail(me.email)
+                          }
+                        } catch {}
+                      }
                     }}
                     style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10 }}
                   >
@@ -1496,12 +1552,12 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
               )}
 
               <label>
-                <span>{session.must_change_password ? 'New Permanent Password (min. 10 characters)' : 'New Password (min. 10 characters)'}</span>
+                <span>{session.must_change_password ? 'New Permanent Password (min. 10 mixed characters)' : 'New Password (min. 10 characters, mixed upper/lower & numbers)'}</span>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder={session.must_change_password ? 'Enter minimum 10 characters' : 'Leave empty to keep existing password'}
+                  placeholder={session.must_change_password ? 'Enter min. 10 mixed characters' : 'Leave empty to keep existing password'}
                   autoComplete="new-password"
                   autoFocus={Boolean(session.must_change_password)}
                   required={Boolean(session.must_change_password)}
