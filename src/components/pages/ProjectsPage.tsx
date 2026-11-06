@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { api, Org, Project, ProjectStatus, Session } from '../../lib/api'
+import { api, Org, Project, ProjectStatus, Session, tokenStore } from '../../lib/api'
 import { deleteProject } from '../../lib/permissions'
 import { inr, timeAgo } from '../../lib/format'
 import { groupProjectsIntoFolders, parseRevision, ProjectFolder } from '../../lib/revision'
@@ -13,11 +13,12 @@ interface Props {
   onNewProject: () => void
   onProjectsChanged?: () => void
   initialScope?: 'all' | 'mine' | 'shared'
+  onSessionChange?: (s: Session) => void
 }
 
 type SortField = 'updated_at' | 'name' | 'total' | 'created_at'
 
-export function ProjectsPage({ session, org, currentProjectId, onOpenProject, onNewProject, onProjectsChanged, initialScope }: Props) {
+export function ProjectsPage({ session, org, currentProjectId, onOpenProject, onNewProject, onProjectsChanged, initialScope, onSessionChange }: Props) {
   const { toast, confirm } = useUI()
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
   const [projects, setProjects] = useState<Project[]>([])
@@ -508,17 +509,23 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     setDeletingBatch(true)
     setBatchDeleteError('')
     try {
+      let freshSession: Session
       try {
-        await api.login(session.username, batchDeletePassword)
+        freshSession = await api.login(session.username, batchDeletePassword)
       } catch {
         setBatchDeleteError('Incorrect password. Please enter your valid account password.')
         setDeletingBatch(false)
         return
       }
 
+      // Synchronize fresh session immediately across storage, state and local session ref
+      tokenStore.set(freshSession.token)
+      session.token = freshSession.token
+      onSessionChange?.(freshSession)
+
       const idsToDelete = Array.from(selectedIds)
       for (const id of idsToDelete) {
-        await deleteProject(session, org, id)
+        await deleteProject(freshSession, org, id)
       }
 
       toast(`Successfully deleted ${idsToDelete.length} quotations`)

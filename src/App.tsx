@@ -241,6 +241,7 @@ export default function App() {
       onAddOrg={() => setAddingOrg(true)}
       onOrgsChanged={() => loadOrgs(session)}
       onLogout={logout}
+      onSessionChange={setSession}
     />
   )
 }

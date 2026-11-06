@@ -48,9 +48,10 @@ interface Props {
   onAddOrg: () => void
   onOrgsChanged: () => void
   onLogout: () => void
+  onSessionChange?: (s: Session) => void
 }
 
-export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsChanged, onLogout }: Props) {
+export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsChanged, onLogout, onSessionChange }: Props) {
   const { toast, confirm } = useUI()
   const copy = useCopy()
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
@@ -1110,6 +1111,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
               onNewProject={openCreateModal}
               onProjectsChanged={() => loadProjects()}
               initialScope={tab === 'shared_projects' ? 'shared' : 'all'}
+              onSessionChange={onSessionChange}
             />
           )}
 
