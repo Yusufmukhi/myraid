@@ -552,6 +552,78 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 .link-inline { background: none; border: 0; padding: 0; color: var(--blue-600); cursor: pointer; font-size: 12px; font-weight: 600; }
 .link-inline:hover { text-decoration: underline; }
 
+/* Batch Selection and Actions in Estimates/Projects */
+.batch-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  animation: fade 150ms ease-in-out;
+}
+
+.batch-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.batch-count-badge {
+  font-size: 13px;
+  font-weight: 700;
+  color: #166534;
+  background: #dcfce7;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.batch-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-selected-row {
+  background: #eff6ff !important;
+}
+
+.batch-selected-row:hover {
+  background: #dbeafe !important;
+}
+
+.danger-dialog {
+  border-top: 4px solid #dc2626;
+}
+
+.danger-dialog .dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.danger-dialog .dialog-header svg {
+  width: 28px;
+  height: 28px;
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.confirm-name-target {
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e1;
+  padding: 8px 12px;
+  font-family: monospace;
+  font-weight: 700;
+  color: #0f172a;
+  border-radius: 6px;
+  margin: 6px 0 10px;
+  user-select: all;
+}
+
 /* Project Calculator Bar */
 .calculator-page { display: flex; flex-direction: column; gap: 16px; }
 .project-bar {
@@ -1188,6 +1260,43 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   border-color: #2563eb;
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.top-client-name-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 8px;
+  height: 30px;
+  max-width: 220px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.top-client-name-badge .top-client-icon {
+  display: flex;
+  align-items: center;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.top-client-name-badge .top-client-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.top-client-name-badge .top-client-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .top-name-icon {

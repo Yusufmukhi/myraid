@@ -363,7 +363,7 @@ export function CalculatorPage({
 
 }: Props) {
 
-  const { toast } = useUI()
+  const { toast, confirm } = useUI()
 
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
   const activeWb = wb
@@ -481,6 +481,24 @@ export function CalculatorPage({
   const [loadingMembers, setLoadingMembers] = useState(false)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const bayInputRef = useRef<HTMLInputElement>(null)
+
+  const displayClientName = useMemo(() => {
+    const buyer = (project.summary?.client_info?.buyer_name || '').trim()
+    if (buyer) return buyer
+    const clientId = project.summary?.client_id
+    if (clientId) {
+      try {
+        const allClients = getSavedClients(org.id)
+        const matched = allClients.find((c) => c.id === clientId)
+        if (matched?.name) return matched.name.trim()
+      } catch {}
+    }
+    const rawInputs = project.inputs as Record<string, any> | undefined
+    const inputBuyer = rawInputs?.['buyer_name'] || rawInputs?.['client_name']
+    if (typeof inputBuyer === 'string' && inputBuyer.trim()) return inputBuyer.trim()
+    return ''
+  }, [project.summary, project.inputs, org.id])
 
 
 
@@ -902,24 +920,25 @@ export function CalculatorPage({
 
 
 
-  const handleRemoveSystemMatrix = (idxToRemove: number) => {
-
+  const handleRemoveSystemMatrix = async (idxToRemove: number) => {
     if (systems.length <= 1) return
+    const targetSystem = systems[idxToRemove]
+    const targetName = targetSystem?.name || `System ${idxToRemove + 1}`
+    const ok = await confirm({
+      title: `Delete ${targetName}?`,
+      body: `Are you sure you want to delete ${targetName}? All inputs, matrices, and settings for this system will be permanently removed.`,
+      confirmLabel: 'Delete System',
+      danger: true,
+    })
+    if (!ok) return
 
     const removedName = systems[idxToRemove].name
-
     const updated = systems.filter((_, idx) => idx !== idxToRemove)
-
     setSystems(updated)
-
     const nextIdx = Math.min(activeSystemIdx, updated.length - 1)
-
     setActiveSystemIdx(nextIdx)
-
     setOverrides(updated[nextIdx].overrides || {})
-
     toast(`Removed ${removedName}`)
-
   }
 
 
@@ -2450,6 +2469,18 @@ export function CalculatorPage({
 
         setShowOfficialQuotation(true)
 
+      } else if (e.key === '/') {
+        const activeEl = document.activeElement
+        const tag = activeEl?.tagName?.toLowerCase()
+        const isEditable = tag === 'input' || tag === 'textarea' || (activeEl as HTMLElement)?.isContentEditable
+        if (!isEditable) {
+          e.preventDefault()
+          if (bayInputRef.current) {
+            bayInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            bayInputRef.current.focus()
+            bayInputRef.current.select()
+          }
+        }
       }
 
     }
@@ -3057,6 +3088,13 @@ export function CalculatorPage({
                 />
               </div>
 
+              {displayClientName && (
+                <div className="top-client-name-badge" title={`Client: ${displayClientName}`}>
+                  <span className="top-client-icon">{Icon.users}</span>
+                  <span className="top-client-text">{displayClientName}</span>
+                </div>
+              )}
+
               <div className="top-pills">
                 <select
                   className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
@@ -3592,16 +3630,13 @@ export function CalculatorPage({
               </label>
 
               <input
-
+                ref={bayInputRef}
                 type="number"
-
                 min={1}
-
                 step={1}
-
                 disabled={isApprovedLocked}
-
                 value={bayInput}
+                title="Bay count (Press / to jump here)"
 
                 onChange={(e) => {
 
@@ -3654,8 +3689,6 @@ export function CalculatorPage({
                   outline: 'none',
 
                 }}
-
-                title="Bay quantity"
 
               />
 

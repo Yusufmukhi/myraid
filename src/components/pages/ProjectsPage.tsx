@@ -69,6 +69,17 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [shareMembers, setShareMembers] = useState<any[]>([])
   const [loadingMembers, setLoadingMembers] = useState(false)
 
+  // Batch selection and deletion state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [singleDeleteProj, setSingleDeleteProj] = useState<Project | null>(null)
+  const [confirmNameInput, setConfirmNameInput] = useState('')
+  const [deletingSingle, setDeletingSingle] = useState(false)
+
+  const [showBatchDeleteModal, setShowBatchDeleteModal] = useState(false)
+  const [batchDeletePassword, setBatchDeletePassword] = useState('')
+  const [batchDeleteError, setBatchDeleteError] = useState('')
+  const [deletingBatch, setDeletingBatch] = useState(false)
+
   const openShareModal = async (p: Project) => {
     setShareProj(p)
     setLoadingMembers(true)
@@ -272,6 +283,62 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     })
   }, [filteredProjects, currentProjectId, sortBy, sortAsc])
 
+  // Selection helpers
+  const allVisibleSelected = useMemo(() => {
+    if (filteredProjects.length === 0) return false
+    return filteredProjects.every((p) => selectedIds.has(p.id))
+  }, [filteredProjects, selectedIds])
+
+  const someVisibleSelected = useMemo(() => {
+    return filteredProjects.some((p) => selectedIds.has(p.id))
+  }, [filteredProjects, selectedIds])
+
+  const handleToggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const p of filteredProjects) {
+          next.delete(p.id)
+        }
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const p of filteredProjects) {
+          next.add(p.id)
+        }
+        return next
+      })
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }
+
+  const handleToggleFolderSelect = (folder: ProjectFolder, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const rev of folder.revisions) {
+        if (checked) {
+          next.add(rev.id)
+        } else {
+          next.delete(rev.id)
+        }
+      }
+      return next
+    })
+  }
+
   // Actions
   const handleRevise = async () => {
     if (!reviseProj) return
@@ -382,25 +449,88 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     }
   }
 
-  const handleDelete = async (p: Project) => {
+  const handleDelete = (p: Project) => {
     if (!isAdminOrOwner) {
       toast('Staff members cannot delete projects or quotations.', 'err')
       return
     }
-    const ok = await confirm({
-      title: `Delete project “${p.name}”?`,
-      body: 'This will permanently remove the project and its calculation history. This action cannot be undone.',
-      confirmLabel: 'Permanently Delete',
-      danger: true,
-    })
-    if (!ok) return
+    setSingleDeleteProj(p)
+    setConfirmNameInput('')
+  }
+
+  const handleConfirmSingleDelete = async () => {
+    if (!singleDeleteProj) return
+    if (confirmNameInput.trim() !== singleDeleteProj.name.trim()) {
+      toast('Quotation name does not match', 'err')
+      return
+    }
+    setDeletingSingle(true)
     try {
-      await deleteProject(session, org, p.id)
-      toast('Project deleted')
-      loadProjects()
+      await deleteProject(session, org, singleDeleteProj.id)
+      toast(`Deleted quotation “${singleDeleteProj.name}”`)
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(singleDeleteProj.id)
+        return next
+      })
+      setSingleDeleteProj(null)
+      setConfirmNameInput('')
+      await loadProjects()
       onProjectsChanged?.()
     } catch (e) {
       toast((e as Error).message, 'err')
+    } finally {
+      setDeletingSingle(false)
+    }
+  }
+
+  const handleTriggerBatchDelete = () => {
+    if (!isAdminOrOwner) {
+      toast('Staff members cannot delete projects or quotations.', 'err')
+      return
+    }
+    if (selectedIds.size === 0) return
+    if (selectedIds.size === 1) {
+      const singleId = Array.from(selectedIds)[0]
+      const target = projects.find((p) => p.id === singleId)
+      if (target) {
+        handleDelete(target)
+      }
+      return
+    }
+    setShowBatchDeleteModal(true)
+    setBatchDeletePassword('')
+    setBatchDeleteError('')
+  }
+
+  const handleConfirmBatchDelete = async () => {
+    if (!batchDeletePassword) return
+    setDeletingBatch(true)
+    setBatchDeleteError('')
+    try {
+      try {
+        await api.login(session.username, batchDeletePassword)
+      } catch {
+        setBatchDeleteError('Incorrect password. Please enter your valid account password.')
+        setDeletingBatch(false)
+        return
+      }
+
+      const idsToDelete = Array.from(selectedIds)
+      for (const id of idsToDelete) {
+        await deleteProject(session, org, id)
+      }
+
+      toast(`Successfully deleted ${idsToDelete.length} quotations`)
+      setSelectedIds(new Set())
+      setShowBatchDeleteModal(false)
+      setBatchDeletePassword('')
+      await loadProjects()
+      onProjectsChanged?.()
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    } finally {
+      setDeletingBatch(false)
     }
   }
 
@@ -420,8 +550,16 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     return (
       <tr
         key={p.id}
-        className={`${isSubRow ? 'file-subrow' : ''} ${isSelected ? 'selected-row' : ''} ${p.is_archived ? 'dim' : ''}`}
+        className={`${isSubRow ? 'file-subrow' : ''} ${isSelected ? 'selected-row' : ''} ${p.is_archived ? 'dim' : ''} ${selectedIds.has(p.id) ? 'batch-selected-row' : ''}`}
       >
+        <td style={{ width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            aria-label={`Select quotation ${p.name}`}
+            checked={selectedIds.has(p.id)}
+            onChange={(e) => handleToggleSelectOne(p.id, e.target.checked)}
+          />
+        </td>
         <td className={isSubRow ? 'file-subrow-cell' : ''}>
           {isSubRow && (
             <>
@@ -724,6 +862,36 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         </div>
       </div>
 
+      {/* Batch Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="batch-actions-bar">
+          <div className="batch-actions-left">
+            <span className="batch-count-badge">
+              {selectedIds.size} quotation{selectedIds.size > 1 ? 's' : ''} selected
+            </span>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Clear Selection
+            </button>
+          </div>
+          <div className="batch-actions-right">
+            {isAdminOrOwner && (
+              <button
+                type="button"
+                className="btn danger sm"
+                onClick={handleTriggerBatchDelete}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {Icon.trash} Delete Selected ({selectedIds.size})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Projects Table */}
       <div className="card table-card">
         {loading ? (
@@ -762,6 +930,17 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             <table className="tbl full-table">
             <thead>
               <tr>
+                <th style={{ width: '40px', textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible quotations"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected
+                    }}
+                    onChange={handleToggleSelectAll}
+                  />
+                </th>
                 <th>{viewMode === 'folders' ? 'Project Folder / Revision File' : 'Project Name'}</th>
                 <th>Client</th>
                 <th>Status</th>
@@ -778,6 +957,8 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                   const isOpen = Boolean(openFolders[folder.id])
                   const latest = folder.latestRevision
                   const hasNewer = (org.current_template_version || 1) > latest.template_version
+                  const folderAllSelected = folder.revisions.length > 0 && folder.revisions.every((r) => selectedIds.has(r.id))
+                  const folderSomeSelected = folder.revisions.some((r) => selectedIds.has(r.id))
 
                   return (
                     <Fragment key={folder.id}>
@@ -787,6 +968,17 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                         onClick={() => toggleFolder(folder.id)}
                         style={{ cursor: 'pointer' }}
                       >
+                        <td style={{ width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select folder ${folder.folderName}`}
+                            checked={folderAllSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = folderSomeSelected && !folderAllSelected
+                            }}
+                            onChange={(e) => handleToggleFolderSelect(folder, e.target.checked)}
+                          />
+                        </td>
                         <td>
                           <div className="row gap" style={{ flexWrap: 'wrap' }}>
                             <button
@@ -1091,6 +1283,151 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             <div className="dialog-actions mt-4">
               <button className="btn primary" onClick={() => setShareProj(null)}>
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single Quotation Permanent Deletion Dialog (Requires Exact Name) */}
+      {singleDeleteProj && (
+        <div className="overlay" onMouseDown={() => !deletingSingle && setSingleDeleteProj(null)}>
+          <div className="dialog danger-dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="dialog-header">
+              <span style={{ color: '#dc2626', display: 'flex', alignItems: 'center' }}>{Icon.trash}</span>
+              <div>
+                <h3 style={{ margin: 0, color: '#dc2626' }}>Delete Quotation</h3>
+                <span className="tiny text-muted">{singleDeleteProj.name}</span>
+              </div>
+            </div>
+            <p className="tiny muted mt-2" style={{ lineHeight: 1.5 }}>
+              This will permanently delete quotation <strong>“{singleDeleteProj.name}”</strong> and its calculation history. This action <strong>cannot be undone</strong>.
+            </p>
+            <div className="form mt-3">
+              <label>
+                <span style={{ fontSize: '12px' }}>
+                  To confirm, type <strong>{singleDeleteProj.name}</strong> in the box below:
+                </span>
+                <div className="confirm-name-target">{singleDeleteProj.name}</div>
+                <input
+                  type="text"
+                  autoFocus
+                  className="modal-input"
+                  placeholder="Type quotation name to confirm"
+                  value={confirmNameInput}
+                  onChange={(e) => setConfirmNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && confirmNameInput.trim() === singleDeleteProj.name.trim()) {
+                      handleConfirmSingleDelete()
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="dialog-actions mt-4">
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setSingleDeleteProj(null)}
+                disabled={deletingSingle}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn danger sm"
+                disabled={confirmNameInput.trim() !== singleDeleteProj.name.trim() || deletingSingle}
+                onClick={handleConfirmSingleDelete}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {deletingSingle ? <Spinner size={14} /> : Icon.trash} Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multiple Quotations Batch Deletion Dialog (Requires Account Password) */}
+      {showBatchDeleteModal && (
+        <div className="overlay" onMouseDown={() => !deletingBatch && setShowBatchDeleteModal(false)}>
+          <div className="dialog danger-dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="dialog-header">
+              <span style={{ color: '#dc2626', display: 'flex', alignItems: 'center' }}>{Icon.trash}</span>
+              <div>
+                <h3 style={{ margin: 0, color: '#dc2626' }}>Delete {selectedIds.size} Quotations</h3>
+                <span className="tiny text-muted">Batch Permanent Deletion</span>
+              </div>
+            </div>
+            <p className="tiny muted mt-2" style={{ lineHeight: 1.5 }}>
+              You are about to permanently delete <strong>{selectedIds.size}</strong> quotations and their entire calculation histories. This action <strong>cannot be undone</strong>.
+            </p>
+            <div
+              className="batch-delete-preview-box mt-2"
+              style={{
+                maxHeight: '120px',
+                overflowY: 'auto',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                padding: '8px 12px',
+              }}
+            >
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#475569' }}>
+                {Array.from(selectedIds).map((id) => {
+                  const p = projects.find((proj) => proj.id === id)
+                  const buyer = p?.summary?.client_info?.buyer_name
+                  return (
+                    <li key={id} style={{ marginBottom: '2px' }}>
+                      <strong>{p?.name || id}</strong>
+                      {buyer ? <span className="tiny muted"> — {buyer}</span> : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+            <div className="form mt-3">
+              <label>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>Enter your account password to confirm deletion:</span>
+                <input
+                  type="password"
+                  autoFocus
+                  className="modal-input"
+                  placeholder="Enter your account password"
+                  value={batchDeletePassword}
+                  onChange={(e) => {
+                    setBatchDeletePassword(e.target.value)
+                    if (batchDeleteError) setBatchDeleteError('')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && batchDeletePassword && !deletingBatch) {
+                      handleConfirmBatchDelete()
+                    }
+                  }}
+                />
+              </label>
+              {batchDeleteError && (
+                <div className="tiny mt-1" style={{ color: '#dc2626', fontWeight: 600 }}>
+                  {batchDeleteError}
+                </div>
+              )}
+            </div>
+            <div className="dialog-actions mt-4">
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setShowBatchDeleteModal(false)}
+                disabled={deletingBatch}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn danger sm"
+                disabled={!batchDeletePassword || deletingBatch}
+                onClick={handleConfirmBatchDelete}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {deletingBatch ? <Spinner size={14} /> : Icon.trash} Confirm &amp; Delete All ({selectedIds.size})
               </button>
             </div>
           </div>

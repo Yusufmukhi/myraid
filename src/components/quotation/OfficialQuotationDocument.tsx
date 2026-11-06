@@ -1872,6 +1872,12 @@ export function OfficialQuotationDocument({
   }, [effectiveQuotationMode, sets, lineItems, breakdownResult])
 
   const canFitOnPage1Naturally = totalCommercialRows <= 4
+  const [showBodiesTable, setShowBodiesTable] = useState<boolean>(() => {
+    if (project.summary?.show_bodies_table !== undefined) {
+      return Boolean(project.summary.show_bodies_table)
+    }
+    return true
+  })
   const [placeBodyOnPage1, setPlaceBodyOnPage1] = useState<boolean>(() => {
     if (project.summary?.body_table_on_page_1 !== undefined) {
       return Boolean(project.summary.body_table_on_page_1)
@@ -2291,6 +2297,7 @@ export function OfficialQuotationDocument({
       onSaveClientInfo(cleanClientInfo, lineItems, bodyItems, sets, {
         quotation_mode: effectiveQuotationMode,
         body_table_on_page_1: placeBodyOnPage1,
+        show_bodies_table: showBodiesTable,
         include_full_proposal: includeFullProposal,
         include_installation: includeInstallation,
         terms_list: cleanTerms,
@@ -2964,8 +2971,8 @@ export function OfficialQuotationDocument({
             {amountInWords}
           </div>
 
-          {/* Installation Body Table on Page 1 (only when single system and space permits) */}
-          {!isMultiSystem && placeBodyOnPage1 && renderInstallationBodyTable('on-page-1')}
+          {/* Installation Body Table on Page 1 */}
+          {showBodiesTable && placeBodyOnPage1 && renderInstallationBodyTable('on-page-1')}
 
           {/* Page 1 Footer */}
           <div className="pdf-footer">
@@ -2980,11 +2987,11 @@ export function OfficialQuotationDocument({
           {/* Page 2 Header */}
           {renderOfficialHeader()}
 
-          {/* If NOT on Page 1 and single system, render Installation Body table here on Page 2 */}
-          {!isMultiSystem && !placeBodyOnPage1 && renderInstallationBodyTable('mt-2')}
+          {/* If NOT on Page 1, render Installation Body table here on Page 2 */}
+          {showBodiesTable && !placeBodyOnPage1 && renderInstallationBodyTable('mt-2')}
 
           {/* Terms & Conditions Block */}
-          <div className={`pdf-terms-block ${!isMultiSystem && !placeBodyOnPage1 ? 'mt-3' : 'mt-2'}`}>
+          <div className={`pdf-terms-block ${showBodiesTable && !placeBodyOnPage1 ? 'mt-3' : 'mt-2'}`}>
             <div className="pdf-terms-heading">
               TERMS &amp; CONDITION
             </div>
@@ -4185,8 +4192,17 @@ export function OfficialQuotationDocument({
                       )}
                     </div>
 
-                    {!isMultiSystem && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={showBodiesTable}
+                        onChange={(e) => setShowBodiesTable(e.target.checked)}
+                      />
+                      <span style={{ fontSize: '12px', fontWeight: 600 }}>Show Installation Bodies Table</span>
+                    </label>
+
+                    {showBodiesTable && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '4px', marginLeft: '16px' }}>
                         <input
                           type="checkbox"
                           checked={placeBodyOnPage1}
