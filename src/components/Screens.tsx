@@ -368,3 +368,161 @@ export function BootScreen({ text = 'Loading…' }: { text?: string }) {
 }
 
 export { initClient }
+
+
+export function FirstTimePasswordChangeScreen({
+  session,
+  onPasswordChanged,
+  onLogout,
+}: {
+  session: Session
+  onPasswordChanged: (updated: Session) => void
+  onLogout: () => void
+}) {
+  const [username, setUsername] = useState(session.username || '')
+  const [email, setEmail] = useState(session.email || '')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setErr('')
+
+    if (!newPassword || newPassword.length < 10) {
+      setErr('Password must be at least 10 characters long.')
+      return
+    }
+    const hasUpper = /[A-Z]/.test(newPassword)
+    const hasLower = /[a-z]/.test(newPassword)
+    const hasDigit = /[0-9]/.test(newPassword)
+    if (!hasUpper || !hasLower || !hasDigit) {
+      setErr('Password must contain a mix of uppercase letters, lowercase letters, and numbers.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setErr('Passwords do not match.')
+      return
+    }
+
+    setBusy(true)
+    try {
+      const res = await api.updateProfile(
+        session.token,
+        username.trim() !== session.username ? username.trim() : undefined,
+        newPassword,
+        email.trim() || undefined
+      )
+      const updated: Session = {
+        ...session,
+        username: res?.username || username.trim() || session.username,
+        email: res?.email || email.trim() || session.email,
+        must_change_password: false,
+      }
+      onPasswordChanged(updated)
+    } catch (ex: any) {
+      setErr(ex?.message || 'Failed to update password')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Shell>
+      <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+        <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔐</div>
+        <h2>Set Your Permanent Password</h2>
+        <p className="tiny muted" style={{ maxWidth: '340px', margin: '4px auto 0', lineHeight: 1.4 }}>
+          You have signed in with temporary credentials. For portal security, please choose a permanent password (min. 10 mixed characters) before continuing.
+        </p>
+      </div>
+
+      <form onSubmit={submit} className="form">
+        <label>
+          Username
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            autoComplete="username"
+          />
+        </label>
+
+        <label>
+          Email Address
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="colleague@company.com"
+          />
+        </label>
+
+        <label>
+          New Permanent Password (min. 10 mixed characters)
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="e.g. K9mP2xW7qR"
+              autoFocus
+              required
+              autoComplete="new-password"
+              style={{ width: '100%', paddingRight: '40px' }}
+            />
+            <button
+              type="button"
+              className="icon-btn sm"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '15px',
+                padding: '4px',
+              }}
+              title={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
+          <span className="tiny muted" style={{ fontSize: '11px', marginTop: '2px', display: 'block' }}>
+            Must contain at least 10 characters with uppercase, lowercase, and numbers.
+          </span>
+        </label>
+
+        <label>
+          Confirm Permanent Password
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter your new password"
+            required
+            autoComplete="new-password"
+          />
+        </label>
+
+        {err && <div className="banner danger" style={{ marginTop: '8px' }}>{err}</div>}
+
+        <button type="submit" className="btn primary block mt-3" disabled={busy} style={{ width: '100%', height: '38px', fontWeight: 700 }}>
+          {busy ? <Spinner size={16} /> : 'Set Permanent Password & Enter Portal'}
+        </button>
+
+        <button
+          type="button"
+          className="btn ghost block mt-2"
+          onClick={onLogout}
+          style={{ width: '100%', fontSize: '12px', color: '#64748b' }}
+        >
+          Sign out and return later
+        </button>
+      </form>
+    </Shell>
+  )
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, initClient, Org, Session, tokenStore } from './lib/api'
 import { loadConfig, SupaConfig } from './lib/config'
-import { AuthScreen, BootScreen, OrgGate, SetupScreen } from './components/Screens'
+import { AuthScreen, BootScreen, FirstTimePasswordChangeScreen, OrgGate, SetupScreen } from './components/Screens'
 import { Workspace } from './components/Workspace'
 
 const ORG_KEY = 'examcalc.org'
@@ -89,6 +89,12 @@ export default function App() {
       }
     } catch (e) {
       const msg = (e as Error).message
+      if (/permanent password|must_change_password|security policy/i.test(msg)) {
+        if (s) {
+          setSession((prev) => (prev ? { ...prev, must_change_password: true } : null))
+        }
+        return
+      }
       if (/expired|invalid token|jwt/i.test(msg)) {
         tokenStore.clear()
         setSession(null)
@@ -105,13 +111,13 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (session) loadOrgs(session)
-    else setOrgs(null)
+    if (session && !session.must_change_password) loadOrgs(session)
+    else if (!session) setOrgs(null)
   }, [session, loadOrgs])
 
   // Automatically re-fetch organisations when the user returns to the tab or network reconnects
   useEffect(() => {
-    if (!session) return
+    if (!session || session.must_change_password) return
     const handleRecheck = () => {
       loadOrgs(session)
     }
@@ -203,6 +209,20 @@ export default function App() {
         }}
       />
     )
+
+  if (session.must_change_password) {
+    return (
+      <FirstTimePasswordChangeScreen
+        session={session}
+        onPasswordChanged={(updated) => {
+          setSession(updated)
+          loadOrgs(updated)
+        }}
+        onLogout={logout}
+      />
+    )
+  }
+
   if (orgs === null) return <BootScreen text="Loading your organisations…" />
   if (orgs.length === 0 || addingOrg)
     return <OrgGate session={session} onJoined={pickOrg} onCancel={orgs.length ? () => setAddingOrg(false) : undefined} />
