@@ -3110,13 +3110,17 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 }
 
 .th-sl { width: 34px; text-align: center !important; vertical-align: middle !important; }
+.th-system { width: 85px; text-align: center !important; vertical-align: middle !important; }
 .th-desc { text-align: center !important; vertical-align: middle !important; }
 .th-qty { width: 50px; text-align: center !important; vertical-align: middle !important; }
+.th-rate { width: 80px; text-align: center !important; vertical-align: middle !important; }
 .th-set { width: 58px; text-align: center !important; vertical-align: middle !important; }
-.th-rate { width: 75px; text-align: center !important; vertical-align: middle !important; }
 .th-amount { width: 95px; text-align: center !important; vertical-align: middle !important; }
 
 .td-sl { text-align: center !important; vertical-align: middle !important; }
+.td-system { font-weight: 800; font-size: 11px; background: #f8fafc; letter-spacing: 0.5px; text-align: center !important; vertical-align: middle !important; }
+.system-first-row td { border-top: 2.5px solid #000000 !important; }
+.system-set-row td { background: #f1f5f9; font-weight: 700; border-bottom: 2.5px solid #000000 !important; }
 .td-desc { text-align: center !important; vertical-align: middle !important; }
 .td-desc .model-title { font-weight: 700; font-size: 10.1px; margin-bottom: 2px; text-align: center !important; }
 .td-desc .model-dims { font-size: 10.1px; text-align: center !important; }
