@@ -535,6 +535,10 @@ export interface InstallationBodyItem {
   per_bay_qty: number
   qty: number
   total_body: number
+  system_name?: string
+  system_id?: string
+  set_qty?: number
+  unit_body?: number
 }
 
 /**
@@ -664,7 +668,8 @@ export function generateDefaultBodyItems(
     const allItems: InstallationBodyItem[] = []
     let counter = 1
     sets.forEach((s, sIdx) => {
-      const sysName = s.system_title || `SYSTEM ${String.fromCharCode(65 + sIdx)}`
+      const nextChar = String.fromCharCode(65 + sIdx)
+      const sysName = (s.system_title || (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)).trim()
       const sysQty = Math.max(1, Number(s.quantity) || 1)
       const sysSummary = s.summary || summary
       let dfmuRows = 6
@@ -685,15 +690,20 @@ export function generateDefaultBodyItems(
         else if (m.code === 'SFMU' || m.code === 'SFFU') rowsPerUnit = Math.max(1, Math.round(dfmuRows / 2))
         else rowsPerUnit = dfmuRows
 
-        const unitCount = m.qty * sysQty
-        const total_body = rowsPerUnit * unitCount
+        const unitCount = Number(m.qty) || 0
+        const unitBody = rowsPerUnit * unitCount
+        const total_body = unitBody * sysQty
         allItems.push({
-          id: String(counter++),
-          title: sets.length > 1 ? `${sysName}: ${m.code} ${bayCount} BAY` : `${m.code} ${bayCount} BAY`,
-          sub_label: sysQty > 1 ? `BODY IN ${m.code} (${sysQty} ${s.unit || 'SET'}${sysQty > 1 ? 'S' : ''})` : `BODY IN ${m.code}`,
+          id: `${s.id || sIdx}-${m.code}-${counter++}`,
+          title: `${m.code} ${bayCount} BAY`,
+          sub_label: `BODY IN ${m.code}`,
           per_bay_qty: rowsPerUnit,
           qty: unitCount,
           total_body,
+          system_name: sysName,
+          system_id: s.id || String(sIdx),
+          set_qty: sysQty,
+          unit_body: unitBody,
         })
       })
     })
@@ -732,7 +742,7 @@ export function generateDefaultBodyItems(
     const title = `${codeLabel} ${bayCount} BAY`
     const sub_label = `BODY IN ${codeLabel}`
     const qty = m.qty
-    const total_body = rowsPerUnit * qty
+    const unitBody = rowsPerUnit * qty
 
     return {
       id: String(idx + 1),
@@ -740,7 +750,11 @@ export function generateDefaultBodyItems(
       sub_label,
       per_bay_qty: rowsPerUnit,
       qty,
-      total_body,
+      total_body: unitBody,
+      system_name: 'SYSTEM A',
+      system_id: 'default',
+      set_qty: 1,
+      unit_body: unitBody,
     }
   })
 }
@@ -1875,7 +1889,7 @@ export function OfficialQuotationDocument({
   // 5. Intelligent Page 1 Space Check: Fits on Page 1 if total commercial rows <= 4
   const totalCommercialRows = useMemo(() => {
     if (effectiveQuotationMode === 'set_wise') {
-      return sets.reduce((acc, s) => acc + s.items.length + 1, 0)
+      return sets.reduce((acc, s) => acc + s.items.length, 0)
     }
     if (effectiveQuotationMode === 'unit_breakdown') {
       return breakdownResult.rows.length
@@ -2405,42 +2419,177 @@ export function OfficialQuotationDocument({
     )
   }
 
+  // Group installation body items by system
+  const systemBodyGroups = useMemo(() => {
+    interface BodyGroup {
+      system_id: string
+      system_name: string
+      set_qty: number
+      items: InstallationBodyItem[]
+      unitTotal: number
+      systemTotal: number
+    }
+
+    const groups: BodyGroup[] = []
+    const groupMap = new Map<string, BodyGroup>()
+
+    bodyItems.forEach((b, idx) => {
+      const matchingSet = sets.find(s => s.id === b.system_id || (b.system_name && (s.system_title === b.system_name || s.set_label === b.system_name)))
+      const defaultName = sets.length > 1 ? `SYSTEM ${String.fromCharCode(65 + idx)}` : (sets[0]?.system_title || sets[0]?.set_label || 'SYSTEM A')
+      const sysName = b.system_name || defaultName
+      const sysId = b.system_id || matchingSet?.id || sysName
+      const setQty = b.set_qty || (matchingSet?.quantity ? Math.max(1, Number(matchingSet.quantity)) : 1)
+
+      if (!groupMap.has(sysId)) {
+        const newGroup: BodyGroup = {
+          system_id: sysId,
+          system_name: sysName,
+          set_qty: setQty,
+          items: [],
+          unitTotal: 0,
+          systemTotal: 0,
+        }
+        groupMap.set(sysId, newGroup)
+        groups.push(newGroup)
+      }
+
+      const grp = groupMap.get(sysId)!
+      grp.items.push(b)
+      const itemUnitBody = b.unit_body !== undefined ? b.unit_body : (b.per_bay_qty * b.qty)
+      grp.unitTotal += itemUnitBody
+      grp.systemTotal += (b.total_body || (itemUnitBody * grp.set_qty))
+    })
+
+    return groups
+  }, [bodyItems, sets])
+
+  const totalSetsCount = useMemo(() => {
+    if (systemBodyGroups.length > 0) {
+      return systemBodyGroups.reduce((acc, g) => acc + g.set_qty, 0)
+    }
+    return sets.reduce((acc, s) => acc + (Math.max(1, Number(s.quantity) || 1)), 0) || 1
+  }, [systemBodyGroups, sets])
+
   // Installation Body Table Component
-  const renderInstallationBodyTable = (extraClass = '') => (
-    <table className={`pdf-body-table ${extraClass}`}>
-      <thead>
-        <tr>
-          <th style={{ width: '40px' }}>SR<br />NO</th>
-          <th>Description of Goods</th>
-          <th style={{ width: '65px' }}>PER BAY QTY</th>
-          <th style={{ width: '55px' }}>QTY</th>
-          <th style={{ width: '75px' }}>INSTALLATION<br />BODY</th>
-        </tr>
-      </thead>
-      <tbody>
-        {bodyItems.map((b, idx) => (
-          <tr key={b.id}>
-            <td className="text-center">{idx + 1})</td>
-            <td className="text-center">
-              <div style={{ fontWeight: 600 }}>{b.title}</div>
-              {b.sub_label?.trim() ? <div className="tiny muted">{b.sub_label}</div> : null}
-            </td>
-            <td className="text-center">{b.per_bay_qty}</td>
-            <td className="text-center">{b.qty}</td>
-            <td className="text-center">{b.total_body}</td>
+  const renderInstallationBodyTable = (extraClass = '') => {
+    let globalItemIndex = 1
+
+    return (
+      <table className={`pdf-body-table ${extraClass}`}>
+        <thead>
+          <tr>
+            <th style={{ width: '40px' }}>SR<br />NO</th>
+            <th>Description of Goods</th>
+            <th style={{ width: '75px' }}>PER BAY QTY</th>
+            <th style={{ width: '55px' }}>QTY</th>
+            <th style={{ width: '85px' }}>INSTALLATION<br />BODY</th>
           </tr>
-        ))}
-        <tr className="total-body-row">
-          <td colSpan={4} className="text-center" style={{ fontWeight: 700 }}>
-            TOTAL BODY
-          </td>
-          <td className="total-body-yellow text-center">
-            <strong>{totalBodies}</strong>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  )
+        </thead>
+        <tbody>
+          {systemBodyGroups.map((group) => {
+            return (
+              <React.Fragment key={group.system_id}>
+                {/* System Name Header Row */}
+                <tr className="system-body-header-row">
+                  <td
+                    colSpan={5}
+                    className="font-bold text-center"
+                    style={{
+                      fontWeight: 800,
+                      fontSize: '11px',
+                      letterSpacing: '0.5px',
+                      color: '#0f172a',
+                      padding: '5px 8px',
+                      borderTop: '2px solid #000000',
+                      borderBottom: '1.5px solid #000000',
+                      background: '#f8fafc',
+                    }}
+                  >
+                    {group.system_name} ({group.set_qty} {group.set_qty > 1 ? 'SETS' : 'SET'})
+                  </td>
+                </tr>
+
+                {/* Model Rows under this system */}
+                {group.items.map((b) => {
+                  const itemIndex = globalItemIndex++
+                  const itemUnitBody = b.unit_body !== undefined ? b.unit_body : (b.per_bay_qty * b.qty)
+                  return (
+                    <tr key={b.id}>
+                      <td className="text-center">{itemIndex})</td>
+                      <td className="text-center">
+                        <div style={{ fontWeight: 700, fontSize: '10.5px' }}>{b.title}</div>
+                        {b.sub_label?.trim() ? <div className="tiny muted">{b.sub_label}</div> : null}
+                      </td>
+                      <td className="text-center font-mono">{b.per_bay_qty}</td>
+                      <td className="text-center font-mono">{b.qty}</td>
+                      <td className="text-center font-mono font-bold">{itemUnitBody}</td>
+                    </tr>
+                  )
+                })}
+
+                {/* System Subtotal / Multiplier Row */}
+                <tr className="system-body-subtotal-row">
+                  <td
+                    colSpan={4}
+                    className="text-right font-bold"
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '10px',
+                      padding: '4px 8px',
+                      letterSpacing: '0.2px',
+                      color: '#0f172a',
+                      background: '#f1f5f9',
+                      borderBottom: '1.5px solid #000000',
+                    }}
+                  >
+                    {group.set_qty > 1 ? (
+                      <span>
+                        TOTAL {group.system_name} BODIES (1 SET): {group.unitTotal} BODIES × {group.set_qty} SETS =
+                      </span>
+                    ) : (
+                      <span>TOTAL {group.system_name} BODIES (1 SET) =</span>
+                    )}
+                  </td>
+                  <td
+                    className="text-center font-mono font-bold"
+                    style={{
+                      fontWeight: 800,
+                      fontSize: '11px',
+                      borderBottom: '1.5px solid #000000',
+                      background: '#e2e8f0',
+                      color: '#000000',
+                    }}
+                  >
+                    {group.systemTotal}
+                  </td>
+                </tr>
+              </React.Fragment>
+            )
+          })}
+
+          {/* Grand Total Summary Row */}
+          <tr className="total-body-row">
+            <td
+              colSpan={3}
+              className="text-center font-bold"
+              style={{ fontWeight: 700, fontSize: '10.5px', background: '#f8fafc' }}
+            >
+              TOTAL SETS: {totalSetsCount} {totalSetsCount > 1 ? 'SETS' : 'SET'}
+            </td>
+            <td
+              className="text-right font-bold"
+              style={{ fontWeight: 700, fontSize: '10.5px' }}
+            >
+              TOTAL BODIES
+            </td>
+            <td className="total-body-yellow text-center font-bold font-mono">
+              <strong>{totalBodies}</strong>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    )
+  }
 
   let globalSlCounter = 1
 
@@ -2602,11 +2751,10 @@ export function OfficialQuotationDocument({
               ) : (
                 <tr>
                   <th className="th-sl">Sl<br />No.</th>
-                  <th className="th-system" style={{ width: '85px' }}>System Name</th>
                   <th className="th-desc">Description of Goods</th>
-                  <th className="th-qty" style={{ width: '50px' }}>Quantity</th>
+                  <th className="th-qty" style={{ width: '55px' }}>Quantity</th>
+                  <th className="th-set" style={{ width: '60px' }}>{isMultiSystem ? 'Set' : ''}</th>
                   <th className="th-rate" style={{ width: '85px' }}>Rate</th>
-                  <th className="th-set" style={{ width: '58px' }}>Set</th>
                   <th className="th-amount" style={{ width: '100px' }}>Amount</th>
                 </tr>
               )}
@@ -2776,8 +2924,8 @@ export function OfficialQuotationDocument({
                 <>
                   {sets.map((s, sIdx) => {
                     const nextChar = String.fromCharCode(65 + sIdx)
-                    const systemTitle = (s.system_title || (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)).trim()
-                    const sysItems = s.items && s.items.length > 0 ? s.items : []
+                    const systemTitle = (!isMultiSystem ? '' : (s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`))).trim()
+                    const hasItems = s.items && s.items.length > 0
 
                     const sysDoubleDrive = systemHasDoubleDrive(s)
                     const showSysDoubleDrive = sets.length > 1 && sysDoubleDrive && !allSystemsHaveDoubleDrive
@@ -2792,16 +2940,68 @@ export function OfficialQuotationDocument({
                       sysNotes.push(`${sysTrack} ${sysTrack === 1 ? 'TRACK' : 'TRACKS'}`)
                     }
 
+                    const totalRowSpan = (hasItems ? s.items.length : 0) + (systemTitle ? 1 : 0) + (sysNotes.length > 0 ? 1 : 0)
                     const displaySetRate = setDisplayAmounts[sIdx]?.rate ?? Number(s.rate)
                     const displaySetAmount = setDisplayAmounts[sIdx]?.amount ?? Number(s.amount)
-                    const totalRowSpan = sysItems.length + 1 + (sysNotes.length > 0 ? 1 : 0)
 
                     return (
-                      <React.Fragment key={s.id || sIdx}>
-                        {sysItems.map((it, itIdx) => {
+                      <React.Fragment key={s.id}>
+                        {systemTitle ? (
+                          <tr key={`hdr-${s.id}`} className="system-title-row">
+                            <td
+                              className="td-sl"
+                              style={{ borderTop: '2.5px solid #000000 !important', borderBottom: '2px solid #000000 !important', background: '#f8fafc' }}
+                            ></td>
+                            <td
+                              className="td-desc font-bold text-center"
+                              style={{
+                                fontWeight: 800,
+                                textAlign: 'center',
+                                fontSize: '11px',
+                                letterSpacing: '0.5px',
+                                borderTop: '2.5px solid #000000 !important',
+                                borderBottom: '2px solid #000000 !important',
+                                background: '#f8fafc',
+                                color: '#000000',
+                              }}
+                            >
+                              <div>{systemTitle}</div>
+                            </td>
+                            <td
+                              className="td-qty"
+                              style={{ borderTop: '2.5px solid #000000 !important', borderBottom: '2px solid #000000 !important', background: '#f8fafc' }}
+                            ></td>
+                            <td
+                              className="td-set text-center font-bold"
+                              rowSpan={totalRowSpan}
+                              style={{ verticalAlign: 'middle', fontWeight: 700, fontSize: '11px', background: '#f8fafc' }}
+                            >
+                              <div>{s.quantity}</div>
+                              <div style={{ fontSize: '9px', color: '#475569' }}>{s.unit || 'SET'}</div>
+                            </td>
+                            <td
+                              className="td-rate text-center font-mono"
+                              rowSpan={totalRowSpan}
+                              style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                            >
+                              {Number(displaySetRate).toLocaleString('en-IN', {
+                                minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
+                                maximumFractionDigits: 2,
+                                useGrouping: false,
+                              })}
+                            </td>
+                            <td
+                              className="td-amount text-center font-mono"
+                              rowSpan={totalRowSpan}
+                              style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                            >
+                              {Number(displaySetAmount).toFixed(2)}
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {(s.items || []).map((it, itIdx) => {
                           const currentSl = itIdx + 1
-                          const isFirstRow = itIdx === 0
-                          const shortName = getDisplayModelName(it)
                           const systemBreakdownRows = s.breakdown?.rows || breakdownResult.rows
                           const matchRow = systemBreakdownRows.find((r: any) =>
                             (it.model_code && r.model_code === it.model_code) ||
@@ -2816,89 +3016,47 @@ export function OfficialQuotationDocument({
                             : (Number(it.amount) || (itemRate * (Number(it.unit_qty) || 1)) || 0)
 
                           return (
-                            <tr
-                              key={it.id || itIdx}
-                              className={`item-row ${isFirstRow ? 'system-first-row' : ''}`}
-                              style={isFirstRow ? { borderTop: '2.5px solid #000000' } : undefined}
-                            >
-                              <td
-                                className="td-sl text-center font-bold"
-                                style={isFirstRow ? { borderTop: '2.5px solid #000000' } : undefined}
-                              >
-                                {currentSl}
+                            <tr key={it.id} className="item-row">
+                              <td className="td-sl text-center font-bold">{currentSl}</td>
+                              <td className="td-desc text-center">
+                                <strong className="model-title">{it.model_name}</strong>
+                                {cleanDimensions(it.dimensions) ? (
+                                  <div className="model-dims">{cleanDimensions(it.dimensions)}</div>
+                                ) : null}
                               </td>
-
-                              {isFirstRow && (
-                                <td
-                                  className="td-system text-center font-bold"
-                                  rowSpan={totalRowSpan}
-                                  style={{
-                                    verticalAlign: 'middle',
-                                    fontWeight: 800,
-                                    fontSize: '11px',
-                                    letterSpacing: '0.5px',
-                                    background: '#f8fafc',
-                                    borderTop: '2.5px solid #000000',
-                                    borderRight: '1.5px solid #000000',
-                                    borderLeft: '1.5px solid #000000',
-                                    color: '#000000',
-                                    padding: '6px 4px',
-                                  }}
-                                >
-                                  <div>{systemTitle}</div>
-                                </td>
-                              )}
-
-                              <td
-                                className="td-desc text-center"
-                                style={isFirstRow ? { borderTop: '2.5px solid #000000' } : undefined}
-                              >
-                                <strong className="model-title" style={{ fontSize: '11px', letterSpacing: '0.3px' }}>
-                                  {shortName}
-                                </strong>
-                              </td>
-
-                              <td
-                                className="td-qty text-center font-bold"
-                                style={{
-                                  verticalAlign: 'middle',
-                                  fontSize: '10.5px',
-                                  ...(isFirstRow ? { borderTop: '2.5px solid #000000' } : {}),
-                                }}
-                              >
+                              <td className="td-qty text-center font-bold" style={{ verticalAlign: 'middle', fontSize: '10.5px' }}>
                                 {it.unit_qty}
                               </td>
-
-                              <td
-                                className="td-rate text-center text-muted"
-                                style={{
-                                  color: '#94a3b8',
-                                  fontSize: '10px',
-                                  ...(isFirstRow ? { borderTop: '2.5px solid #000000' } : {}),
-                                }}
-                              >
-                                —
-                              </td>
-                              <td
-                                className="td-set text-center text-muted"
-                                style={{
-                                  color: '#94a3b8',
-                                  fontSize: '10px',
-                                  ...(isFirstRow ? { borderTop: '2.5px solid #000000' } : {}),
-                                }}
-                              >
-                                —
-                              </td>
-                              <td
-                                className="td-amount text-center text-muted"
-                                style={{
-                                  color: '#94a3b8',
-                                  fontSize: '10px',
-                                  ...(isFirstRow ? { borderTop: '2.5px solid #000000' } : {}),
-                                }}
-                              >
-                                —
-                              </td>
+                              {!systemTitle && itIdx === 0 && (
+                                <>
+                                  <td
+                                    className="td-set text-center font-bold"
+                                    rowSpan={totalRowSpan}
+                                    style={{ verticalAlign: 'middle', fontWeight: 700, fontSize: '11px', background: '#f8fafc' }}
+                                  >
+                                    <div>{s.quantity}</div>
+                                    <div style={{ fontSize: '9px', color: '#475569' }}>{s.unit || 'SET'}</div>
+                                  </td>
+                                  <td
+                                    className="td-rate text-center font-mono"
+                                    rowSpan={totalRowSpan}
+                                    style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                  >
+                                    {Number(displaySetRate).toLocaleString('en-IN', {
+                                      minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
+                                      maximumFractionDigits: 2,
+                                      useGrouping: false,
+                                    })}
+                                  </td>
+                                  <td
+                                    className="td-amount text-center font-mono"
+                                    rowSpan={totalRowSpan}
+                                    style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
+                                  >
+                                    {Number(displaySetAmount).toFixed(2)}
+                                  </td>
+                                </>
+                              )}
                               <span style={{ display: 'none' }}>{Number(itemRate).toFixed(2)}{Number(itemAmount).toFixed(2)}</span>
                             </tr>
                           )
@@ -2908,95 +3066,23 @@ export function OfficialQuotationDocument({
                           <tr key={`notes-${s.id || sIdx}`} className="system-notes-row">
                             <td className="td-sl"></td>
                             <td
-                              colSpan={2}
                               className="td-desc text-center"
                               style={{
-                                padding: '3px 8px',
+                                padding: '4px 8px',
                                 textAlign: 'center',
                                 verticalAlign: 'middle',
                                 background: '#ffffff',
                               }}
                             >
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  alignItems: 'center',
-                                  gap: '2px',
-                                }}
-                              >
+                              <div style={{ fontSize: '9.5px', fontWeight: 700, color: '#dc2626', letterSpacing: '0.4px', lineHeight: 1.4 }}>
                                 {sysNotes.map((note, nIdx) => (
-                                  <span key={nIdx} style={{ color: '#ff0000', fontWeight: 700, fontSize: '9.5px', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
-                                    {note}
-                                  </span>
+                                  <div key={nIdx}>{note}</div>
                                 ))}
                               </div>
                             </td>
-                            <td className="td-rate text-center text-muted">—</td>
-                            <td className="td-set text-center text-muted">—</td>
-                            <td className="td-amount text-center text-muted">—</td>
+                            <td className="td-qty"></td>
                           </tr>
                         )}
-
-                        {/* Set Multiplier Row for this system */}
-                        <tr
-                          key={`set-row-${s.id || sIdx}`}
-                          className="system-set-row"
-                          style={{
-                            background: '#f1f5f9',
-                            fontWeight: 700,
-                            borderBottom: '2.5px solid #000000',
-                          }}
-                        >
-                          <td className="td-sl text-center" style={{ borderBottom: '2.5px solid #000000' }}></td>
-                          <td
-                            colSpan={2}
-                            className="td-desc text-center font-bold"
-                            style={{
-                              fontSize: '10.5px',
-                              letterSpacing: '0.3px',
-                              color: '#000000',
-                              borderBottom: '2.5px solid #000000',
-                              padding: '5px 8px',
-                            }}
-                          >
-                            1 SET RATE OF {systemTitle}
-                          </td>
-                          <td
-                            className="td-rate text-center font-mono font-bold"
-                            style={{
-                              fontSize: '10.5px',
-                              color: '#000000',
-                              borderBottom: '2.5px solid #000000',
-                            }}
-                          >
-                            {Number(displaySetRate).toLocaleString('en-IN', {
-                              minimumFractionDigits: Number(displaySetRate) % 1 === 0 ? 0 : 2,
-                              maximumFractionDigits: 2,
-                              useGrouping: false,
-                            })}
-                          </td>
-                          <td
-                            className="td-set text-center font-bold"
-                            style={{
-                              fontSize: '11px',
-                              color: '#0369a1',
-                              borderBottom: '2.5px solid #000000',
-                            }}
-                          >
-                            {s.quantity} {s.unit || 'SET'}
-                          </td>
-                          <td
-                            className="td-amount text-center font-mono font-bold"
-                            style={{
-                              fontSize: '10.5px',
-                              color: '#000000',
-                              borderBottom: '2.5px solid #000000',
-                            }}
-                          >
-                            {Number(displaySetAmount).toFixed(2)}
-                          </td>
-                        </tr>
                       </React.Fragment>
                     )
                   })}
@@ -3006,7 +3092,7 @@ export function OfficialQuotationDocument({
               {/* Red Specs & Summary Rows */}
               <tr className="summary-split-row">
                 <td
-                  colSpan={effectiveQuotationMode === 'unit_breakdown' ? 5 : effectiveQuotationMode === 'unit_wise' ? 3 : 4}
+                  colSpan={effectiveQuotationMode === 'unit_breakdown' ? 5 : 3}
                   rowSpan={hasDiscount ? 6 : 4}
                   className="td-red-specs"
                   title="Click to edit Description of Goods Specifications"
@@ -5849,7 +5935,14 @@ export function OfficialQuotationDocument({
                             value={b.per_bay_qty}
                             onChange={(e) => {
                               const val = parseInt(e.target.value) || 0
-                              const updated = bodyItems.map((item, i) => (i === idx ? { ...item, per_bay_qty: val, total_body: val * item.qty } : item))
+                              const updated = bodyItems.map((item, i) => {
+                                if (i === idx) {
+                                  const unit_body = val * item.qty
+                                  const set_qty = item.set_qty || 1
+                                  return { ...item, per_bay_qty: val, unit_body, total_body: unit_body * set_qty }
+                                }
+                                return item
+                              })
                               setBodyItems(updated)
                             }}
                           />
@@ -5862,7 +5955,14 @@ export function OfficialQuotationDocument({
                             value={b.qty}
                             onChange={(e) => {
                               const val = parseInt(e.target.value) || 0
-                              const updated = bodyItems.map((item, i) => (i === idx ? { ...item, qty: val, total_body: b.per_bay_qty * val } : item))
+                              const updated = bodyItems.map((item, i) => {
+                                if (i === idx) {
+                                  const unit_body = item.per_bay_qty * val
+                                  const set_qty = item.set_qty || 1
+                                  return { ...item, qty: val, unit_body, total_body: unit_body * set_qty }
+                                }
+                                return item
+                              })
                               setBodyItems(updated)
                             }}
                           />

@@ -3110,17 +3110,13 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 }
 
 .th-sl { width: 34px; text-align: center !important; vertical-align: middle !important; }
-.th-system { width: 85px; text-align: center !important; vertical-align: middle !important; }
 .th-desc { text-align: center !important; vertical-align: middle !important; }
-.th-qty { width: 50px; text-align: center !important; vertical-align: middle !important; }
-.th-rate { width: 80px; text-align: center !important; vertical-align: middle !important; }
-.th-set { width: 58px; text-align: center !important; vertical-align: middle !important; }
-.th-amount { width: 95px; text-align: center !important; vertical-align: middle !important; }
+.th-qty { width: 55px; text-align: center !important; vertical-align: middle !important; }
+.th-set { width: 60px; text-align: center !important; vertical-align: middle !important; }
+.th-rate { width: 85px; text-align: center !important; vertical-align: middle !important; }
+.th-amount { width: 100px; text-align: center !important; vertical-align: middle !important; }
 
 .td-sl { text-align: center !important; vertical-align: middle !important; }
-.td-system { font-weight: 800; font-size: 11px; background: #f8fafc; letter-spacing: 0.5px; text-align: center !important; vertical-align: middle !important; }
-.system-first-row td { border-top: 2.5px solid #000000 !important; }
-.system-set-row td { background: #f1f5f9; font-weight: 700; border-bottom: 2.5px solid #000000 !important; }
 .td-desc { text-align: center !important; vertical-align: middle !important; }
 .td-desc .model-title { font-weight: 700; font-size: 10.1px; margin-bottom: 2px; text-align: center !important; }
 .td-desc .model-dims { font-size: 10.1px; text-align: center !important; }
@@ -3130,17 +3126,20 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 .td-amount { text-align: center !important; vertical-align: middle !important; }
 
 .system-title-row td {
-  padding: 4px 6px;
-  background-color: #ffffff;
+  padding: 5px 6px;
+  background-color: #f8fafc;
   text-align: center !important;
   vertical-align: middle !important;
+  border-top: 2.5px solid #000000 !important;
+  border-bottom: 2px solid #000000 !important;
 }
 .system-title-row .td-desc {
   text-align: center !important;
   vertical-align: middle !important;
-  font-weight: 800;
-  font-size: 11px;
-  letter-spacing: 0.5px;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.5px !important;
+  color: #000000 !important;
 }
 .pdf-goods-table td[rowSpan] {
   vertical-align: middle !important;
@@ -3235,8 +3234,8 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 
 /* Page 2 Body breakdown */
 .pdf-body-table {
-  width: 55%;
-  max-width: 360px;
+  width: 68%;
+  max-width: 480px;
   border-collapse: collapse;
   border: 1.5px solid #000000;
   font-size: 10.1px;
@@ -3262,6 +3261,21 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   text-align: center;
   vertical-align: middle;
 }
+.pdf-body-table .system-body-header-row td {
+  background: #f8fafc;
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  border-top: 2px solid #000000 !important;
+  border-bottom: 1.5px solid #000000 !important;
+  color: #0f172a;
+}
+.pdf-body-table .system-body-subtotal-row td {
+  background: #f1f5f9;
+  font-weight: 700;
+  border-bottom: 1.5px solid #000000 !important;
+  color: #0f172a;
+}
 .total-body-yellow {
   background-color: #ffff00 !important;
   color: #000000;
@@ -3271,8 +3285,8 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 
 /* Page 1 Body breakdown */
 .pdf-body-table.on-page-1 {
-  width: 55%;
-  max-width: 360px;
+  width: 68%;
+  max-width: 480px;
   margin-top: 8px;
   margin-bottom: 0;
 }
