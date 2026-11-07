@@ -1589,12 +1589,7 @@ export function OfficialQuotationDocument({
   }, [bodyItems])
 
   // Total Combined Bodies across all systems and sets for accurate order-wide logistics sharing
-  // In unit_wise mode or single system, it uses the single system's bodies (pure single calculator matrix)
   const effectiveTotalBodies = useMemo(() => {
-    if (!isMultiSystem || effectiveQuotationMode === 'unit_wise' || effectiveQuotationMode === 'unit_breakdown') {
-      const q = initialSets?.[0]?.quantity ? Math.max(1, Number(initialSets[0].quantity)) : 1
-      return totalBodies > 0 ? (totalBodies * (initialSets && initialSets.length > 0 && !isMultiSystem && !bodyItems.some(b => b.sub_label?.includes('SETS')) ? q : 1)) : totalBodies
-    }
     if (propTotalCombinedBodies && propTotalCombinedBodies > 0) {
       return propTotalCombinedBodies
     }
@@ -1606,8 +1601,8 @@ export function OfficialQuotationDocument({
       }, 0)
       if (sum > 0) return sum
     }
-    return totalBodies
-  }, [isMultiSystem, effectiveQuotationMode, propTotalCombinedBodies, initialSets, totalBodies])
+    return totalBodies > 0 ? totalBodies : 1
+  }, [propTotalCombinedBodies, initialSets, totalBodies])
 
   // Other Extra Amount (editable and initialized from calculator or project summary)
   const [extraAmount, setExtraAmount] = useState<number>(() => {

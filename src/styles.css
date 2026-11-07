@@ -2978,8 +2978,8 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   background-repeat: no-repeat;
   background-size: 380px;
   pointer-events: none;
-  opacity: 0.14;
-  z-index: 1;
+  opacity: 0.09;
+  z-index: 10;
 }
 
 .pdf-header, .pdf-client-section, .pdf-subject-line, .pdf-goods-table, .pdf-words-bar, .pdf-footer, .pdf-body-table, .pdf-terms-block {

@@ -785,6 +785,7 @@ export function CalculatorPage({
     setSystems(updated)
 
     setActiveSystemIdx(targetIdx)
+    setServerQuote(null)
 
     const target = updated[targetIdx]
 
@@ -1396,13 +1397,39 @@ export function CalculatorPage({
     return null
   })
 
+  const activeSysQty = Math.max(1, Number(systems[activeSystemIdx]?.quantity) || 1)
+
+  // Total Combined Bodies across ALL systems & sets (treats whole project as one job for transportation & accommodation)
+  // Formula: sum over each system of (singleSetBodies * sys.quantity)
+  const totalCombinedBodies = useMemo(() => {
+    return systems.reduce((acc, sys, idx) => {
+      const sysOv = idx === activeSystemIdx ? overrides : (sys.overrides || {})
+      const bodies = computeSystemTotalBodies(sys, sysOv, wb, idx === activeSystemIdx, actualSummary?.bodies)
+      const qty = Math.max(1, Number(sys.quantity) || 1)
+      return acc + (bodies * qty)
+    }, 0) || 1
+  }, [systems, activeSystemIdx, overrides, wb, actualSummary?.bodies])
+
   // Authoritative totals from server calculate function, with profit margin applied on Direct Cost Base
   const summary: Summary = useMemo(() => {
-    const raw: Summary = serverQuote?.summary?.models ? serverQuote.summary : (actualSummary || (project.summary ?? null))
+    const isServerQuoteValidForActive = serverQuote && (serverQuote.active_system_idx === undefined || serverQuote.active_system_idx === activeSystemIdx)
+    const raw: Summary = (isServerQuoteValidForActive && serverQuote?.summary?.models) ? serverQuote.summary : (actualSummary || (project.summary ?? null))
     if (!raw) return raw
 
+    const projectTrans = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
+    const projectAcc = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+    const sysBodies = (raw.bodies && raw.bodies > 0) ? raw.bodies : 36
+
+    // Proportional shared transport and accommodation per set across total combined bodies
+    const sysTrans = (totalCombinedBodies > 0 && (activeSysQty > 1 || systems.length > 1))
+      ? Math.round(projectTrans * sysBodies / totalCombinedBodies)
+      : (raw.transport ?? projectTrans)
+    const sysAcc = (totalCombinedBodies > 0 && (activeSysQty > 1 || systems.length > 1))
+      ? Math.round(projectAcc * sysBodies / totalCombinedBodies)
+      : (raw.accommodation ?? projectAcc)
+
     // Re-apply profit margin on Direct Cost Base (costBase = Ex-Works + Transport + Accommodation + Installation + Extra)
-    const effectiveCostBase = raw.costBase ?? (raw.subtotal + (raw.installation || 0) + (raw.transport || 0) + (raw.accommodation || 0) + (raw.extraAmount || 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))
+    const effectiveCostBase = (raw.subtotal || 0) + (raw.installation || 0) + sysTrans + sysAcc + (raw.extraAmount || 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
     const effectiveProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (raw.profitPct || 25)
     const effectiveDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (raw.discountPct || 0)
 
@@ -1415,6 +1442,8 @@ export function CalculatorPage({
 
     return {
       ...raw,
+      transport: sysTrans,
+      accommodation: sysAcc,
       costBase: effectiveCostBase,
       profitPct: effectiveProfitPct,
       profitAmount,
@@ -1425,7 +1454,7 @@ export function CalculatorPage({
       gst,
       sales,
     }
-  }, [serverQuote, serverCalculating, actualSummary, project.summary, profitPct, discountPct])
+  }, [serverQuote, serverCalculating, actualSummary, project.summary, profitPct, discountPct, activeSystemIdx, totalCombinedBodies, activeSysQty, systems.length, overrides])
 
   const c2cSummary: Summary | null = useMemo(() => {
     if (!isAdminOrOwner) return null
@@ -1455,70 +1484,19 @@ export function CalculatorPage({
 
 
 
-  // Total Combined Bodies across ALL systems & sets (treats whole project as one job for transportation & accommodation)
-
-  // Formula: sum over each system of (singleSetBodies * sys.quantity)
-
-  const totalCombinedBodies = useMemo(() => {
-
-    if (quotationMode === 'unit_wise') {
-
-      const q = Math.max(1, Number(systems[activeSystemIdx]?.quantity) || 1)
-      return (summary.bodies || 36) * q
-
-    }
-
-    if (serverQuote?.total_combined_bodies && !serverCalculating && (!serverQuote.systems || serverQuote.systems.length === systems.length)) {
-
-      return serverQuote.total_combined_bodies
-
-    }
-
-    return systems.reduce((acc, sys, idx) => {
-
-      const sysOv = idx === activeSystemIdx ? overrides : (sys.overrides || {})
-
-      const bodies = computeSystemTotalBodies(sys, sysOv, wb, idx === activeSystemIdx, summary.bodies)
-
-      const qty = Math.max(1, Number(sys.quantity) || 1)
-
-      return acc + (bodies * qty)
-
-    }, 0) || 1
-
-  }, [systems, activeSystemIdx, overrides, wb, summary.bodies, quotationMode, serverQuote?.total_combined_bodies])
-
-
-
   // Live Unit-Wise Breakdown: Unit Rate = Base Unit Rate + All Transportation Rate + Extra Amount; Total Amount = Unit Rate * Qty
-
-  // When in set_wise mode with multiple systems, logistics are shared across totalCombinedBodies
-
-  // When in unit_wise mode, it uses the single system's bodies (pure single calculator matrix)
-
+  // Logistics are shared proportionally across totalCombinedBodies
   const calcBreakdown = useMemo(() => {
-
-    const effectiveBodies = quotationMode === 'unit_wise' ? ((summary.bodies || 36) * activeSysQty) : totalCombinedBodies
-
     return computeUnitWiseBreakdown(
-
       summary,
-
       activeWb,
-
       includeInstallation,
-
       profitPct,
-
       discountPct,
-
-      effectiveBodies,
-
+      totalCombinedBodies,
       extraAmount,
-
     )
-
-  }, [summary, wb, includeInstallation, profitPct, discountPct, totalCombinedBodies, extraAmount, quotationMode, wbVersion])
+  }, [summary, wb, includeInstallation, profitPct, discountPct, totalCombinedBodies, extraAmount, wbVersion])
 
 
 
@@ -1593,6 +1571,7 @@ export function CalculatorPage({
 
           setServerQuote({
             ...result,
+            active_system_idx: activeSystemIdx,
             summary: normalizedSummary,
             computed_total: systems.length > 1 ? (result.computed_total ?? s) : s,
           })
@@ -1632,15 +1611,16 @@ export function CalculatorPage({
 
 
   // Compile all systems into quotation_sets for PDF and saving
-
   const compiledSets = useMemo(() => {
     const liveSystems = getEffectiveSystems(overrides, formulaOverrides)
+    const projectTransport = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
+    const projectAccommodation = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+    const labourPerBody = (overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300))
+
     return liveSystems.map((sys, idx) => {
       const isCurrent = idx === activeSystemIdx
       const sysOv: Overrides = { ...(sys.overrides || {}) }
-      if (overrides['Total cal!N24'] !== undefined) sysOv['Total cal!N24'] = overrides['Total cal!N24']
-      if (overrides['Total cal!N25'] !== undefined) sysOv['Total cal!N25'] = overrides['Total cal!N25']
-      if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = overrides['Total cal!B49']
+      if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = labourPerBody
       const sysExtra = isCurrent
         ? extraAmount
         : (sys.extraAmount !== undefined
@@ -1653,43 +1633,42 @@ export function CalculatorPage({
       delete sysOv['Total cal!B15']
       delete sysOv['Total cal!B19']
 
-      const sysFO = sys.formulaOverrides || {}
+      const sysFO = isCurrent ? formulaOverrides : (sys.formulaOverrides || {})
+      const sysIncInst = sys.includeInstallation ?? includeInstallation
+      const sysQty = Math.max(1, Number(sys.quantity) || 1)
+
+      const sysBodies = computeSystemTotalBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
+
+      // Proportional shared transport and accommodation per set across total combined bodies
+      const sysTransport = totalCombinedBodies > 0
+        ? Math.round(projectTransport * sysBodies / totalCombinedBodies)
+        : projectTransport
+      const sysAccommodation = totalCombinedBodies > 0
+        ? Math.round(projectAccommodation * sysBodies / totalCombinedBodies)
+        : projectAccommodation
+
+      sysOv['Total cal!N24'] = sysTransport
+      sysOv['Total cal!N25'] = sysAccommodation
+
       let sysSummary: Summary
       let sysBreakdown: UnitWiseBreakdownResult | null = null
 
       if (isCurrent) {
         sysSummary = summary
         sysBreakdown = calcBreakdown
-      } else if (sys.summary) {
-        sysSummary = sys.summary
-        wb.setFormulaOverrides(sysFO)
-        wb.setOverrides(sysOv)
-        sysBreakdown = computeUnitWiseBreakdown(
-          sysSummary,
-          wb,
-          sys.includeInstallation ?? includeInstallation,
-          profitPct,
-          discountPct,
-          totalCombinedBodies,
-          sysExtra,
-        )
-        wb.setFormulaOverrides(formulaOverrides)
-        wb.setOverrides(overrides)
       } else {
-        const serverSys = serverQuote?.systems && serverQuote.systems[idx]
-        if (serverSys?.summary) {
-          sysSummary = serverSys.summary
-        } else {
-          wb.setFormulaOverrides(sysFO)
-          wb.setOverrides(sysOv)
-          sysSummary = summarize(wb, profitPct, discountPct, includeInstallation, sysExtra)
-        }
         wb.setFormulaOverrides(sysFO)
         wb.setOverrides(sysOv)
+        const baseSum = summarize(wb, profitPct, discountPct, sysIncInst, sysExtra)
+        sysSummary = {
+          ...baseSum,
+          transport: sysTransport,
+          accommodation: sysAccommodation,
+        }
         sysBreakdown = computeUnitWiseBreakdown(
           sysSummary,
           wb,
-          includeInstallation,
+          sysIncInst,
           profitPct,
           discountPct,
           totalCombinedBodies,
@@ -1700,7 +1679,6 @@ export function CalculatorPage({
       }
 
       const rate = Math.round(sysBreakdown?.finalBeforeGst || sysSummary?.beforeGst || 0)
-      const sysQty = Math.max(1, Number(sys.quantity) || 1)
       const amount = Math.round(rate * sysQty)
       const preDiscRate = Math.round(sysBreakdown?.totalPriceWithProfit || sysSummary?.subtotalWithProfit || (rate / Math.max(0.01, 1 - (discountPct / 100))))
       const preDiscAmount = Math.round(preDiscRate * sysQty)
@@ -2721,8 +2699,6 @@ export function CalculatorPage({
   const activeSys = systems[activeSystemIdx]
 
   const activeSysName = activeSys?.name || `SYSTEM ${String.fromCharCode(65 + activeSystemIdx)}`
-
-  const activeSysQty = Math.max(1, Number(activeSys?.quantity) || 1)
 
   const activeSysUnit = activeSys?.unit || 'SET'
 
@@ -4579,19 +4555,23 @@ export function CalculatorPage({
             </div>
 
             <div className="h-charge-item">
-
               <label>Transport / Freight (₹)</label>
-
               {renderCellInput('Total cal!N24', 100, 0, '₹', 120)}
-
+              {(activeSysQty > 1 || systems.length > 1) && summary?.transport !== undefined && (
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                  ({inr2(summary.transport)}/Set)
+                </div>
+              )}
             </div>
 
             <div className="h-charge-item">
-
               <label>Accommodation (₹)</label>
-
               {renderCellInput('Total cal!N25', 100, 0, '₹', 120)}
-
+              {(activeSysQty > 1 || systems.length > 1) && summary?.accommodation !== undefined && (
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                  ({inr2(summary.accommodation)}/Set)
+                </div>
+              )}
             </div>
 
             <div className="h-charge-item">
@@ -6161,7 +6141,7 @@ export function CalculatorPage({
             initialQuotationMode={quotationMode}
             initialExtraAmount={extraAmount}
             initialSets={compiledSets}
-            totalCombinedBodies={quotationMode === 'unit_wise' ? (summary.bodies || 36) : totalCombinedBodies}
+            totalCombinedBodies={totalCombinedBodies}
             isUnsavedWarning={dirty}
             onClose={() => setShowOfficialQuotation(false)}
             onSaveClientInfo={handleSaveClientQuotationData}
