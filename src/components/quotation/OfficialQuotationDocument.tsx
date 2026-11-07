@@ -2805,12 +2805,21 @@ export function OfficialQuotationDocument({
 
                         return (
                           <React.Fragment key={s.id || sIdx}>
-                            <tr className="system-title-row" style={{ background: '#f8fafc' }}>
+                            <tr className="system-title-row">
                               <td className="td-sl"></td>
                               <td
                                 colSpan={4}
                                 className="td-desc font-bold text-center"
-                                style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.5px', color: '#0f172a', padding: '5px 8px', textAlign: 'center' }}
+                                style={{
+                                  fontWeight: 800,
+                                  fontSize: '11px',
+                                  letterSpacing: '0.5px',
+                                  color: '#0f172a',
+                                  padding: '5px 8px',
+                                  textAlign: 'center',
+                                  border: '2px solid #000000',
+                                  background: '#f8fafc',
+                                }}
                               >
                                 <span>{sysTitle} {s.set_label ? `(${s.set_label})` : `(${sysQty} ${s.unit || 'SET'})`}</span>
                               </td>
@@ -2948,10 +2957,7 @@ export function OfficialQuotationDocument({
                       <React.Fragment key={s.id}>
                         {systemTitle ? (
                           <tr key={`hdr-${s.id}`} className="system-title-row">
-                            <td
-                              className="td-sl"
-                              style={{ borderTop: '2.5px solid #000000 !important', borderBottom: '2px solid #000000 !important', background: '#f8fafc' }}
-                            ></td>
+                            <td className="td-sl"></td>
                             <td
                               className="td-desc font-bold text-center"
                               style={{
@@ -2959,18 +2965,14 @@ export function OfficialQuotationDocument({
                                 textAlign: 'center',
                                 fontSize: '11px',
                                 letterSpacing: '0.5px',
-                                borderTop: '2.5px solid #000000 !important',
-                                borderBottom: '2px solid #000000 !important',
+                                border: '2px solid #000000',
                                 background: '#f8fafc',
                                 color: '#000000',
                               }}
                             >
                               <div>{systemTitle}</div>
                             </td>
-                            <td
-                              className="td-qty"
-                              style={{ borderTop: '2.5px solid #000000 !important', borderBottom: '2px solid #000000 !important', background: '#f8fafc' }}
-                            ></td>
+                            <td className="td-qty"></td>
                             <td
                               className="td-set text-center font-bold"
                               rowSpan={totalRowSpan}
