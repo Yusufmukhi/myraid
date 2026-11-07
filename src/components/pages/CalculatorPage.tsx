@@ -3435,40 +3435,40 @@ export function CalculatorPage({
 
             <div className="excel-kpi-card">
               <span className="kpi-label">SP TOTAL</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Steel Weight' : 'Body Steel Weight'}</span>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal * activeSysQty)}</strong>
+              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Steel Weight' : 'Body Steel Weight'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
             </div>
 
             <div className="excel-kpi-card">
               <span className="kpi-label">TROLLY STEEL</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.trolley.total)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Trolley Weight' : 'Trolley Weight'}</span>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.trolley.total * activeSysQty)}</strong>
+              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Trolley Weight' : 'Trolley Weight'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
             </div>
 
             <div className="excel-kpi-card">
               <span className="kpi-label">TOTAL WEIGHT</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C SP + Trolley' : 'SP + Trolley Steel'}</span>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight * activeSysQty)}</strong>
+              <span className="kpi-sub">{isAdminOrOwner ? 'C2C SP + Trolley' : 'SP + Trolley Steel'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
             </div>
 
             <div className="excel-kpi-card highlight-mech">
               <span className="kpi-label">WT WITH MACHINE</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.weightWithMachine)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Total + Mech' : 'Total + Mechanism'}</span>
+              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.weightWithMachine * activeSysQty)}</strong>
+              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Total + Mech' : 'Total + Mechanism'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
             </div>
 
             {isAdminOrOwner ? (
               <>
                 <div className="excel-kpi-card">
                   <span className="kpi-label">LABOUR</span>
-                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.labourSubtotal)}</strong>
-                  <span className="kpi-sub">C2C Total Labour</span>
+                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.labourSubtotal * activeSysQty)}</strong>
+                  <span className="kpi-sub">C2C Total Labour{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
                 </div>
 
                 <div className="excel-kpi-card">
                   <span className="kpi-label">POWDER COATING</span>
-                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.powderTotal)}</strong>
-                  <span className="kpi-sub">C2C PC Amount</span>
+                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.powderTotal * activeSysQty)}</strong>
+                  <span className="kpi-sub">C2C PC Amount{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
                 </div>
 
                 <div className="excel-kpi-card highlight">
@@ -3483,10 +3483,10 @@ export function CalculatorPage({
                     )}
                   </div>
                   <strong className="kpi-val sales-val">
-                    {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(displaySummary.sales)}
+                    {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(Math.round(displaySummary.sales * activeSysQty))}
                   </strong>
                   <span className="kpi-sub">
-                    {serverCalculating ? '—' : `${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
+                    {serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`}
                   </span>
                 </div>
               </>
@@ -3503,10 +3503,10 @@ export function CalculatorPage({
                   )}
                 </div>
                 <strong className="kpi-val sales-val">
-                  {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(summary.sales)}
+                  {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(Math.round(summary.sales * activeSysQty))}
                 </strong>
                 <span className="kpi-sub">
-                  {serverCalculating ? '—' : `${inr2(summary.beforeGst)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}`}
+                  {serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`}
                 </span>
               </div>
             )}

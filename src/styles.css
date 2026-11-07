@@ -2976,10 +2976,12 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   bottom: 0;
   background-position: 53% 54%;
   background-repeat: no-repeat;
-  background-size: 380px;
+  background-size: 420px;
   pointer-events: none;
-  opacity: 0.09;
+  opacity: 0.22;
   z-index: 10;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
 }
 
 .pdf-header, .pdf-client-section, .pdf-subject-line, .pdf-goods-table, .pdf-words-bar, .pdf-footer, .pdf-body-table, .pdf-terms-block {
@@ -3511,6 +3513,14 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   .pdf-header {
     padding-top: 2mm !important;
     margin-bottom: 10px !important;
+  }
+
+  .pdf-watermark-overlay {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 0.22 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .pdf-logo-img {
