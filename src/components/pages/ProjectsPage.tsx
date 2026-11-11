@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api, Org, Project, ProjectStatus, Session, tokenStore } from '../../lib/api'
 import { deleteProject } from '../../lib/permissions'
 import { inr, timeAgo } from '../../lib/format'
+import { getSavedClients } from '../../lib/clientDirectory'
 import { groupProjectsIntoFolders, parseRevision, ProjectFolder } from '../../lib/revision'
 import { Icon, Spinner, useUI } from '../ui'
 
@@ -25,6 +26,13 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [searchType, setSearchType] = useState<'all' | 'qtn' | 'client' | 'description'>('all')
+  const savedClients = useMemo(() => {
+    try {
+      return getSavedClients(org.id)
+    } catch {
+      return []
+    }
+  }, [org.id])
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'mine' | 'shared'>(initialScope || 'all')
   const [showArchived, setShowArchived] = useState(false)
@@ -193,8 +201,9 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         const isQuoted = p.status === 'quoted' || (!isLoss && !isWon && !isNegotiating)
 
         if (statusFilter === 'all') {
-          // Default ALL view only shows active pipeline (Quoted & Negotiating); excludes Won and Loss
-          if (isWon || isLoss) return false
+          // When actively searching, search across ALL projects regardless of status!
+          // Only filter out won/loss if NOT actively searching (clean pipeline view)
+          if (!search.trim() && (isWon || isLoss)) return false
         } else {
           if ((statusFilter === 'won' || statusFilter === 'approved') && !isWon) return false
           if ((statusFilter === 'loss' || statusFilter === 'lost') && !isLoss) return false
@@ -208,6 +217,36 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           const qtnNo = (clientInfo?.qtn_no || '').toLowerCase()
           const desc = ((p.summary?.description || (p as any).description || '') + ' ' + (p.summary?.notes || '')).toLowerCase()
 
+          // Matched client directory entry if saved
+          const dirClient = (p.summary?.client_id ? savedClients.find((c) => c.id === p.summary.client_id) : null)
+            || (clientName ? savedClients.find((c) => c.name.toLowerCase() === clientName) : null)
+
+          // Compile all address strings associated with this project / client
+          const addressStrings = [
+            clientInfo?.buyer_address,
+            clientInfo?.buyer_city,
+            clientInfo?.buyer_state,
+            clientInfo?.buyer_pin,
+            (clientInfo as any)?.address,
+            (clientInfo as any)?.city,
+            (clientInfo as any)?.state,
+            (clientInfo as any)?.pin,
+            (clientInfo as any)?.pincode,
+            (clientInfo as any)?.site_address,
+            (clientInfo as any)?.delivery_address,
+            dirClient?.address,
+            (dirClient as any)?.city,
+            (dirClient as any)?.state,
+            (dirClient as any)?.pincode,
+            (p.inputs as any)?.['buyer_address'],
+            (p.inputs as any)?.['client_address'],
+            (p.inputs as any)?.['address'],
+            (p.inputs as any)?.['site_address'],
+            (p.inputs as any)?.['delivery_address'],
+          ].filter(Boolean).map((a) => String(a).toLowerCase())
+
+          const matchesAddress = addressStrings.some((addr) => addr.includes(q))
+
           if (searchType === 'qtn') {
             if (p.name.toLowerCase().includes(q)) return true
             if (qtnNo.includes(q)) return true
@@ -217,11 +256,34 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
 
           if (searchType === 'client') {
             if (clientName.includes(q)) return true
+            if (matchesAddress) return true
             if (clientInfo) {
-              if ((clientInfo.buyer_city || '').toLowerCase().includes(q)) return true
+              if ((clientInfo.buyer_gst || '').toLowerCase().includes(q)) return true
               if ((clientInfo.buyer_contact || '').toLowerCase().includes(q)) return true
+              if ((clientInfo.buyer_email || '').toLowerCase().includes(q)) return true
+              if ((clientInfo.kind_att || '').toLowerCase().includes(q)) return true
               if (Array.isArray(clientInfo.contacts)) {
                 for (const c of clientInfo.contacts) {
+                  if ((c.name || '').toLowerCase().includes(q)) return true
+                  if ((c.phone || '').toLowerCase().includes(q)) return true
+                  if ((c.designation || '').toLowerCase().includes(q)) return true
+                  if ((c.email || '').toLowerCase().includes(q)) return true
+                }
+              }
+              if (Array.isArray(clientInfo.custom_rows)) {
+                for (const row of clientInfo.custom_rows) {
+                  if ((row.label || '').toLowerCase().includes(q)) return true
+                  if ((row.value || '').toLowerCase().includes(q)) return true
+                }
+              }
+            }
+            if (dirClient) {
+              if (dirClient.name.toLowerCase().includes(q)) return true
+              if (dirClient.gst && dirClient.gst.toLowerCase().includes(q)) return true
+              if (dirClient.contact && dirClient.contact.toLowerCase().includes(q)) return true
+              if (dirClient.email && dirClient.email.toLowerCase().includes(q)) return true
+              if (Array.isArray(dirClient.contacts)) {
+                for (const c of dirClient.contacts) {
                   if ((c.name || '').toLowerCase().includes(q)) return true
                   if ((c.phone || '').toLowerCase().includes(q)) return true
                 }
@@ -235,7 +297,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             return false
           }
 
-          // searchType === 'all' (Default)
+          // searchType === 'all' (Default: Searches ALL fields, address, client, numbers, specs, notes)
           // 1. Direct project name, creator, id, status, qtn_no, description, notes
           if (p.name.toLowerCase().includes(q)) return true
           if (qtnNo.includes(q)) return true
@@ -244,22 +306,22 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           if (p.id && p.id.toLowerCase().includes(q)) return true
           if (p.status && p.status.toLowerCase().includes(q)) return true
 
-          // 2. Numeric totals & formatted currency amounts
+          // 2. Client name & comprehensive address matches
+          if (clientName.includes(q)) return true
+          if (matchesAddress) return true
+
+          // 3. Numeric totals & formatted currency amounts
           const tot = Number(p.total) || 0
           if (tot.toString().includes(q)) return true
           if (Math.round(tot).toString().includes(q)) return true
           if (tot.toLocaleString('en-IN').toLowerCase().includes(q)) return true
 
-          // 3. Client info, address, city, state, pin, GST, email, contacts, custom rows
+          // 4. Client info, GST, email, contacts, custom rows
           if (clientInfo) {
-            if (clientName.includes(q)) return true
-            if ((clientInfo.buyer_address || '').toLowerCase().includes(q)) return true
-            if ((clientInfo.buyer_city || '').toLowerCase().includes(q)) return true
-            if ((clientInfo.buyer_state || '').toLowerCase().includes(q)) return true
-            if ((clientInfo.buyer_pin || '').toLowerCase().includes(q)) return true
             if ((clientInfo.buyer_gst || '').toLowerCase().includes(q)) return true
             if ((clientInfo.buyer_contact || '').toLowerCase().includes(q)) return true
             if ((clientInfo.buyer_email || '').toLowerCase().includes(q)) return true
+            if ((clientInfo.kind_att || '').toLowerCase().includes(q)) return true
             if (Array.isArray(clientInfo.contacts)) {
               for (const c of clientInfo.contacts) {
                 if ((c.name || '').toLowerCase().includes(q)) return true
@@ -276,7 +338,21 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             }
           }
 
-          // 4. Quotation fields, systems, model codes, and all calculated values in summary
+          // 5. Directory client lookup
+          if (dirClient) {
+            if (dirClient.name.toLowerCase().includes(q)) return true
+            if (dirClient.gst && dirClient.gst.toLowerCase().includes(q)) return true
+            if (dirClient.contact && dirClient.contact.toLowerCase().includes(q)) return true
+            if (dirClient.email && dirClient.email.toLowerCase().includes(q)) return true
+            if (Array.isArray(dirClient.contacts)) {
+              for (const c of dirClient.contacts) {
+                if ((c.name || '').toLowerCase().includes(q)) return true
+                if ((c.phone || '').toLowerCase().includes(q)) return true
+              }
+            }
+          }
+
+          // 6. Quotation fields, systems, model codes, and all calculated values in summary
           if (p.summary) {
             try {
               const summaryStr = JSON.stringify(p.summary).toLowerCase()
@@ -284,7 +360,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             } catch {}
           }
 
-          // 5. Input specifications
+          // 7. Input specifications
           if (p.inputs) {
             try {
               const inputsStr = JSON.stringify(p.inputs).toLowerCase()
@@ -304,7 +380,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         else cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
         return sortAsc ? cmp : -cmp
       })
-  }, [projects, isAdminOrOwner, session.username, session.user_id, scopeFilter, search, searchType, statusFilter, showArchived, sortBy, sortAsc])
+  }, [projects, isAdminOrOwner, session.username, session.user_id, scopeFilter, search, searchType, statusFilter, showArchived, sortBy, sortAsc, savedClients])
 
   // Group filtered projects into Project Folders
   const projectFolders = useMemo(() => {
@@ -664,13 +740,23 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         </td>
         <td>
           {(() => {
-            const clientName = p.summary?.client_info?.buyer_name || ''
-            const qtnNo = p.summary?.client_info?.qtn_no
+            const clientInfo = p.summary?.client_info
+            const clientName = clientInfo?.buyer_name || ''
+            const qtnNo = clientInfo?.qtn_no
+            const city = clientInfo?.buyer_city || ''
+            const address = clientInfo?.buyer_address || ''
             if (!clientName) return <span className="muted tiny">—</span>
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <strong style={{ color: '#0f172a', fontSize: '12px' }}>{clientName}</strong>
-                {qtnNo && <span className="tiny font-mono text-muted" style={{ fontSize: '10.5px' }}>{qtnNo}</span>}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {qtnNo && <span className="tiny font-mono text-muted" style={{ fontSize: '10.5px' }}>{qtnNo}</span>}
+                  {(city || address) && (
+                    <span className="tiny text-muted" style={{ fontSize: '10.5px', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '2px' }} title={address}>
+                      📍 {city || (address.length > 25 ? address.slice(0, 25) + '…' : address)}
+                    </span>
+                  )}
+                </div>
               </div>
             )
           })()}
@@ -848,7 +934,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           >
             <option value="all">All Fields</option>
             <option value="qtn">Quotation / Project #</option>
-            <option value="client">Client Name</option>
+            <option value="client">Client &amp; Address</option>
             <option value="description">Description &amp; Notes</option>
           </select>
           <span className="search-icon">{Icon.search}</span>
@@ -1101,13 +1187,23 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                         </td>
                         <td>
                           {(() => {
-                            const folderClient = latest.summary?.client_info?.buyer_name || folder.revisions.find((r) => r.summary?.client_info?.buyer_name)?.summary?.client_info?.buyer_name || ''
-                            const qtnNo = latest.summary?.client_info?.qtn_no
+                            const clientInfo = latest.summary?.client_info || folder.revisions.find((r) => r.summary?.client_info?.buyer_name)?.summary?.client_info
+                            const folderClient = clientInfo?.buyer_name || ''
+                            const qtnNo = clientInfo?.qtn_no
+                            const city = clientInfo?.buyer_city || ''
+                            const address = clientInfo?.buyer_address || ''
                             if (!folderClient) return <span className="muted tiny">—</span>
                             return (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <strong style={{ color: '#0f172a', fontSize: '12px' }}>{folderClient}</strong>
-                                {qtnNo && <span className="tiny font-mono text-muted" style={{ fontSize: '10.5px' }}>{qtnNo}</span>}
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  {qtnNo && <span className="tiny font-mono text-muted" style={{ fontSize: '10.5px' }}>{qtnNo}</span>}
+                                  {(city || address) && (
+                                    <span className="tiny text-muted" style={{ fontSize: '10.5px', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '2px' }} title={address}>
+                                      📍 {city || (address.length > 25 ? address.slice(0, 25) + '…' : address)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             )
                           })()}
