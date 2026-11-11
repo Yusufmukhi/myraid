@@ -25,7 +25,8 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [searchType, setSearchType] = useState<'all' | 'qtn' | 'client' | 'description'>('all')
+  type SearchField = 'all' | 'qtn' | 'client' | 'address' | 'contact' | 'amount' | 'description' | 'specs'
+  const [searchType, setSearchType] = useState<SearchField>('all')
   const savedClients = useMemo(() => {
     try {
       return getSavedClients(org.id)
@@ -221,7 +222,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           const dirClient = (p.summary?.client_id ? savedClients.find((c) => c.id === p.summary.client_id) : null)
             || (clientName ? savedClients.find((c) => c.name.toLowerCase() === clientName) : null)
 
-          // Compile all address strings associated with this project / client
+          // 1. Compile all address strings associated with this quotation
           const addressStrings = [
             clientInfo?.buyer_address,
             clientInfo?.buyer_city,
@@ -247,87 +248,137 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
 
           const matchesAddress = addressStrings.some((addr) => addr.includes(q))
 
+          // 2. Compile contact strings (phone, email, GSTIN)
+          const contactStrings = [
+            clientInfo?.buyer_contact,
+            clientInfo?.buyer_email,
+            clientInfo?.buyer_gst,
+            dirClient?.contact,
+            dirClient?.email,
+            dirClient?.gst,
+            (p.inputs as any)?.['buyer_gst'],
+            (p.inputs as any)?.['gst'],
+            (p.inputs as any)?.['buyer_contact'],
+            (p.inputs as any)?.['buyer_email'],
+            ...(clientInfo?.contacts || []).map((c: any) => c.phone || ''),
+            ...(clientInfo?.contacts || []).map((c: any) => c.email || ''),
+            ...(dirClient?.contacts || []).map((c: any) => c.phone || ''),
+            ...(dirClient?.contacts || []).map((c: any) => c.email || ''),
+          ].filter(Boolean).map((c) => String(c).toLowerCase())
+
+          const matchesContact = contactStrings.some((c) => c.includes(q))
+
+          // 3. Compile numeric / currency amount strings
+          const tot = Number(p.total) || 0
+          const beforeGst = Number(p.summary?.beforeGst) || 0
+          const sales = Number(p.summary?.sales) || 0
+          const grandTotal = Number(p.summary?.grandTotal) || 0
+          const matchesAmount = [
+            tot.toString(),
+            Math.round(tot).toString(),
+            tot.toLocaleString('en-IN').toLowerCase(),
+            Math.round(tot).toLocaleString('en-IN').toLowerCase(),
+            beforeGst.toString(),
+            Math.round(beforeGst).toString(),
+            sales.toString(),
+            Math.round(sales).toString(),
+            grandTotal.toString(),
+            Math.round(grandTotal).toString(),
+          ].some((amt) => amt.includes(q))
+
+          // 4. Compile technical specs, models, bay, bodies, sets strings
+          const systemsList = (p.summary?.systems || []) as any[]
+          const bodies = p.summary?.bodies ?? p.summary?.total_combined_bodies
+          const compartments = p.summary?.compartments
+          const modelsList = (p.summary?.models || []) as any[]
+          const rawInputs = (p.inputs || {}) as Record<string, any>
+          const dfmuRows = Number(rawInputs['Total cal!A3'] ?? 0)
+          const bayCount = Math.max(0, Math.round(dfmuRows / 2))
+
+          const specsStrings = [
+            'dfmu', 'sfmu', 'sffu', 'dffu', 'dfmu-d',
+            'mechanical', 'double drive', 'reduction wheel',
+            bayCount > 0 ? `${bayCount} bay` : '',
+            bayCount > 0 ? `bay ${bayCount}` : '',
+            bodies ? `${bodies} bodies` : '',
+            bodies ? `${bodies} body` : '',
+            compartments ? `${compartments} compartments` : '',
+            ...systemsList.map((s) => s.name || ''),
+            ...systemsList.map((s) => s.quantity ? `${s.quantity} sets` : ''),
+            ...modelsList.map((m) => m.model_code || ''),
+            ...modelsList.map((m) => m.name || ''),
+            ...modelsList.map((m) => m.dimensions || ''),
+          ].filter(Boolean).map((s) => String(s).toLowerCase())
+
+          const matchesSpecs = specsStrings.some((s) => s.includes(q))
+
+          // ── Field-Specific Searches ──
           if (searchType === 'qtn') {
             if (p.name.toLowerCase().includes(q)) return true
             if (qtnNo.includes(q)) return true
             if (p.id && p.id.toLowerCase().includes(q)) return true
+            if (p.summary?.qtn_code && p.summary.qtn_code.toLowerCase().includes(q)) return true
             return false
           }
 
           if (searchType === 'client') {
             if (clientName.includes(q)) return true
-            if (matchesAddress) return true
-            if (clientInfo) {
-              if ((clientInfo.buyer_gst || '').toLowerCase().includes(q)) return true
-              if ((clientInfo.buyer_contact || '').toLowerCase().includes(q)) return true
-              if ((clientInfo.buyer_email || '').toLowerCase().includes(q)) return true
-              if ((clientInfo.kind_att || '').toLowerCase().includes(q)) return true
-              if (Array.isArray(clientInfo.contacts)) {
-                for (const c of clientInfo.contacts) {
-                  if ((c.name || '').toLowerCase().includes(q)) return true
-                  if ((c.phone || '').toLowerCase().includes(q)) return true
-                  if ((c.designation || '').toLowerCase().includes(q)) return true
-                  if ((c.email || '').toLowerCase().includes(q)) return true
-                }
-              }
-              if (Array.isArray(clientInfo.custom_rows)) {
-                for (const row of clientInfo.custom_rows) {
-                  if ((row.label || '').toLowerCase().includes(q)) return true
-                  if ((row.value || '').toLowerCase().includes(q)) return true
-                }
-              }
-            }
-            if (dirClient) {
-              if (dirClient.name.toLowerCase().includes(q)) return true
-              if (dirClient.gst && dirClient.gst.toLowerCase().includes(q)) return true
-              if (dirClient.contact && dirClient.contact.toLowerCase().includes(q)) return true
-              if (dirClient.email && dirClient.email.toLowerCase().includes(q)) return true
-              if (Array.isArray(dirClient.contacts)) {
-                for (const c of dirClient.contacts) {
-                  if ((c.name || '').toLowerCase().includes(q)) return true
-                  if ((c.phone || '').toLowerCase().includes(q)) return true
-                }
-              }
-            }
+            if (clientInfo?.kind_att && clientInfo.kind_att.toLowerCase().includes(q)) return true
+            if (dirClient && dirClient.name.toLowerCase().includes(q)) return true
+            if ((clientInfo?.contacts || []).some((c: any) => (c.name || '').toLowerCase().includes(q))) return true
+            if ((dirClient?.contacts || []).some((c: any) => (c.name || '').toLowerCase().includes(q))) return true
+            if ((p.inputs as any)?.['buyer_name']?.toLowerCase().includes(q)) return true
+            if ((p.inputs as any)?.['client_name']?.toLowerCase().includes(q)) return true
             return false
+          }
+
+          if (searchType === 'address') {
+            return matchesAddress
+          }
+
+          if (searchType === 'contact') {
+            return matchesContact
+          }
+
+          if (searchType === 'amount') {
+            return matchesAmount
           }
 
           if (searchType === 'description') {
             if (desc.includes(q)) return true
+            if (Array.isArray(clientInfo?.custom_rows)) {
+              for (const row of clientInfo.custom_rows) {
+                if ((row.label || '').toLowerCase().includes(q)) return true
+                if ((row.value || '').toLowerCase().includes(q)) return true
+              }
+            }
             return false
           }
 
-          // searchType === 'all' (Default: Searches ALL fields, address, client, numbers, specs, notes)
-          // 1. Direct project name, creator, id, status, qtn_no, description, notes
+          if (searchType === 'specs') {
+            return matchesSpecs
+          }
+
+          // ── searchType === 'all' (Default: Searches EVERYTHING across all quotations) ──
           if (p.name.toLowerCase().includes(q)) return true
           if (qtnNo.includes(q)) return true
+          if (clientName.includes(q)) return true
+          if (matchesAddress) return true
+          if (matchesContact) return true
+          if (matchesAmount) return true
+          if (matchesSpecs) return true
           if (desc.includes(q)) return true
           if (p.created_by && p.created_by.toLowerCase().includes(q)) return true
           if (p.id && p.id.toLowerCase().includes(q)) return true
           if (p.status && p.status.toLowerCase().includes(q)) return true
 
-          // 2. Client name & comprehensive address matches
-          if (clientName.includes(q)) return true
-          if (matchesAddress) return true
-
-          // 3. Numeric totals & formatted currency amounts
-          const tot = Number(p.total) || 0
-          if (tot.toString().includes(q)) return true
-          if (Math.round(tot).toString().includes(q)) return true
-          if (tot.toLocaleString('en-IN').toLowerCase().includes(q)) return true
-
-          // 4. Client info, GST, email, contacts, custom rows
+          // Client contacts names and designations
           if (clientInfo) {
-            if ((clientInfo.buyer_gst || '').toLowerCase().includes(q)) return true
-            if ((clientInfo.buyer_contact || '').toLowerCase().includes(q)) return true
-            if ((clientInfo.buyer_email || '').toLowerCase().includes(q)) return true
-            if ((clientInfo.kind_att || '').toLowerCase().includes(q)) return true
+            if (clientInfo.kind_att && clientInfo.kind_att.toLowerCase().includes(q)) return true
             if (Array.isArray(clientInfo.contacts)) {
               for (const c of clientInfo.contacts) {
                 if ((c.name || '').toLowerCase().includes(q)) return true
-                if ((c.phone || '').toLowerCase().includes(q)) return true
                 if ((c.designation || '').toLowerCase().includes(q)) return true
-                if ((c.email || '').toLowerCase().includes(q)) return true
               }
             }
             if (Array.isArray(clientInfo.custom_rows)) {
@@ -338,21 +389,18 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             }
           }
 
-          // 5. Directory client lookup
+          // Directory client matches
           if (dirClient) {
             if (dirClient.name.toLowerCase().includes(q)) return true
-            if (dirClient.gst && dirClient.gst.toLowerCase().includes(q)) return true
-            if (dirClient.contact && dirClient.contact.toLowerCase().includes(q)) return true
-            if (dirClient.email && dirClient.email.toLowerCase().includes(q)) return true
             if (Array.isArray(dirClient.contacts)) {
               for (const c of dirClient.contacts) {
                 if ((c.name || '').toLowerCase().includes(q)) return true
-                if ((c.phone || '').toLowerCase().includes(q)) return true
+                if ((c.designation || '').toLowerCase().includes(q)) return true
               }
             }
           }
 
-          // 6. Quotation fields, systems, model codes, and all calculated values in summary
+          // Summary and inputs JSON fallback for custom specifications
           if (p.summary) {
             try {
               const summaryStr = JSON.stringify(p.summary).toLowerCase()
@@ -360,7 +408,6 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             } catch {}
           }
 
-          // 7. Input specifications
           if (p.inputs) {
             try {
               const inputsStr = JSON.stringify(p.inputs).toLowerCase()
@@ -917,7 +964,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             value={searchType}
             onChange={(e) => setSearchType(e.target.value as any)}
             className="search-type-select"
-            title="Filter search by specific field"
+            title="Search all fields or choose a specific quotation field"
             style={{
               height: '32px',
               border: '1px solid #cbd5e1',
@@ -932,10 +979,14 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
               flexShrink: 0,
             }}
           >
-            <option value="all">All Fields</option>
-            <option value="qtn">Quotation / Project #</option>
-            <option value="client">Client &amp; Address</option>
-            <option value="description">Description &amp; Notes</option>
+            <option value="all">🔍 All Fields (Search Everything)</option>
+            <option value="qtn">📄 Quotation # / Project Name</option>
+            <option value="client">🏢 Client &amp; Company Name</option>
+            <option value="address">📍 Address, City &amp; State</option>
+            <option value="contact">📞 Phone, Email &amp; GST</option>
+            <option value="amount">💰 Amount &amp; Total Value (₹)</option>
+            <option value="description">📝 Description &amp; Client Notes</option>
+            <option value="specs">⚙️ Specs, Models, Bay &amp; Sets</option>
           </select>
           <span className="search-icon">{Icon.search}</span>
           <input
@@ -943,12 +994,20 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             className="search-input"
             placeholder={
               searchType === 'qtn'
-                ? 'Search by quotation #, project name…'
+                ? 'Search by quotation # (e.g. MSSLP/26-27/...), project name…'
                 : searchType === 'client'
-                ? 'Search by client / buyer name, phone…'
+                ? 'Search by client, company name, kind attn, person…'
+                : searchType === 'address'
+                ? 'Search by address, city, state, pin, site location…'
+                : searchType === 'contact'
+                ? 'Search by mobile number, email address, GSTIN…'
+                : searchType === 'amount'
+                ? 'Search by quotation amount, sales total (e.g. 150000, ₹1,50,000)…'
                 : searchType === 'description'
-                ? 'Search by description, scope, notes…'
-                : 'Search estimates by client, quotation #, amount, specs…'
+                ? 'Search by project description, scope, client notes…'
+                : searchType === 'specs'
+                ? 'Search by model (DFMU, SFMU, SFFU), bay count, dimensions…'
+                : 'Search anything across all quotations (client, quotation #, address, specs, notes, amount)…'
             }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
