@@ -376,13 +376,13 @@ export function CalculatorPage({
     delete clean['Total cal!B11']
     delete clean['Total cal!B15']
     delete clean['Total cal!B19']
+    delete clean['Total cal!A7']
+    delete clean['Total cal!A11']
+    delete clean['Total cal!A15']
+    delete clean['Total cal!A19']
     // If project is brand new with no matrix inputs, default Bay and all model QTYs to 0
     if (clean['Total cal!A3'] === undefined && Object.keys(clean).filter((k) => !k.startsWith('__')).length === 0) {
       clean['Total cal!A3'] = 0
-      clean['Total cal!A7'] = 0
-      clean['Total cal!A11'] = 0
-      clean['Total cal!A15'] = 0
-      clean['Total cal!A19'] = 0
       clean['Total cal!G4'] = 0
       clean['Total cal!G8'] = 0
       clean['Total cal!G12'] = 0
@@ -1848,6 +1848,12 @@ export function CalculatorPage({
           next['__include_installation'] = 1
 
         }
+
+        // Rows for non-master models are strictly linked formulas driven by Bay (A3)
+        delete next['Total cal!A7']
+        delete next['Total cal!A11']
+        delete next['Total cal!A15']
+        delete next['Total cal!A19']
 
         const cleaned = cleanOverrides(wb, next)
 
@@ -3495,7 +3501,7 @@ export function CalculatorPage({
 
 
 
-                {isAdminOrOwner && c2cSummary ? (
+                {isAdminOrOwner ? (
                   <div
                     className="excel-kpi-card highlight-c2c"
                     style={{
@@ -3653,7 +3659,7 @@ export function CalculatorPage({
                   <span className="kpi-sub">C2C PC Amount{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
                 </div>
 
-                {isAdminOrOwner && c2cSummary ? (
+                {isAdminOrOwner ? (
                   <div
                     className="excel-kpi-card highlight-c2c"
                     style={{
@@ -4197,7 +4203,7 @@ export function CalculatorPage({
 
                 </td>
 
-                <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'A3'), '=Bay*2', 'DFMU Rows = Bay × 2')}</td>
+                <td className="col-spec">{renderLinkedCell(currentDfmuRows, '=Bay*2', 'DFMU Rows = Bay × 2')}</td>
 
                 <td className="col-spec">{renderCellInput('Total cal!B3', 1, 1)}</td>
 
@@ -4279,7 +4285,7 @@ export function CalculatorPage({
 
                 </td>
 
-                <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'A7'), '=Bay', 'SFMU Rows = Bay')}</td>
+                <td className="col-spec">{renderLinkedCell(currentBay, '=Bay', 'SFMU Rows = Bay')}</td>
 
                 <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'B3'), '=DFMU')}</td>
 
@@ -4361,7 +4367,7 @@ export function CalculatorPage({
 
                 </td>
 
-                <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'A11'), '=Bay', 'SFFU Rows = Bay')}</td>
+                <td className="col-spec">{renderLinkedCell(currentBay, '=Bay', 'SFFU Rows = Bay')}</td>
 
                 <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'B3'), '=DFMU')}</td>
 
@@ -4443,7 +4449,7 @@ export function CalculatorPage({
 
                 </td>
 
-                <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'A15'), '=Bay*2', 'DFFU Rows = Bay × 2')}</td>
+                <td className="col-spec">{renderLinkedCell(currentDfmuRows, '=Bay*2', 'DFFU Rows = Bay × 2')}</td>
 
                 <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'B3'), '=DFMU')}</td>
 
@@ -4525,7 +4531,7 @@ export function CalculatorPage({
 
                 </td>
 
-                <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'A19'), '=Bay*2', 'DFMU-D Rows = Bay × 2')}</td>
+                <td className="col-spec">{renderLinkedCell(currentDfmuRows, '=Bay*2', 'DFMU-D Rows = Bay × 2')}</td>
 
                 <td className="col-spec">{renderLinkedCell(activeWb.num('Total cal', 'B3'), '=DFMU')}</td>
 

@@ -296,6 +296,10 @@ export function cleanOverrides(wb: Workbook, o: Record<string, number | null>) {
     if (k === 'Total cal!B7' || k === 'Total cal!B11' || k === 'Total cal!B15' || k === 'Total cal!B19') {
       continue
     }
+    // Row count for non-master models is strictly driven by Bay / DFMU (Total cal!A3)
+    if (k === 'Total cal!A7' || k === 'Total cal!A11' || k === 'Total cal!A15' || k === 'Total cal!A19') {
+      continue
+    }
     const [sheet, a] = splitKey(k)
     const m = /^([A-Z]+)(\d+)$/.exec(a)
     if (!m) continue

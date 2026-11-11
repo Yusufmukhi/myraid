@@ -366,10 +366,6 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       // Safe zero defaults for new quotation: Bay = 0, Model Qties = 0, Sets Qty = 0
       const initialOverrides: Record<string, any> = {
         'Total cal!A3': 0,
-        'Total cal!A7': 0,
-        'Total cal!A11': 0,
-        'Total cal!A15': 0,
-        'Total cal!A19': 0,
         'Total cal!G4': 0,
         'Total cal!G8': 0,
         'Total cal!G12': 0,
