@@ -2103,13 +2103,7 @@ export function OfficialQuotationDocument({
   }, [sets, systemsPerPage])
 
   const commercialPagesCount = commercialChunks.length
-  const hasDedicatedBodiesPage = showBodiesTable && bodyPlacement === 'dedicated'
-  const bodiesPageCount = hasDedicatedBodiesPage ? 1 : 0
-
   const totalPages = includeFullProposal ? 5 : 2
-  const actualTotalPages = (commercialPagesCount > 1 || hasDedicatedBodiesPage)
-    ? (includeFullProposal ? (commercialPagesCount + bodiesPageCount + 4) : (commercialPagesCount + bodiesPageCount + 1))
-    : totalPages
 
   // Responsive mobile view
   const [mobileView, setMobileView] = useState<'document' | 'sidebar'>('document')
@@ -2738,9 +2732,43 @@ export function OfficialQuotationDocument({
     return sets.reduce((acc, s) => acc + (Math.max(1, Number(s.quantity) || 1)), 0) || 1
   }, [systemBodyGroups, sets])
 
+  // Bodies table pagination chunks matching systemsPerPage (e.g. 3/p or 4/p applies to bodies as well!)
+  const bodiesChunks = useMemo(() => {
+    if (systemBodyGroups.length <= systemsPerPage || systemsPerPage >= 999) {
+      return [{ chunkIndex: 0, groupsList: systemBodyGroups, isLastChunk: true, startItemIndex: 1 }]
+    }
+    const chunks: Array<{ chunkIndex: number; groupsList: typeof systemBodyGroups; isLastChunk: boolean; startItemIndex: number }> = []
+    let currentItemIdx = 1
+    for (let i = 0; i < systemBodyGroups.length; i += systemsPerPage) {
+      const chunkGroups = systemBodyGroups.slice(i, i + systemsPerPage)
+      chunks.push({
+        chunkIndex: Math.floor(i / systemsPerPage),
+        groupsList: chunkGroups,
+        isLastChunk: i + systemsPerPage >= systemBodyGroups.length,
+        startItemIndex: currentItemIdx,
+      })
+      chunkGroups.forEach((g) => {
+        currentItemIdx += g.items.length
+      })
+    }
+    return chunks
+  }, [systemBodyGroups, systemsPerPage])
+
+  const bodiesPagesCount = (showBodiesTable && bodyPlacement === 'dedicated') ? bodiesChunks.length : 0
+  const bodiesPageCount = bodiesPagesCount
+
+  const actualTotalPages = (commercialPagesCount > 1 || bodiesPagesCount > 0)
+    ? (includeFullProposal ? (commercialPagesCount + bodiesPagesCount + 4) : (commercialPagesCount + bodiesPagesCount + 1))
+    : totalPages
+
   // Installation Body Table Component
-  const renderInstallationBodyTable = (extraClass = '') => {
-    let globalItemIndex = 1
+  const renderInstallationBodyTable = (
+    extraClass = '',
+    groupsToRender = systemBodyGroups,
+    showGrandTotal = true,
+    startItemIndex = 1
+  ) => {
+    let globalItemIndex = startItemIndex
 
     return (
       <table className={`pdf-body-table ${extraClass}`}>
@@ -2788,7 +2816,7 @@ export function OfficialQuotationDocument({
           </tr>
         </thead>
         <tbody>
-          {systemBodyGroups.map((group) => {
+          {groupsToRender.map((group) => {
             return (
               <React.Fragment key={group.system_id}>
                 {/* System Name Header Row */}
@@ -2898,25 +2926,48 @@ export function OfficialQuotationDocument({
             )
           })}
 
-          {/* Grand Total Summary Row */}
-          <tr className="total-body-row">
-            <td
-              colSpan={3}
-              className="text-center font-bold"
-              style={{ fontWeight: 700, fontSize: '10.5px', background: '#f8fafc' }}
-            >
-              TOTAL SETS: {totalSetsCount} {totalSetsCount > 1 ? 'SETS' : 'SET'}
-            </td>
-            <td
-              className="text-right font-bold"
-              style={{ fontWeight: 700, fontSize: '10.5px' }}
-            >
-              TOTAL BODIES
-            </td>
-            <td className="total-body-yellow text-center font-bold font-mono">
-              <strong>{totalBodies}</strong>
-            </td>
-          </tr>
+          {/* Continuation row if more systems follow on next page */}
+          {!showGrandTotal && (
+            <tr className="table-continuation-row">
+              <td
+                colSpan={5}
+                style={{
+                  background: '#f8fafc',
+                  fontWeight: 700,
+                  fontStyle: 'italic',
+                  padding: '6px 10px',
+                  textAlign: 'right',
+                  borderTop: '1.5px solid #000000',
+                  color: '#1e293b',
+                  fontSize: '10px',
+                }}
+              >
+                ... Continued on Next Page for Remaining Systems &gt;&gt;
+              </td>
+            </tr>
+          )}
+
+          {/* Grand Total Summary Row (Rendered on final bodies page) */}
+          {showGrandTotal && (
+            <tr className="total-body-row">
+              <td
+                colSpan={3}
+                className="text-center font-bold"
+                style={{ fontWeight: 700, fontSize: '10.5px', background: '#f8fafc' }}
+              >
+                TOTAL SETS: {totalSetsCount} {totalSetsCount > 1 ? 'SETS' : 'SET'}
+              </td>
+              <td
+                className="text-right font-bold"
+                style={{ fontWeight: 700, fontSize: '10.5px' }}
+              >
+                TOTAL BODIES
+              </td>
+              <td className="total-body-yellow text-center font-bold font-mono">
+                <strong>{totalBodies}</strong>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     )
@@ -3582,45 +3633,52 @@ export function OfficialQuotationDocument({
           )
         })}
 
-        {/* ============================== DEDICATED INSTALLATION BODIES BREAKDOWN PAGE ============================== */}
-        {showBodiesTable && bodyPlacement === 'dedicated' && (
-          <div className="official-pdf-page">
-            {renderPdfWatermark()}
+        {/* ============================== DEDICATED INSTALLATION BODIES BREAKDOWN PAGE(S) ============================== */}
+        {showBodiesTable && bodyPlacement === 'dedicated' && bodiesChunks.map((bChunk, bIdx) => {
+          const isLastBodiesPage = bChunk.isLastChunk
+          const currentBodiesPageNum = commercialPagesCount + bIdx + 1
 
-            {/* Header */}
-            {renderOfficialHeader()}
+          return (
+            <div key={`bodies-page-${bIdx}`} className="official-pdf-page">
+              {renderPdfWatermark()}
 
-            <div
-              className="pdf-continuation-banner"
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '5px 10px',
-                background: '#f8fafc',
-                border: '1.5px solid #000000',
-                margin: '6px 0 12px 0',
-                fontSize: '11px',
-                fontWeight: 800,
-                color: '#0f172a',
-                letterSpacing: '0.4px',
-              }}
-            >
-              <span>ANNEXURE: INSTALLATION BODIES &amp; UNIT QUANTITY BREAKDOWN</span>
-              <span className="font-mono" style={{ fontSize: '10px', fontWeight: 700 }}>
-                {clientInfo.qtn_no || ''}
-              </span>
+              {/* Header */}
+              {renderOfficialHeader()}
+
+              <div
+                className="pdf-continuation-banner"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '5px 10px',
+                  background: '#f8fafc',
+                  border: '1.5px solid #000000',
+                  margin: '6px 0 12px 0',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  letterSpacing: '0.4px',
+                }}
+              >
+                <span>
+                  ANNEXURE: INSTALLATION BODIES BREAKDOWN ${bodiesChunks.length > 1 ? `(PART ${bIdx + 1} OF ${bodiesChunks.length})` : ''}
+                </span>
+                <span className="font-mono" style={{ fontSize: '10px', fontWeight: 700 }}>
+                  {clientInfo.qtn_no || ''}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                {renderInstallationBodyTable('dedicated-page-table', bChunk.groupsList, isLastBodiesPage, bChunk.startItemIndex)}
+              </div>
+
+              <div className="pdf-footer">
+                {currentBodiesPageNum} of {actualTotalPages}
+              </div>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-              {renderInstallationBodyTable('dedicated-page-table')}
-            </div>
-
-            <div className="pdf-footer">
-              {commercialPagesCount + bodiesPageCount + 1} of {actualTotalPages}
-            </div>
-          </div>
-        )}
+          )
+        })}
 
         {/* ============================== PAGE 2: TERMS & CONDITIONS ============================== */}
         <div className="official-pdf-page">
