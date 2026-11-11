@@ -916,12 +916,15 @@ export function OfficialQuotationDocument({
     const resolvedAddress = (!isOldHardcodedAddress && saved.buyer_address) ? saved.buyer_address : (dirMatch?.address || '')
     const isOldHardcodedGst = saved.buyer_gst === '36AABCP1234F1Z5'
     const resolvedGst = (!isOldHardcodedGst && saved.buyer_gst) ? saved.buyer_gst : (dirMatch?.gst || '')
-    const isOldHardcodedEmail = saved.buyer_email === 'storesmedchal@patilgroup.com'
-    const resolvedEmail = (!isOldHardcodedEmail && saved.buyer_email) ? saved.buyer_email : (dirMatch?.email || '')
-    const isOldHardcodedKindAtt = saved.kind_att === 'Mr. G.Rajesh'
-    const resolvedKindAtt = (!isOldHardcodedKindAtt && saved.kind_att) ? saved.kind_att : (dirMatch?.kind_att || '')
-    const isOldHardcodedContact = saved.buyer_contact === '+91 7396822424'
-    const resolvedContact = (!isOldHardcodedContact && saved.buyer_contact) ? saved.buyer_contact : (dirMatch?.contact || '')
+    const savedEmailVal = saved.buyer_email || (saved as any).email || ''
+    const isOldHardcodedEmail = savedEmailVal === 'storesmedchal@patilgroup.com'
+    const resolvedEmail = (!isOldHardcodedEmail && savedEmailVal) ? savedEmailVal : (dirMatch?.email || '')
+    const savedKindAttVal = saved.kind_att || (saved as any).attention || ''
+    const isOldHardcodedKindAtt = savedKindAttVal === 'Mr. G.Rajesh'
+    const resolvedKindAtt = (!isOldHardcodedKindAtt && savedKindAttVal) ? savedKindAttVal : (dirMatch?.kind_att || '')
+    const savedContactVal = saved.buyer_contact || (saved as any).contact || (saved as any).phone || (saved as any).mobile || ''
+    const isOldHardcodedContact = savedContactVal === '+91 7396822424'
+    const resolvedContact = (!isOldHardcodedContact && savedContactVal) ? savedContactVal : (dirMatch?.contact || '')
     const resolvedContacts = (Array.isArray(saved.contacts) && saved.contacts.length > 0)
       ? saved.contacts
       : (Array.isArray(dirMatch?.contacts) ? dirMatch.contacts : [])
@@ -1210,6 +1213,8 @@ export function OfficialQuotationDocument({
         show_buyer_email: Boolean(cl.email),
         kind_att: cl.kind_att || '',
         buyer_contact: cl.contact || '',
+        show_kind_att: true,
+        show_buyer_contact: true,
         contacts: loadedContacts,
         selected_contact_id: '',
         extra_fields: loadedExtra,
@@ -3092,21 +3097,41 @@ export function OfficialQuotationDocument({
                       <strong>GSTIN:</strong> {clientInfo.buyer_gst}
                     </div>
                   ) : null}
-                  {clientInfo.show_kind_att !== false && clientInfo.kind_att?.trim() ? (
-                    <div className="pdf-buyer-kind-att">
-                      <strong>Kind Att : </strong>{clientInfo.kind_att}
-                    </div>
-                  ) : null}
-                  {clientInfo.show_buyer_contact !== false && clientInfo.buyer_contact?.trim() ? (
-                    <div className="pdf-buyer-contact">
-                      <strong>Contact No: </strong>{clientInfo.buyer_contact}
-                    </div>
-                  ) : null}
-                  {clientInfo.show_buyer_email !== false && clientInfo.buyer_email?.trim() ? (
-                    <div className="pdf-buyer-email">
-                      <strong>Email: </strong>{clientInfo.buyer_email}
-                    </div>
-                  ) : null}
+                  {(() => {
+                    const contactVal = (clientInfo.buyer_contact || (clientInfo as any).contact || (clientInfo as any).phone || (clientInfo as any).mobile || '').trim()
+                    const kindAttVal = (clientInfo.kind_att || (clientInfo as any).attention || '').trim()
+                    const emailVal = (clientInfo.buyer_email || (clientInfo as any).email || '').trim()
+                    return (
+                      <>
+                        {clientInfo.show_kind_att !== false && kindAttVal ? (
+                          <div className="pdf-buyer-kind-att">
+                            <strong>Kind Att : </strong>{kindAttVal}
+                          </div>
+                        ) : null}
+                        {clientInfo.show_buyer_contact !== false && contactVal ? (
+                          <div className="pdf-buyer-contact">
+                            <strong>Contact No: </strong>{contactVal}
+                          </div>
+                        ) : null}
+                        {clientInfo.show_buyer_email !== false && emailVal ? (
+                          <div className="pdf-buyer-email">
+                            <strong>Email: </strong>{emailVal}
+                          </div>
+                        ) : null}
+                        {/* Additional contacts from directory/form */}
+                        {clientInfo.show_buyer_contact !== false && Array.isArray(clientInfo.contacts) && (
+                          clientInfo.contacts
+                            .filter((cp) => cp && (cp.name?.trim() || cp.phone?.trim()))
+                            .filter((cp) => !(cp.name?.trim().toLowerCase() === kindAttVal.toLowerCase() && cp.phone?.trim() === contactVal))
+                            .map((cp) => (
+                              <div key={cp.id || `${cp.name}-${cp.phone}`} className="pdf-buyer-contact">
+                                <strong>Contact No{cp.name?.trim() ? ` (${cp.name.trim()})` : ''}: </strong>{cp.phone?.trim() || cp.name?.trim()}
+                              </div>
+                            ))
+                        )}
+                      </>
+                    )
+                  })()}
                   {clientInfo.extra_fields && clientInfo.extra_fields.length > 0 && (
                     <div className="pdf-buyer-extra-fields">
                       {clientInfo.extra_fields.map((ef) => {
@@ -6314,6 +6339,8 @@ export function OfficialQuotationDocument({
                                 ...clientInfo,
                                 kind_att: chosen.name,
                                 buyer_contact: chosen.phone,
+                                show_kind_att: true,
+                                show_buyer_contact: true,
                                 ...(chosen.email ? { buyer_email: chosen.email, show_buyer_email: true } : {}),
                               })
                             }
@@ -6341,7 +6368,7 @@ export function OfficialQuotationDocument({
                           placeholder="e.g. xyz / Mr. Rajesh Sharma"
                           className="option-input-field font-bold"
                           value={clientInfo.kind_att}
-                          onChange={(e) => setClientInfo({ ...clientInfo, kind_att: e.target.value })}
+                          onChange={(e) => setClientInfo({ ...clientInfo, kind_att: e.target.value, show_kind_att: true })}
                           style={{ width: '100%', height: '34px', padding: '0 8px' }}
                         />
                       </div>
@@ -6354,7 +6381,7 @@ export function OfficialQuotationDocument({
                           placeholder="e.g. 123 / +91 9876543210"
                           className="option-input-field"
                           value={clientInfo.buyer_contact}
-                          onChange={(e) => setClientInfo({ ...clientInfo, buyer_contact: e.target.value })}
+                          onChange={(e) => setClientInfo({ ...clientInfo, buyer_contact: e.target.value, show_buyer_contact: true })}
                           style={{ width: '100%', height: '34px', padding: '0 8px' }}
                         />
                       </div>

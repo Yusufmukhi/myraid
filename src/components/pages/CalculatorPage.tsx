@@ -2786,7 +2786,54 @@ export function CalculatorPage({
 
   const activeSysUnit = activeSys?.unit || 'SET'
 
-  const activeSysTotalBodies = (summary.bodies || 0) * activeSysQty
+  // Comprehensive Body Calculations for DFMU, SFMU, SFFU, DFFU, DFMU-D
+  const bodiesBreakdown = useMemo(() => {
+    const dfmuRows = Number(overrides['Total cal!A3'] ?? activeWb.num('Total cal', 'A3') ?? 0)
+    const sfmuRows = Number(overrides['Total cal!A7'] ?? Math.max(0, Math.round(dfmuRows / 2)))
+    const sffuRows = Number(overrides['Total cal!A11'] ?? Math.max(0, Math.round(dfmuRows / 2)))
+    const dffuRows = Number(overrides['Total cal!A15'] ?? dfmuRows)
+    const dfmudRows = Number(overrides['Total cal!A19'] ?? dfmuRows)
+
+    const dfmuQty = Number(overrides['Total cal!G4'] ?? activeWb.num('Total cal', 'G4') ?? 0)
+    const sfmuQty = Number(overrides['Total cal!G8'] ?? activeWb.num('Total cal', 'G8') ?? 0)
+    const sffuQty = Number(overrides['Total cal!G12'] ?? activeWb.num('Total cal', 'G12') ?? 0)
+    const dffuQty = Number(overrides['Total cal!G16'] ?? activeWb.num('Total cal', 'G16') ?? 0)
+    const dfmudQty = Number(overrides['Total cal!G20'] ?? activeWb.num('Total cal', 'G20') ?? 0)
+
+    const dfmuBodies = Math.round(dfmuQty * dfmuRows)
+    const sfmuBodies = Math.round(sfmuQty * sfmuRows)
+    const sffuBodies = Math.round(sffuQty * sffuRows)
+    const dffuBodies = Math.round(dffuQty * dffuRows)
+    const dfmudBodies = Math.round(dfmudQty * dfmudRows)
+
+    const singleSetBodies = (dfmuBodies + sfmuBodies + sffuBodies + dffuBodies + dfmudBodies) || (summary?.bodies || 0)
+    const totalBodiesForSets = singleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
+
+    const activeList: { label: string; count: number; desc: string }[] = []
+    if (dfmuQty > 0 || dfmuBodies > 0) activeList.push({ label: 'DFMU', count: dfmuBodies, desc: `${dfmuRows} rows × ${dfmuQty} qty = ${dfmuBodies}` })
+    if (sfmuQty > 0 || sfmuBodies > 0) activeList.push({ label: 'SFMU', count: sfmuBodies, desc: `${sfmuRows} rows × ${sfmuQty} qty = ${sfmuBodies}` })
+    if (sffuQty > 0 || sffuBodies > 0) activeList.push({ label: 'SFFU', count: sffuBodies, desc: `${sffuRows} rows × ${sffuQty} qty = ${sffuBodies}` })
+    if (dffuQty > 0 || dffuBodies > 0) activeList.push({ label: 'DFFU', count: dffuBodies, desc: `${dffuRows} rows × ${dffuQty} qty = ${dffuBodies}` })
+    if (dfmudQty > 0 || dfmudBodies > 0) activeList.push({ label: 'DFMU-D', count: dfmudBodies, desc: `${dfmudRows} rows × ${dfmudQty} qty = ${dfmudBodies}` })
+
+    const summaryText = activeList.length > 0 ? activeList.map((m) => `${m.label}: ${m.count}`).join(' · ') : '0 Bodies'
+    const tooltipText = activeList.map((m) => `${m.label}: ${m.desc}`).join('\n') + `\nTotal: ${singleSetBodies} bodies / set${activeSysQty > 1 ? ` × ${activeSysQty} sets = ${totalBodiesForSets} bodies` : ''}`
+
+    return {
+      dfmuBodies,
+      sfmuBodies,
+      sffuBodies,
+      dffuBodies,
+      dfmudBodies,
+      singleSetBodies,
+      totalBodiesForSets,
+      activeList,
+      summaryText,
+      tooltipText,
+    }
+  }, [overrides, activeWb, summary?.bodies, activeSysQty])
+
+  const activeSysTotalBodies = bodiesBreakdown.totalBodiesForSets
 
 
 
@@ -3323,7 +3370,7 @@ export function CalculatorPage({
 
             {/* Multi-System KPI Cards (SYSTEM A vs All Systems) */}
 
-            <div className="excel-kpi-card" style={{ minWidth: '140px' }}>
+            <div className="excel-kpi-card" style={{ minWidth: '155px' }} title={bodiesBreakdown.tooltipText}>
 
               <span className="kpi-label">TOTAL BODIES</span>
 
@@ -3335,15 +3382,24 @@ export function CalculatorPage({
 
                 </span>
 
-                {activeSysTotalBodies} Bodies
+                {bodiesBreakdown.totalBodiesForSets} Bodies
+                {activeSysQty > 1 && (
+                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', marginLeft: '4px' }}>
+                    ({bodiesBreakdown.singleSetBodies}/set)
+                  </span>
+                )}
 
               </strong>
 
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
+              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
 
-                <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {bodiesBreakdown.summaryText}
+                </span>
 
-                {totalCombinedBodies} Bodies
+                <span style={{ fontSize: '10px', color: '#64748b' }}>
+                  All Systems: <strong>{totalCombinedBodies} Bodies</strong>
+                </span>
 
               </span>
 
@@ -3539,10 +3595,24 @@ export function CalculatorPage({
         ) : (
           <>
             {/* Pure Single Calculator Mode (when in individual unit-wise or single system) */}
-            <div className="excel-kpi-card" style={{ minWidth: '140px' }}>
+            <div className="excel-kpi-card" style={{ minWidth: '155px' }} title={bodiesBreakdown.tooltipText}>
               <span className="kpi-label">TOTAL BODIES</span>
-              <strong className="kpi-val">{count(displaySummary.bodies * activeSysQty)}</strong>
-              <span className="kpi-sub">{count(displaySummary.compartments * activeSysQty)} Compartments{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
+              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
+                {bodiesBreakdown.totalBodiesForSets} Bodies
+                {activeSysQty > 1 && (
+                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', marginLeft: '4px' }}>
+                    ({bodiesBreakdown.singleSetBodies}/set)
+                  </span>
+                )}
+              </strong>
+              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {bodiesBreakdown.summaryText}
+                </span>
+                <span style={{ fontSize: '10px', color: '#64748b' }}>
+                  {count(displaySummary.compartments * (activeSysQty || 1))} Compartments{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}
+                </span>
+              </span>
             </div>
 
             <div className="excel-kpi-card">
