@@ -2343,6 +2343,7 @@ export function OfficialQuotationDocument({
       // Format phone number: buyer contact or contact person's phone
       let phone = (
         clientInfo.buyer_contact ||
+        (clientInfo.contacts && clientInfo.contacts.find((c: any) => c.phone)?.phone) ||
         (clientInfo.contacts && clientInfo.contacts[0]?.phone) ||
         ''
       ).replace(/[^0-9]/g, '')
@@ -2355,33 +2356,54 @@ export function OfficialQuotationDocument({
       const totalAmt = inr(Math.round(grandTotal))
       const msg = `*Quotation: ${qtn}*\nDear ${buyer || 'Sir/Madam'},\n\nPlease find attached official quotation for *${project.name}*.\n*Total Amount:* ${totalAmt} (Inc. GST)\n\nThank you,\n*${businessProfile.company_name || 'Myriad Storage Systems'}*`
 
-      // 1. Mobile & Web Share API: Share the actual PDF file directly to WhatsApp!
-      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent || '')
+
+      // 1. Mobile & Web Share API: Share the actual PDF binary file directly!
+      // CRITICAL FOR WHATSAPP ON MOBILE:
+      // WhatsApp on Android and iOS drops the file attachment and only displays text if `text` is passed!
+      // By passing ONLY `files: [pdfFile]`, WhatsApp treats it as a document and attaches the actual PDF!
+      if (typeof navigator !== 'undefined' && typeof navigator.canShare === 'function') {
         try {
-          await navigator.share({
-            files: [pdfFile],
-            title: `${fileName}.pdf`,
-            text: msg,
-          })
-          toast('Quotation PDF sent directly to WhatsApp!', 'ok')
-          return
+          if (navigator.canShare({ files: [pdfFile] })) {
+            await navigator.share({
+              files: [pdfFile],
+              title: `${fileName}.pdf`,
+            })
+            toast('Quotation PDF sent directly to WhatsApp!', 'ok')
+            return
+          }
         } catch (shareErr: any) {
-          if (shareErr?.name === 'AbortError') return
-          console.warn('Native file share cancelled or failed, falling back to web flow:', shareErr)
+          if (shareErr?.name === 'AbortError') {
+            // User intentionally dismissed the share sheet
+            return
+          }
+          console.warn('Native file share cancelled or failed, falling back to direct app link:', shareErr)
         }
       }
 
-      // 2. Desktop Fallback (WhatsApp Web):
-      // Automatically download the exact PDF file so user has it ready
+      // 2. Direct Mobile App Launch (whatsapp://) vs Desktop (WhatsApp Web)
+      // Save PDF file to device so user has the downloaded file
       pdf.save(`${fileName}.pdf`)
 
-      // Open WhatsApp Web with the client contact & quotation summary pre-filled
-      const waUrl = phone
-        ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
+      if (isMobileDevice) {
+        // Direct WhatsApp native application URL scheme
+        // Using whatsapp:// directly opens the WhatsApp Mobile App on Android and iOS (never a web page)
+        const appUrl = phone
+          ? `whatsapp://send?phone=${phone}&text=${encodeURIComponent(msg)}`
+          : `whatsapp://send?text=${encodeURIComponent(msg)}`
 
-      window.open(waUrl, '_blank')
-      toast(`PDF downloaded! WhatsApp opened — simply attach "${fileName}.pdf" to send it`, 'ok')
+        // Launch WhatsApp app directly
+        window.location.href = appUrl
+        toast(`PDF downloaded! Opening WhatsApp app — attach "${fileName}.pdf"`, 'ok')
+      } else {
+        // Desktop WhatsApp Web fallback
+        const waWebUrl = phone
+          ? `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
+          : `https://web.whatsapp.com/send?text=${encodeURIComponent(msg)}`
+
+        window.open(waWebUrl, '_blank')
+        toast(`PDF downloaded! WhatsApp Web opened — attach "${fileName}.pdf" to send it`, 'ok')
+      }
     } catch (e: any) {
       toast(e.message || 'Error generating PDF for WhatsApp', 'err')
     } finally {
