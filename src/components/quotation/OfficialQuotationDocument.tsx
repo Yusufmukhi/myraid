@@ -684,10 +684,43 @@ export function generateDefaultBodyItems(
         dfmuRows = Number(inputs['Total cal!A3']) || 6
       }
       const bayCount = Math.max(1, Math.round(dfmuRows / 2))
-      const activeModels = (sysSummary?.models || []).filter((m: any) => m.qty > 0)
-      const modelsToUse = activeModels.length > 0 ? activeModels : sysSummary?.models || []
+      // Prioritize items directly from this system so each system's bodies match its commercial rows
+      if (s.items && s.items.length > 0) {
+        s.items.forEach((it: any) => {
+          const code = (it.model_code || (
+            it.model_name?.includes('DFMU-D') ? 'DFMU-D' :
+            it.model_name?.includes('DFFU-D') ? 'DFFU-D' :
+            it.model_name?.includes('DFMU') ? 'DFMU' :
+            it.model_name?.includes('SFMU') ? 'SFMU' :
+            it.model_name?.includes('SFFU') ? 'SFFU' :
+            it.model_name?.includes('DFFU') ? 'DFFU' : 'DFMU'
+          )).trim()
 
-      modelsToUse.forEach((m: any) => {
+          const isSingle = code === 'SFMU' || code === 'SFFU'
+          let rowsPerUnit = isSingle ? bayCount : (bayCount * 2)
+          if (it.rows_per_unit) rowsPerUnit = it.rows_per_unit
+          const unitCount = Number(it.unit_qty !== undefined ? it.unit_qty : it.quantity) || 0
+          const unitBody = rowsPerUnit * unitCount
+          const total_body = unitBody * sysQty
+
+          allItems.push({
+            id: `${s.id || sIdx}-${code}-${counter++}`,
+            title: `${code} ${bayCount} BAY`,
+            sub_label: `BODY IN ${code}`,
+            per_bay_qty: rowsPerUnit,
+            qty: unitCount,
+            total_body,
+            system_name: sysName,
+            system_id: s.id || String(sIdx),
+            set_qty: sysQty,
+            unit_body: unitBody,
+          })
+        })
+      } else {
+        const activeModels = (sysSummary?.models || []).filter((m: any) => m.qty > 0)
+        const modelsToUse = activeModels.length > 0 ? activeModels : sysSummary?.models || []
+
+        modelsToUse.forEach((m: any) => {
         let rowsPerUnit = 6
         if (m.code === 'DFMU') rowsPerUnit = dfmuRows
         else if (m.code === 'SFMU' || m.code === 'SFFU') rowsPerUnit = Math.max(1, Math.round(dfmuRows / 2))
@@ -709,6 +742,7 @@ export function generateDefaultBodyItems(
           unit_body: unitBody,
         })
       })
+      }
     })
     if (allItems.length > 0) return allItems
   }
@@ -1940,7 +1974,86 @@ export function OfficialQuotationDocument({
   // Table size, scaling, density and multi-system layout controls
   const [tableScale, setTableScale] = useState<number>(100)
   const [tableDensity, setTableDensity] = useState<'compact' | 'normal' | 'relaxed'>('normal')
-  const [systemsPerPage, setSystemsPerPage] = useState<number>(4)
+  // Systems per page: 'auto' (smart layout based on model row counts) or manual limit
+  const [systemsPerPageSetting, setSystemsPerPageSetting] = useState<'auto' | 2 | 3 | 4 | 5 | 999>('auto')
+
+  // Smart calculation: 5 models per system -> max 3 systems; 2-3 models -> 4 systems
+  const effectiveSystemsPerPage = useMemo(() => {
+    if (systemsPerPageSetting !== 'auto') {
+      return systemsPerPageSetting
+    }
+    if (!sets || sets.length <= 1) return 4
+
+    let maxItemsInAnySystem = 1
+    let totalItemsAllSystems = 0
+    sets.forEach((s) => {
+      const itemCount = (s.items && s.items.length > 0) ? s.items.length : 3
+      if (itemCount > maxItemsInAnySystem) maxItemsInAnySystem = itemCount
+      totalItemsAllSystems += itemCount
+    })
+    const avgItems = totalItemsAllSystems / Math.max(1, sets.length)
+
+    // When systems have 4-5 models (DFMU, SFMU, SFFU, DFFU, DFMU-D), use 3 systems per page
+    if (maxItemsInAnySystem >= 4 || avgItems >= 3.5) {
+      return 3
+    }
+    return 4
+  }, [sets, systemsPerPageSetting])
+
+  const systemsPerPage = effectiveSystemsPerPage
+
+  // Word-style draggable column widths state (adjustable by dragging borders or +/-)
+  const [goodsColWidths, setGoodsColWidths] = useState({
+    sl: 34,
+    qty: 55,
+    set: 60,
+    rate: 85,
+    amount: 100,
+  })
+
+  const [bodyColWidths, setBodyColWidths] = useState({
+    sr: 40,
+    per_bay: 75,
+    qty: 55,
+    body: 85,
+  })
+
+  const startColResize = (
+    tableType: 'goods' | 'body',
+    colKey: string,
+    e: React.MouseEvent | React.TouchEvent
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const startWidth = tableType === 'goods'
+      ? (goodsColWidths as any)[colKey] || 60
+      : (bodyColWidths as any)[colKey] || 60
+
+    const handleMove = (moveEvt: MouseEvent | TouchEvent) => {
+      const currentX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX
+      const delta = currentX - startX
+      const newWidth = Math.max(25, Math.min(220, Math.round(startWidth + delta)))
+
+      if (tableType === 'goods') {
+        setGoodsColWidths((prev) => ({ ...prev, [colKey]: newWidth }))
+      } else {
+        setBodyColWidths((prev) => ({ ...prev, [colKey]: newWidth }))
+      }
+    }
+
+    const handleUp = () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+      window.removeEventListener('touchmove', handleMove)
+      window.removeEventListener('touchend', handleUp)
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    window.addEventListener('touchmove', handleMove)
+    window.addEventListener('touchend', handleUp)
+  }
 
   const tableFontSize = useMemo(() => `${(10.1 * (tableScale / 100)).toFixed(2)}px`, [tableScale])
   const tablePadding = useMemo(() => {
@@ -2633,11 +2746,45 @@ export function OfficialQuotationDocument({
       <table className={`pdf-body-table ${extraClass}`}>
         <thead>
           <tr>
-            <th style={{ width: '40px' }}>SR<br />NO</th>
-            <th>Description of Goods</th>
-            <th style={{ width: '75px' }}>PER BAY QTY</th>
-            <th style={{ width: '55px' }}>QTY</th>
-            <th style={{ width: '85px' }}>INSTALLATION<br />BODY</th>
+            <th className="resizable-th" style={{ width: `${bodyColWidths.sr}px` }}>
+              SR<br />NO
+              <div
+                className="table-col-resizer no-print"
+                onMouseDown={(e) => startColResize('body', 'sr', e)}
+                onTouchStart={(e) => startColResize('body', 'sr', e)}
+                title="Click and drag border to adjust SR NO column width"
+              />
+            </th>
+            <th className="resizable-th">
+              Description of Goods
+            </th>
+            <th className="resizable-th" style={{ width: `${bodyColWidths.per_bay}px` }}>
+              PER BAY QTY
+              <div
+                className="table-col-resizer no-print"
+                onMouseDown={(e) => startColResize('body', 'per_bay', e)}
+                onTouchStart={(e) => startColResize('body', 'per_bay', e)}
+                title="Click and drag border to adjust Per Bay Qty column width"
+              />
+            </th>
+            <th className="resizable-th" style={{ width: `${bodyColWidths.qty}px` }}>
+              QTY
+              <div
+                className="table-col-resizer no-print"
+                onMouseDown={(e) => startColResize('body', 'qty', e)}
+                onTouchStart={(e) => startColResize('body', 'qty', e)}
+                title="Click and drag border to adjust Qty column width"
+              />
+            </th>
+            <th className="resizable-th" style={{ width: `${bodyColWidths.body}px` }}>
+              INSTALLATION<br />BODY
+              <div
+                className="table-col-resizer no-print"
+                onMouseDown={(e) => startColResize('body', 'body', e)}
+                onTouchStart={(e) => startColResize('body', 'body', e)}
+                title="Click and drag border to adjust Installation Body column width"
+              />
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -2961,12 +3108,54 @@ export function OfficialQuotationDocument({
                     </tr>
                   ) : (
                     <tr>
-                      <th className="th-sl">Sl<br />No.</th>
-                      <th className="th-desc">Description of Goods</th>
-                      <th className="th-qty" style={{ width: '55px' }}>Quantity</th>
-                      <th className="th-set" style={{ width: '60px' }}>{isMultiSystem ? 'Set' : ''}</th>
-                      <th className="th-rate" style={{ width: '85px' }}>Rate</th>
-                      <th className="th-amount" style={{ width: '100px' }}>Amount</th>
+                      <th className="th-sl resizable-th" style={{ width: `${goodsColWidths.sl}px` }}>
+                        Sl<br />No.
+                        <div
+                          className="table-col-resizer no-print"
+                          onMouseDown={(e) => startColResize('goods', 'sl', e)}
+                          onTouchStart={(e) => startColResize('goods', 'sl', e)}
+                          title="Click and drag border to adjust Sl No column width"
+                        />
+                      </th>
+                      <th className="th-desc resizable-th">
+                        Description of Goods
+                      </th>
+                      <th className="th-qty resizable-th" style={{ width: `${goodsColWidths.qty}px` }}>
+                        Quantity
+                        <div
+                          className="table-col-resizer no-print"
+                          onMouseDown={(e) => startColResize('goods', 'qty', e)}
+                          onTouchStart={(e) => startColResize('goods', 'qty', e)}
+                          title="Click and drag border to adjust Quantity column width"
+                        />
+                      </th>
+                      <th className="th-set resizable-th" style={{ width: `${goodsColWidths.set}px` }}>
+                        {isMultiSystem ? 'Set' : ''}
+                        <div
+                          className="table-col-resizer no-print"
+                          onMouseDown={(e) => startColResize('goods', 'set', e)}
+                          onTouchStart={(e) => startColResize('goods', 'set', e)}
+                          title="Click and drag border to adjust Set column width"
+                        />
+                      </th>
+                      <th className="th-rate resizable-th" style={{ width: `${goodsColWidths.rate}px` }}>
+                        Rate
+                        <div
+                          className="table-col-resizer no-print"
+                          onMouseDown={(e) => startColResize('goods', 'rate', e)}
+                          onTouchStart={(e) => startColResize('goods', 'rate', e)}
+                          title="Click and drag border to adjust Rate column width"
+                        />
+                      </th>
+                      <th className="th-amount resizable-th" style={{ width: `${goodsColWidths.amount}px` }}>
+                        Amount
+                        <div
+                          className="table-col-resizer no-print"
+                          onMouseDown={(e) => startColResize('goods', 'amount', e)}
+                          onTouchStart={(e) => startColResize('goods', 'amount', e)}
+                          title="Click and drag border to adjust Amount column width"
+                        />
+                      </th>
                     </tr>
                   )}
                 </thead>
@@ -4698,13 +4887,22 @@ export function OfficialQuotationDocument({
                         <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '4px' }}>
                           Max Systems Per Page:
                         </label>
-                        <div className="option-pill-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '3px' }}>
+                        <div className="option-pill-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '3px' }}>
+                          <button
+                            type="button"
+                            className={`option-pill ${systemsPerPageSetting === 'auto' ? 'active' : ''}`}
+                            onClick={() => setSystemsPerPageSetting('auto')}
+                            style={{ fontSize: '10px', padding: '4px 2px', textAlign: 'center', fontWeight: 700 }}
+                            title={`Auto (Best): automatically selects ${effectiveSystemsPerPage}/page based on system model counts`}
+                          >
+                            ✨Auto({effectiveSystemsPerPage})
+                          </button>
                           {[2, 3, 4, 5, 999].map((n) => (
                             <button
                               key={n}
                               type="button"
-                              className={`option-pill ${systemsPerPage === n ? 'active' : ''}`}
-                              onClick={() => setSystemsPerPage(n)}
+                              className={`option-pill ${systemsPerPageSetting === n ? 'active' : ''}`}
+                              onClick={() => setSystemsPerPageSetting(n as any)}
                               style={{ fontSize: '10px', padding: '4px 2px', textAlign: 'center' }}
                               title={n === 999 ? 'Fit all systems on 1 page' : `${n} systems per page`}
                             >
@@ -4712,6 +4910,11 @@ export function OfficialQuotationDocument({
                             </button>
                           ))}
                         </div>
+                        {systemsPerPageSetting === 'auto' && (
+                          <div className="tiny muted" style={{ marginTop: '3px', fontSize: '9.5px', color: '#0369a1' }}>
+                            ✓ Best Layout: {effectiveSystemsPerPage} systems/page chosen based on model row counts (3/p for 4-5 models, 4/p for 2-3 models).
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -4786,7 +4989,59 @@ export function OfficialQuotationDocument({
                     )}
                   </div>
 
-                  {/* 1. LAYOUT & PROPOSAL FORMAT (First in Options) */}
+                  {/* WORD-STYLE COLUMN WIDTH CONTROLS */}
+                  <div className="option-group-card">
+                    <div className="option-group-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>WORD-STYLE COLUMN WIDTHS</span>
+                      <button
+                        type="button"
+                        className="btn ghost xs"
+                        onClick={() => {
+                          setGoodsColWidths({ sl: 34, qty: 55, set: 60, rate: 85, amount: 100 })
+                          setBodyColWidths({ sr: 40, per_bay: 75, qty: 55, body: 85 })
+                        }}
+                        style={{ fontSize: '9.5px', padding: '1px 5px', color: '#64748b' }}
+                        title="Reset all column widths to defaults"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <div className="tiny muted" style={{ marginBottom: '8px', fontSize: '10px' }}>
+                      💡 Drag column borders in document preview, or adjust widths below:
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '3px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '10.5px' }}>
+                        <span>Quantity: <strong>{goodsColWidths.qty}px</strong></span>
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, qty: Math.max(30, p.qty - 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>-</button>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, qty: Math.min(120, p.qty + 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>+</button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '3px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '10.5px' }}>
+                        <span>Set Col: <strong>{goodsColWidths.set}px</strong></span>
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, set: Math.max(30, p.set - 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>-</button>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, set: Math.min(120, p.set + 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>+</button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '3px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '10.5px' }}>
+                        <span>Rate Col: <strong>{goodsColWidths.rate}px</strong></span>
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, rate: Math.max(50, p.rate - 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>-</button>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, rate: Math.min(150, p.rate + 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>+</button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '3px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '10.5px' }}>
+                        <span>Amount: <strong>{goodsColWidths.amount}px</strong></span>
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, amount: Math.max(60, p.amount - 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>-</button>
+                          <button type="button" onClick={() => setGoodsColWidths((p) => ({ ...p, amount: Math.min(160, p.amount + 5) }))} style={{ padding: '1px 5px', fontSize: '10px', borderRadius: '2px', border: '1px solid #cbd5e1', background: '#fff' }}>+</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                                    {/* 1. LAYOUT & PROPOSAL FORMAT (First in Options) */}
                   <div className="option-group-card">
                     <div className="option-group-title">
                       <span>LAYOUT &amp; PROPOSAL FORMAT</span>

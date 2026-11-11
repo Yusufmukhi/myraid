@@ -4349,3 +4349,30 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   max-width: 650px !important;
   margin: 12px auto !important;
 }
+
+/* Word-Style Resizable Table Column Dividers */
+.resizable-th {
+  position: relative !important;
+}
+
+.table-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 15;
+  user-select: none;
+}
+
+.table-col-resizer:hover::after,
+.table-col-resizer:active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 3px;
+  width: 2.5px;
+  height: 100%;
+  background: #2563eb;
+}
