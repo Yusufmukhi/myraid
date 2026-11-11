@@ -1,3 +1,5 @@
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MYRIAD_LOGO_DATA_URL, MYRIAD_WATERMARK_DATA_URL } from '../../assets/companyAssets'
@@ -1900,7 +1902,21 @@ export function OfficialQuotationDocument({
     }
     return true
   })
+  const [bodyPlacement, setBodyPlacement] = useState<'dedicated' | 'terms' | 'commercial' | 'none'>(() => {
+    if (project.summary?.body_placement) {
+      return project.summary.body_placement as any
+    }
+    if (project.summary?.show_bodies_table === false) return 'none'
+    // For multi-system quotations (2+ systems), default to dedicated page so terms & commercial never crowd
+    if (sets.length >= 2 || (initialSets && initialSets.length >= 2)) return 'dedicated'
+    if (project.summary?.body_table_on_page_1) return 'commercial'
+    return canFitOnPage1Naturally ? 'commercial' : 'terms'
+  })
+
   const [placeBodyOnPage1, setPlaceBodyOnPage1] = useState<boolean>(() => {
+    if (project.summary?.body_placement) {
+      return project.summary.body_placement === 'commercial'
+    }
     if (project.summary?.body_table_on_page_1 !== undefined) {
       return Boolean(project.summary.body_table_on_page_1)
     }
@@ -1974,8 +1990,13 @@ export function OfficialQuotationDocument({
   }, [sets, systemsPerPage])
 
   const commercialPagesCount = commercialChunks.length
+  const hasDedicatedBodiesPage = showBodiesTable && bodyPlacement === 'dedicated'
+  const bodiesPageCount = hasDedicatedBodiesPage ? 1 : 0
+
   const totalPages = includeFullProposal ? 5 : 2
-  const actualTotalPages = commercialPagesCount > 1 ? (includeFullProposal ? commercialPagesCount + 4 : commercialPagesCount + 1) : totalPages
+  const actualTotalPages = (commercialPagesCount > 1 || hasDedicatedBodiesPage)
+    ? (includeFullProposal ? (commercialPagesCount + bodiesPageCount + 4) : (commercialPagesCount + bodiesPageCount + 1))
+    : totalPages
 
   // Responsive mobile view
   const [mobileView, setMobileView] = useState<'document' | 'sidebar'>('document')
@@ -2260,8 +2281,7 @@ export function OfficialQuotationDocument({
     const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
     if (!pages || pages.length === 0) return null
 
-    const { default: jsPDF } = await import('jspdf')
-    const { default: html2canvas } = await import('html2canvas')
+    // jsPDF and html2canvas are statically imported upfront to prevent dynamic chunk 404s
 
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -2457,6 +2477,7 @@ export function OfficialQuotationDocument({
       onSaveClientInfo(cleanClientInfo, lineItems, bodyItems, sets, {
         quotation_mode: effectiveQuotationMode,
         body_table_on_page_1: placeBodyOnPage1,
+        body_placement: bodyPlacement,
         show_bodies_table: showBodiesTable,
         include_full_proposal: includeFullProposal,
         include_installation: includeInstallation,
@@ -3361,7 +3382,7 @@ export function OfficialQuotationDocument({
               )}
 
               {/* Installation Body Table on Page 1 (Only on Last Commercial Page) */}
-              {isLastCommercialPage && showBodiesTable && placeBodyOnPage1 && renderInstallationBodyTable('on-page-1')}
+              {isLastCommercialPage && showBodiesTable && bodyPlacement === 'commercial' && renderInstallationBodyTable('on-page-1')}
 
               {/* Commercial Page Footer */}
               <div className="pdf-footer">
@@ -3372,6 +3393,46 @@ export function OfficialQuotationDocument({
           )
         })}
 
+        {/* ============================== DEDICATED INSTALLATION BODIES BREAKDOWN PAGE ============================== */}
+        {showBodiesTable && bodyPlacement === 'dedicated' && (
+          <div className="official-pdf-page">
+            {renderPdfWatermark()}
+
+            {/* Header */}
+            {renderOfficialHeader()}
+
+            <div
+              className="pdf-continuation-banner"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '5px 10px',
+                background: '#f8fafc',
+                border: '1.5px solid #000000',
+                margin: '6px 0 12px 0',
+                fontSize: '11px',
+                fontWeight: 800,
+                color: '#0f172a',
+                letterSpacing: '0.4px',
+              }}
+            >
+              <span>ANNEXURE: INSTALLATION BODIES &amp; UNIT QUANTITY BREAKDOWN</span>
+              <span className="font-mono" style={{ fontSize: '10px', fontWeight: 700 }}>
+                {clientInfo.qtn_no || ''}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+              {renderInstallationBodyTable('dedicated-page-table')}
+            </div>
+
+            <div className="pdf-footer">
+              {commercialPagesCount + bodiesPageCount + 1} of {actualTotalPages}
+            </div>
+          </div>
+        )}
+
         {/* ============================== PAGE 2: TERMS & CONDITIONS ============================== */}
         <div className="official-pdf-page">
           {renderPdfWatermark()}
@@ -3380,10 +3441,10 @@ export function OfficialQuotationDocument({
           {renderOfficialHeader()}
 
           {/* If NOT on Page 1, render Installation Body table here on Page 2 */}
-          {showBodiesTable && !placeBodyOnPage1 && renderInstallationBodyTable('mt-2')}
+          {showBodiesTable && bodyPlacement === 'terms' && renderInstallationBodyTable('mt-2')}
 
           {/* Terms & Conditions Block */}
-          <div className={`pdf-terms-block ${showBodiesTable && !placeBodyOnPage1 ? 'mt-3' : 'mt-2'}`}>
+          <div className={`pdf-terms-block ${showBodiesTable && bodyPlacement === 'terms' ? 'mt-3' : 'mt-2'}`}>
             <div className="pdf-terms-heading">
               TERMS &amp; CONDITION
             </div>
@@ -3764,7 +3825,7 @@ export function OfficialQuotationDocument({
                 </div>
               </div>
 
-              <div className="pdf-footer">{commercialPagesCount + 2} of {actualTotalPages}{/* 3 of {totalPages} */}</div>
+              <div className="pdf-footer">{commercialPagesCount + bodiesPageCount + 2} of {actualTotalPages}{/* 3 of {totalPages} */}</div>
             </div>
 
             {/* Page 4: Powder Coating Specification & Methods of Instruction (Merged 5 & 6) */}
@@ -4060,7 +4121,7 @@ export function OfficialQuotationDocument({
                 </div>
               </div>
 
-              <div className="pdf-footer">{commercialPagesCount + 3} of {actualTotalPages}{/* 4 of {totalPages} */}</div>
+              <div className="pdf-footer">{commercialPagesCount + bodiesPageCount + 3} of {actualTotalPages}{/* 4 of {totalPages} */}</div>
             </div>
 
             {/* Page 5: Activation, Phosphating, Passivation & Quality Control (Merged 7 & 8) */}
@@ -4379,7 +4440,7 @@ export function OfficialQuotationDocument({
                 </div>
               </div>
 
-              <div className="pdf-footer">{commercialPagesCount + 4} of {actualTotalPages}{/* 5 of {totalPages} */}</div>
+              <div className="pdf-footer">{commercialPagesCount + bodiesPageCount + 4} of {actualTotalPages}{/* 5 of {totalPages} */}</div>
             </div>
           </>
         )}
@@ -4762,25 +4823,70 @@ export function OfficialQuotationDocument({
                       )}
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px' }}>
-                      <input
-                        type="checkbox"
-                        checked={showBodiesTable}
-                        onChange={(e) => setShowBodiesTable(e.target.checked)}
-                      />
-                      <span style={{ fontSize: '12px', fontWeight: 600 }}>Show Installation Bodies Table</span>
-                    </label>
-
-                    {showBodiesTable && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '4px', marginLeft: '16px' }}>
-                        <input
-                          type="checkbox"
-                          checked={placeBodyOnPage1}
-                          onChange={(e) => setPlaceBodyOnPage1(e.target.checked)}
-                        />
-                        <span style={{ fontSize: '12px' }}>Fit Installation Body Table on Page 1</span>
+                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                      <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '4px' }}>
+                        Installation Bodies Table Placement:
                       </label>
-                    )}
+                      <div className="option-pill-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px' }}>
+                        <button
+                          type="button"
+                          className={`option-pill ${bodyPlacement === 'dedicated' ? 'active' : ''}`}
+                          onClick={() => {
+                            setBodyPlacement('dedicated')
+                            setShowBodiesTable(true)
+                            setPlaceBodyOnPage1(false)
+                          }}
+                          style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
+                          title="Best for multi-system quotations. Gives full space without crowding terms."
+                        >
+                          📄 Dedicated Page
+                        </button>
+                        <button
+                          type="button"
+                          className={`option-pill ${bodyPlacement === 'terms' ? 'active' : ''}`}
+                          onClick={() => {
+                            setBodyPlacement('terms')
+                            setShowBodiesTable(true)
+                            setPlaceBodyOnPage1(false)
+                          }}
+                          style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
+                          title="Place installation bodies table on Page 2 above Terms & Conditions"
+                        >
+                          📋 Page 2 (Above Terms)
+                        </button>
+                        <button
+                          type="button"
+                          className={`option-pill ${bodyPlacement === 'commercial' ? 'active' : ''}`}
+                          onClick={() => {
+                            setBodyPlacement('commercial')
+                            setShowBodiesTable(true)
+                            setPlaceBodyOnPage1(true)
+                          }}
+                          style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
+                          title="Fit on Commercial Page (under goods table)"
+                        >
+                          📑 Page 1 (Commercial)
+                        </button>
+                        <button
+                          type="button"
+                          className={`option-pill ${bodyPlacement === 'none' ? 'active' : ''}`}
+                          onClick={() => {
+                            setBodyPlacement('none')
+                            setShowBodiesTable(false)
+                            setPlaceBodyOnPage1(false)
+                          }}
+                          style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
+                          title="Do not show installation bodies table in PDF"
+                        >
+                          🚫 Hide Table
+                        </button>
+                      </div>
+                      {bodyPlacement === 'dedicated' && (
+                        <div className="tiny muted" style={{ marginTop: '4px', color: '#0369a1', fontSize: '9.5px' }}>
+                          ✓ Multi-System Annexure: rendered on its own dedicated A4 page with all system subtotals and grand total.
+                        </div>
+                      )}
+                    </div>
 
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '4px' }}>
                       <input

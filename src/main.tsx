@@ -1,3 +1,9 @@
+// Auto-reload on Vite chunk preload error (handles new deployments gracefully)
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', () => {
+    window.location.reload()
+  })
+}
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
