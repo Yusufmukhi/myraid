@@ -3310,58 +3310,6 @@ export function CalculatorPage({
               </button>
             </div>
           </div>
-
-          {/* C2C CALCULATION BADGE: Spanning across first and second part in the same box */}
-          {isAdminOrOwner && c2cSummary && (
-            <div className="top-project-c2c-wrapper">
-              <div
-                className="c2c-top-summary-badge"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  background: 'linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%)',
-                  border: '1.5px solid #c084fc',
-                  borderRadius: '8px',
-                  padding: '6px 14px',
-                  minWidth: '165px',
-                  height: '100%',
-                  boxSizing: 'border-box',
-                  boxShadow: '0 2px 6px rgba(124, 58, 237, 0.12)',
-                  gap: '3px',
-                }}
-                title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                  <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
-                    {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYSTEMS)` : 'C2C ANALYSIS'}
-                  </span>
-                  {serverCalculating ? (
-                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                      <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
-                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
-                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}</span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
-                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
-                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>{serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}</span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap' }}>
-                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
-                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span></span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -3491,28 +3439,77 @@ export function CalculatorPage({
 
 
 
-                <div className="excel-kpi-card highlight">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
-                    {serverCalculating ? (
-                      <span className="kpi-calculating-watermark">
-                        <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
+                {isAdminOrOwner && c2cSummary ? (
+                  <div
+                    className="excel-kpi-card highlight-c2c"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      minWidth: '175px',
+                      padding: '4px 10px',
+                      gap: '2px',
+                    }}
+                    title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                      <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+                        {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYS)` : 'C2C ANALYSIS'}
                       </span>
-                    ) : (
-                      <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
-                    )}
+                      {serverCalculating ? (
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
+                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
+                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>
+                        ₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span>
+                      </span>
+                    </div>
                   </div>
-                  <strong className="kpi-val sales-val" style={{ fontSize: '14.5px', lineHeight: 1.25 }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                      {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
+                ) : (
+                  <div className="excel-kpi-card highlight">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
+                      {serverCalculating ? (
+                        <span className="kpi-calculating-watermark">
+                          <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
+                      )}
+                    </div>
+                    <strong className="kpi-val sales-val" style={{ fontSize: '14.5px', lineHeight: 1.25 }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
+                        {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
+                      </span>
+                      {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '12px' }}>calculating…</span> : inr(kpiActiveSysSales)}
+                    </strong>
+                    <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
+                      {serverCalculating ? <span style={{ color: '#047857', fontStyle: 'italic', fontSize: '11px' }}>calculating…</span> : inr(kpiAllSystemsTotals.sales)}
                     </span>
-                    {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '12px' }}>calculating…</span> : inr(kpiActiveSysSales)}
-                  </strong>
-                  <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' }}>
-                    <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                    {serverCalculating ? <span style={{ color: '#047857', fontStyle: 'italic', fontSize: '11px' }}>calculating…</span> : inr(kpiAllSystemsTotals.sales)}
-                  </span>
-                </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="excel-kpi-card highlight">
@@ -3586,24 +3583,73 @@ export function CalculatorPage({
                   <span className="kpi-sub">C2C PC Amount{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
                 </div>
 
-                <div className="excel-kpi-card highlight">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
-                    {serverCalculating ? (
-                      <span className="kpi-calculating-watermark">
-                        <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
+                {isAdminOrOwner && c2cSummary ? (
+                  <div
+                    className="excel-kpi-card highlight-c2c"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      minWidth: '175px',
+                      padding: '4px 10px',
+                      gap: '2px',
+                    }}
+                    title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                      <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+                        C2C ANALYSIS
                       </span>
-                    ) : (
-                      <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
-                    )}
+                      {serverCalculating ? (
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
+                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
+                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>
+                        ₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span>
+                      </span>
+                    </div>
                   </div>
-                  <strong className="kpi-val sales-val">
-                    {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(Math.round(displaySummary.sales * activeSysQty))}
-                  </strong>
-                  <span className="kpi-sub">
-                    {serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`}
-                  </span>
-                </div>
+                ) : (
+                  <div className="excel-kpi-card highlight">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
+                      {serverCalculating ? (
+                        <span className="kpi-calculating-watermark">
+                          <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
+                      )}
+                    </div>
+                    <strong className="kpi-val sales-val">
+                      {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(Math.round(displaySummary.sales * activeSysQty))}
+                    </strong>
+                    <span className="kpi-sub">
+                      {serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`}
+                    </span>
+                  </div>
+                )}
               </>
             ) : (
               <div className="excel-kpi-card highlight">

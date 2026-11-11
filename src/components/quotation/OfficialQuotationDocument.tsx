@@ -1292,6 +1292,11 @@ export function OfficialQuotationDocument({
       setClientInfo((prev) => ({
         ...prev,
         client_id: saved.id,
+        buyer_name: saved.name || prev.buyer_name,
+        buyer_address: saved.address || prev.buyer_address,
+        buyer_gst: saved.gst || prev.buyer_gst,
+        kind_att: saved.kind_att || prev.kind_att,
+        buyer_contact: saved.contact || prev.buyer_contact,
         buyer_email: saved.email || prev.buyer_email,
         show_buyer_email: Boolean(saved.email || prev.buyer_email),
       }))
@@ -3085,6 +3090,21 @@ export function OfficialQuotationDocument({
                   {clientInfo.show_buyer_gst !== false && clientInfo.buyer_gst?.trim() ? (
                     <div className="pdf-buyer-gst">
                       <strong>GSTIN:</strong> {clientInfo.buyer_gst}
+                    </div>
+                  ) : null}
+                  {clientInfo.show_kind_att !== false && clientInfo.kind_att?.trim() ? (
+                    <div className="pdf-buyer-kind-att">
+                      <strong>Kind Att : </strong>{clientInfo.kind_att}
+                    </div>
+                  ) : null}
+                  {clientInfo.show_buyer_contact !== false && clientInfo.buyer_contact?.trim() ? (
+                    <div className="pdf-buyer-contact">
+                      <strong>Contact No: </strong>{clientInfo.buyer_contact}
+                    </div>
+                  ) : null}
+                  {clientInfo.show_buyer_email !== false && clientInfo.buyer_email?.trim() ? (
+                    <div className="pdf-buyer-email">
+                      <strong>Email: </strong>{clientInfo.buyer_email}
                     </div>
                   ) : null}
                   {clientInfo.extra_fields && clientInfo.extra_fields.length > 0 && (

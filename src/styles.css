@@ -3066,6 +3066,23 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   font-size: 9.3px;
   margin-top: 1px;
 }
+.pdf-buyer-kind-att {
+  font-size: 9.3px;
+  margin-top: 2px;
+}
+.pdf-buyer-contact {
+  font-size: 9.3px;
+  margin-top: 1px;
+}
+.pdf-buyer-email {
+  font-size: 9.3px;
+  margin-top: 1px;
+}
+.excel-kpi-card.highlight-c2c {
+  background: linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%);
+  border: 1.5px solid #c084fc;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.12);
+}
 .pdf-buyer-delivery {
   font-size: 9.3px;
   margin-top: 1px;
