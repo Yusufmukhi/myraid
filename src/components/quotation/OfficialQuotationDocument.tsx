@@ -3118,17 +3118,6 @@ export function OfficialQuotationDocument({
                             <strong>Email: </strong>{emailVal}
                           </div>
                         ) : null}
-                        {/* Additional contacts from directory/form */}
-                        {clientInfo.show_buyer_contact !== false && Array.isArray(clientInfo.contacts) && (
-                          clientInfo.contacts
-                            .filter((cp) => cp && (cp.name?.trim() || cp.phone?.trim()))
-                            .filter((cp) => !(cp.name?.trim().toLowerCase() === kindAttVal.toLowerCase() && cp.phone?.trim() === contactVal))
-                            .map((cp) => (
-                              <div key={cp.id || `${cp.name}-${cp.phone}`} className="pdf-buyer-contact">
-                                <strong>Contact No{cp.name?.trim() ? ` (${cp.name.trim()})` : ''}: </strong>{cp.phone?.trim() || cp.name?.trim()}
-                              </div>
-                            ))
-                        )}
                       </>
                     )
                   })()}
