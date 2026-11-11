@@ -1561,7 +1561,7 @@ export function CalculatorPage({
 
 
   // Live Unit-Wise Breakdown: Unit Rate = Base Unit Rate + All Transportation Rate + Extra Amount; Total Amount = Unit Rate * Qty
-  // Logistics are shared proportionally across totalCombinedBodies
+  // Logistics inside summary (transport, accommodation, installation) are already proportionally scaled for this system's set of bodies
   const calcBreakdown = useMemo(() => {
     return computeUnitWiseBreakdown(
       summary,
@@ -1569,10 +1569,10 @@ export function CalculatorPage({
       includeInstallation,
       profitPct,
       discountPct,
-      totalCombinedBodies,
+      summary?.bodies || undefined,
       extraAmount,
     )
-  }, [summary, wb, includeInstallation, profitPct, discountPct, totalCombinedBodies, extraAmount, wbVersion])
+  }, [summary, wb, includeInstallation, profitPct, discountPct, extraAmount, wbVersion])
 
 
 
@@ -1747,7 +1747,7 @@ export function CalculatorPage({
           sysIncInst,
           profitPct,
           discountPct,
-          totalCombinedBodies,
+          sysBodies || undefined,
           sysExtra,
         )
         wb.setFormulaOverrides(formulaOverrides)

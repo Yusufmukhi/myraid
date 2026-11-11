@@ -472,7 +472,7 @@ export function computeUnitWiseBreakdown(
   // Adjust sub-cent rounding against authoritative summary.beforeGst when present
   if (summary?.beforeGst && rows.length > 0) {
     const roundingDiff = Number((summary.beforeGst - finalBeforeGst).toFixed(2))
-    if (Math.abs(roundingDiff) > 0 && Math.abs(roundingDiff) <= 0.08) {
+    if (Math.abs(roundingDiff) > 0 && Math.abs(roundingDiff) <= 1.00) {
       rows[rows.length - 1].final_amount = Number((rows[rows.length - 1].final_amount + roundingDiff).toFixed(2))
       rows[rows.length - 1].final_unit_rate = rows[rows.length - 1].final_amount / rows[rows.length - 1].qty
       finalBeforeGst = summary.beforeGst
@@ -1681,8 +1681,8 @@ export function OfficialQuotationDocument({
 
   // Dynamic unit-wise rate breakdown (Transport + Installation + Accommodation distributed by bodies + extra amount + dynamic profit)
   const breakdownResult = useMemo(
-    () => computeUnitWiseBreakdown(summary, wb, includeInstallation, profitPct, docDiscountPct, effectiveTotalBodies, extraAmount),
-    [summary, wb, includeInstallation, profitPct, docDiscountPct, effectiveTotalBodies, extraAmount],
+    () => computeUnitWiseBreakdown(summary, wb, includeInstallation, profitPct, docDiscountPct, summary?.bodies || totalBodies, extraAmount),
+    [summary, wb, includeInstallation, profitPct, docDiscountPct, summary?.bodies, totalBodies, extraAmount],
   )
 
   // Auto-derived destination from address for Freight Clause
