@@ -304,11 +304,11 @@ function computeSystemTotalBodies(
 
   }
 
-  const dfmuRows = Number(sysOverrides['Total cal!A3'] ?? wbInstance.num('Total cal', 'A3') ?? 6)
+  const dfmuRows = Number(sysOverrides['Total cal!A3'] ?? wbInstance.num('Total cal', 'A3') ?? 0)
 
-  const sfmuRows = Number(sysOverrides['Total cal!A7'] ?? Math.max(1, Math.round(dfmuRows / 2)))
+  const sfmuRows = Number(sysOverrides['Total cal!A7'] ?? Math.max(0, Math.round(dfmuRows / 2)))
 
-  const sffuRows = Number(sysOverrides['Total cal!A11'] ?? Math.max(1, Math.round(dfmuRows / 2)))
+  const sffuRows = Number(sysOverrides['Total cal!A11'] ?? Math.max(0, Math.round(dfmuRows / 2)))
 
   const dffuRows = Number(sysOverrides['Total cal!A15'] ?? dfmuRows)
 
@@ -376,6 +376,19 @@ export function CalculatorPage({
     delete clean['Total cal!B11']
     delete clean['Total cal!B15']
     delete clean['Total cal!B19']
+    // If project is brand new with no matrix inputs, default Bay and all model QTYs to 0
+    if (clean['Total cal!A3'] === undefined && Object.keys(clean).filter((k) => !k.startsWith('__')).length === 0) {
+      clean['Total cal!A3'] = 0
+      clean['Total cal!A7'] = 0
+      clean['Total cal!A11'] = 0
+      clean['Total cal!A15'] = 0
+      clean['Total cal!A19'] = 0
+      clean['Total cal!G4'] = 0
+      clean['Total cal!G8'] = 0
+      clean['Total cal!G12'] = 0
+      clean['Total cal!G16'] = 0
+      clean['Total cal!G20'] = 0
+    }
     return clean
   }
 
@@ -744,7 +757,7 @@ export function CalculatorPage({
         {
           id: '1',
           name: 'SYSTEM A',
-          quantity: 1,
+          quantity: project.summary?.systems?.[0]?.quantity ?? 0,
           unit: 'SET',
           overrides: project.inputs || {},
           formulaOverrides: project.formula_overrides || {},
@@ -760,7 +773,7 @@ export function CalculatorPage({
       {
         id: '1',
         name: 'SYSTEM A',
-        quantity: 1,
+        quantity: 0,
         unit: 'SET',
         overrides: project.inputs || {},
         formulaOverrides: project.formula_overrides || {},
@@ -890,7 +903,7 @@ export function CalculatorPage({
 
       name: `SYSTEM ${nextChar}`,
 
-      quantity: 1,
+      quantity: 0,
 
       unit: 'SET',
 
@@ -2624,9 +2637,10 @@ export function CalculatorPage({
 
   // Dynamic Bay state (drives DFMU/DFFU rows = Bay * 2, and SFMU/SFFU rows = Bay)
 
-  const currentDfmuRows = activeWb.num('Total cal', 'A3') || 4
+  const rawDfmuRows = overrides['Total cal!A3'] !== undefined ? Number(overrides['Total cal!A3']) : activeWb.num('Total cal', 'A3')
+  const currentDfmuRows = rawDfmuRows !== undefined && !isNaN(rawDfmuRows) ? rawDfmuRows : 0
 
-  const currentBay = Math.max(1, Math.round(currentDfmuRows / 2))
+  const currentBay = Math.max(0, Math.round(currentDfmuRows / 2))
 
   const [bayInput, setBayInput] = useState<string>(String(currentBay))
 

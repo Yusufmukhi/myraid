@@ -2199,66 +2199,66 @@ export function OfficialQuotationDocument({
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
 
-  const handleDirectDownload = async () => {
-    setIsGeneratingPdf(true)
+  const generatePdfInstance = async (): Promise<{ pdf: any; fileName: string; pagesCount: number } | null> => {
     const fileName = getQuotationFileName()
     const element = document.getElementById('official-quotation-pages')
-    if (!element) {
-      handlePrint()
-      return
-    }
+    if (!element) return null
+    const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
+    if (!pages || pages.length === 0) return null
 
+    const { default: jsPDF } = await import('jspdf')
+    const { default: html2canvas } = await import('html2canvas')
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    })
+
+    const prevScrollTop = element.scrollTop
     try {
-      const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
-      if (!pages || pages.length === 0) {
+      for (let idx = 0; idx < pages.length; idx++) {
+        const page = pages[idx]
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          imageTimeout: 15000,
+          scrollY: 0,
+          ignoreElements: (el: Element) => el.classList?.contains('no-print'),
+        })
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.98)
+        if (idx > 0) {
+          pdf.addPage('a4', 'portrait')
+        }
+        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST')
+      }
+      return { pdf, fileName, pagesCount: pages.length }
+    } finally {
+      element.scrollTop = prevScrollTop
+    }
+  }
+
+  const handleDirectDownload = async () => {
+    setIsGeneratingPdf(true)
+    try {
+      const generated = await generatePdfInstance()
+      if (!generated) {
         handlePrint()
         return
       }
-
-      const { default: jsPDF } = await import('jspdf')
-      const { default: html2canvas } = await import('html2canvas')
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true,
-      })
-
-      const prevScrollTop = element.scrollTop
-
-      try {
-        for (let idx = 0; idx < pages.length; idx++) {
-          const page = pages[idx]
-          const canvas = await html2canvas(page, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff',
-            imageTimeout: 15000,
-            scrollY: 0,
-            ignoreElements: (el: Element) => el.classList?.contains('no-print'),
-          })
-
-          const imgData = canvas.toDataURL('image/jpeg', 0.98)
-          if (idx > 0) {
-            pdf.addPage('a4', 'portrait')
-          }
-          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST')
-        }
-
-        pdf.save(`${fileName}.pdf`)
-        toast(`Downloaded "${fileName}.pdf" (${pages.length} pages) directly!`)
-      } finally {
-        element.scrollTop = prevScrollTop
-      }
+      generated.pdf.save(`${generated.fileName}.pdf`)
+      toast(`Downloaded "${generated.fileName}.pdf" (${generated.pagesCount} pages) directly!`)
 
       // Record in Activity Log
       const token = tokenStore.get()
       if (token && effectiveOrgId) {
         api.logActivity(token, effectiveOrgId, 'pdf_downloaded', {
           name: project.name,
-          file_name: fileName,
+          file_name: generated.fileName,
           buyer_name: clientInfo.buyer_name || 'Direct Buyer',
           qtn_no: clientInfo.qtn_no || '',
           total: grandTotal,
@@ -2273,31 +2273,66 @@ export function OfficialQuotationDocument({
     }
   }
 
-  const handleWhatsAppShare = () => {
-    // 1. Trigger PDF download
-    handleDirectDownload()
+  const handleWhatsAppShare = async () => {
+    setIsGeneratingPdf(true)
+    try {
+      const generated = await generatePdfInstance()
+      if (!generated) {
+        toast('Could not render quotation PDF for WhatsApp sharing', 'err')
+        return
+      }
 
-    // 2. Format phone number: buyer contact or contact person's phone
-    let phone = (
-      clientInfo.buyer_contact ||
-      (clientInfo.contacts && clientInfo.contacts[0]?.phone) ||
-      ''
-    ).replace(/[^0-9]/g, '')
-    if (phone.length === 10) {
-      phone = '91' + phone
+      const { pdf, fileName } = generated
+      const blob = pdf.output('blob')
+      const pdfFile = new File([blob], `${fileName}.pdf`, { type: 'application/pdf' })
+
+      // Format phone number: buyer contact or contact person's phone
+      let phone = (
+        clientInfo.buyer_contact ||
+        (clientInfo.contacts && clientInfo.contacts[0]?.phone) ||
+        ''
+      ).replace(/[^0-9]/g, '')
+      if (phone.length === 10) {
+        phone = '91' + phone
+      }
+
+      const qtn = clientInfo.qtn_no || 'Quotation'
+      const buyer = clientInfo.buyer_name || ''
+      const totalAmt = inr(Math.round(grandTotal))
+      const msg = `*Quotation: ${qtn}*\nDear ${buyer || 'Sir/Madam'},\n\nPlease find attached official quotation for *${project.name}*.\n*Total Amount:* ${totalAmt} (Inc. GST)\n\nThank you,\n*${businessProfile.company_name || 'Myriad Storage Systems'}*`
+
+      // 1. Mobile & Web Share API: Share the actual PDF file directly to WhatsApp!
+      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: `${fileName}.pdf`,
+            text: msg,
+          })
+          toast('Quotation PDF sent directly to WhatsApp!', 'ok')
+          return
+        } catch (shareErr: any) {
+          if (shareErr?.name === 'AbortError') return
+          console.warn('Native file share cancelled or failed, falling back to web flow:', shareErr)
+        }
+      }
+
+      // 2. Desktop Fallback (WhatsApp Web):
+      // Automatically download the exact PDF file so user has it ready
+      pdf.save(`${fileName}.pdf`)
+
+      // Open WhatsApp Web with the client contact & quotation summary pre-filled
+      const waUrl = phone
+        ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
+
+      window.open(waUrl, '_blank')
+      toast(`PDF downloaded! WhatsApp opened — simply attach "${fileName}.pdf" to send it`, 'ok')
+    } catch (e: any) {
+      toast(e.message || 'Error generating PDF for WhatsApp', 'err')
+    } finally {
+      setIsGeneratingPdf(false)
     }
-
-    const qtn = clientInfo.qtn_no || 'Quotation'
-    const buyer = clientInfo.buyer_name || ''
-    const totalAmt = inr(Math.round(grandTotal))
-    const msg = `*Quotation: ${qtn}*\nDear ${buyer || 'Sir/Madam'},\n\nPlease find attached official quotation for *${project.name}*.\n*Total Amount:* ${totalAmt} (Inc. GST)\n\nThank you,\n*${businessProfile.company_name || 'Myriad Storage Systems'}*`
-
-    const waUrl = phone
-      ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
-      : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
-
-    window.open(waUrl, '_blank')
-    toast('PDF download started & WhatsApp opened with quotation summary!', 'ok')
   }
 
   const handlePrint = () => {

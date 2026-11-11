@@ -363,7 +363,19 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     setCreating(true)
     try {
       let initialSummary: any = {}
-      const initialOverrides: Record<string, any> = {}
+      // Safe zero defaults for new quotation: Bay = 0, Model Qties = 0, Sets Qty = 0
+      const initialOverrides: Record<string, any> = {
+        'Total cal!A3': 0,
+        'Total cal!A7': 0,
+        'Total cal!A11': 0,
+        'Total cal!A15': 0,
+        'Total cal!A19': 0,
+        'Total cal!G4': 0,
+        'Total cal!G8': 0,
+        'Total cal!G12': 0,
+        'Total cal!G16': 0,
+        'Total cal!G20': 0,
+      }
       const targetClientId = selectedClientForNewProj || savedClients.find((c) => c.name.trim().toLowerCase() === clientSearchTermForNewProj.trim().toLowerCase())?.id
       if (targetClientId) {
         const cl = savedClients.find((c) => c.id === targetClientId)
@@ -397,6 +409,20 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         if (matched && matched.profit_margin_pct !== undefined) {
           initialOverrides['__profit_pct'] = clientMargin
         }
+      }
+      if (!initialSummary.systems) {
+        initialSummary.systems = [
+          {
+            id: '1',
+            name: 'SYSTEM A',
+            quantity: 0,
+            unit: 'SET',
+            overrides: { ...initialOverrides },
+            formulaOverrides: {},
+            includeInstallation: true,
+            extraAmount: 0,
+          },
+        ]
       }
       const res = await api.projectCreate(
         session.token,
