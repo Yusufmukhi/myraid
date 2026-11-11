@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { MYRIAD_LOGO_DATA_URL, MYRIAD_WATERMARK_DATA_URL } from '../../assets/companyAssets'
 import { BusinessProfile, getBusinessProfile, fetchBusinessProfileFromSupabase } from '../../lib/businessProfile'
 import { Project, api, tokenStore } from '../../lib/api'
+import { inr } from '../../lib/format'
 import { Workbook } from '../../lib/engine'
 import { Summary, getWidthExtra } from '../../lib/model'
 import { buildOfficialQtnNo, extractQuotationCode, getFiscalYear } from '../../lib/revision'
@@ -2272,6 +2273,33 @@ export function OfficialQuotationDocument({
     }
   }
 
+  const handleWhatsAppShare = () => {
+    // 1. Trigger PDF download
+    handleDirectDownload()
+
+    // 2. Format phone number: buyer contact or contact person's phone
+    let phone = (
+      clientInfo.buyer_contact ||
+      (clientInfo.contacts && clientInfo.contacts[0]?.phone) ||
+      ''
+    ).replace(/[^0-9]/g, '')
+    if (phone.length === 10) {
+      phone = '91' + phone
+    }
+
+    const qtn = clientInfo.qtn_no || 'Quotation'
+    const buyer = clientInfo.buyer_name || ''
+    const totalAmt = inr(Math.round(grandTotal))
+    const msg = `*Quotation: ${qtn}*\nDear ${buyer || 'Sir/Madam'},\n\nPlease find attached official quotation for *${project.name}*.\n*Total Amount:* ${totalAmt} (Inc. GST)\n\nThank you,\n*${businessProfile.company_name || 'Myriad Storage Systems'}*`
+
+    const waUrl = phone
+      ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
+
+    window.open(waUrl, '_blank')
+    toast('PDF download started & WhatsApp opened with quotation summary!', 'ok')
+  }
+
   const handlePrint = () => {
     const fileName = getQuotationFileName()
     const prevTitle = document.title
@@ -4252,13 +4280,36 @@ export function OfficialQuotationDocument({
                   {Icon.check} Save
                 </button>
               </div>
-              <div style={{ marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={handleWhatsAppShare}
+                  disabled={isGeneratingPdf}
+                  title="Download PDF and share quotation with client on WhatsApp"
+                  style={{
+                    fontSize: '11.5px',
+                    padding: '5px 8px',
+                    justifyContent: 'center',
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span>💬</span> WhatsApp
+                </button>
                 <button
                   type="button"
                   className="btn ghost sm"
                   onClick={handlePrint}
                   title="Open Browser Print Dialog (Physical Printer or Save as PDF)"
-                  style={{ width: '100%', fontSize: '11px', padding: '4px 8px', justifyContent: 'center', color: '#475569' }}
+                  style={{ fontSize: '11px', padding: '4px 8px', justifyContent: 'center', color: '#475569' }}
                 >
                   🖨️ Print / Vector
                 </button>
@@ -6694,7 +6745,16 @@ export function OfficialQuotationDocument({
           disabled={isGeneratingPdf}
           style={{ background: '#2563eb', flex: 1 }}
         >
-          {isGeneratingPdf ? <Spinner size={14} /> : Icon.fileText} Download PDF
+          {isGeneratingPdf ? <Spinner size={14} /> : Icon.fileText} PDF
+        </button>
+        <button
+          type="button"
+          className="btn sm"
+          onClick={handleWhatsAppShare}
+          disabled={isGeneratingPdf}
+          style={{ background: '#16a34a', color: '#fff', fontWeight: 700, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+        >
+          <span>💬</span> WhatsApp
         </button>
         <button
           type="button"
@@ -6702,7 +6762,7 @@ export function OfficialQuotationDocument({
           onClick={handlePrint}
           style={{ flex: 1 }}
         >
-          🖨️ Print / Save
+          🖨️ Print
         </button>
       </div>
 

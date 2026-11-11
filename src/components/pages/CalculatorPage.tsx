@@ -385,6 +385,55 @@ export function CalculatorPage({
 
   const [status, setStatus] = useState<ProjectStatus>(project.status)
 
+  const [projectDescription, setProjectDescription] = useState<string>(project.summary?.description || (project as any).description || '')
+  const [projectNotes, setProjectNotes] = useState<string>(project.summary?.notes || '')
+  const [reminder, setReminder] = useState<{ date: string; note: string; dismissed?: boolean } | null>(project.summary?.reminder || null)
+  const [showReminderModal, setShowReminderModal] = useState(false)
+  const [reminderDateInput, setReminderDateInput] = useState<string>(() => {
+    if (project.summary?.reminder?.date) {
+      return project.summary.reminder.date.slice(0, 10)
+    }
+    const d = new Date()
+    d.setDate(d.getDate() + 2) // Default +2 days
+    return d.toISOString().slice(0, 10)
+  })
+  const [reminderNoteInput, setReminderNoteInput] = useState<string>(project.summary?.reminder?.note || 'Follow up with client on quotation')
+
+  const handleSaveReminder = (dateStr: string, noteStr: string) => {
+    const rem = {
+      date: new Date(dateStr).toISOString(),
+      note: noteStr.trim() || 'Follow up on quotation',
+      dismissed: false,
+    }
+    setReminder(rem)
+    setShowReminderModal(false)
+    try {
+      const stored = JSON.parse(localStorage.getItem('myriad_project_reminders') || '[]')
+      const filtered = stored.filter((r: any) => r.projectId !== project.id)
+      filtered.push({
+        projectId: project.id,
+        projectName: name || project.name,
+        clientName: project.summary?.client_info?.buyer_name || '',
+        date: rem.date,
+        note: rem.note,
+        orgId: org.id,
+      })
+      localStorage.setItem('myriad_project_reminders', JSON.stringify(filtered))
+    } catch {}
+    toast(`Reminder set for ${new Date(rem.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`, 'ok')
+  }
+
+  const handleClearReminder = () => {
+    setReminder(null)
+    setShowReminderModal(false)
+    try {
+      const stored = JSON.parse(localStorage.getItem('myriad_project_reminders') || '[]')
+      const filtered = stored.filter((r: any) => r.projectId !== project.id)
+      localStorage.setItem('myriad_project_reminders', JSON.stringify(filtered))
+    } catch {}
+    toast('Reminder removed', 'ok')
+  }
+
   const [overrides, setOverrides] = useState<Overrides>(() => sanitizeOverrides(project.inputs ?? {}))
 
   const [formulaOverrides, setFormulaOverrides] = useState<Record<string, string>>(project.formula_overrides ?? {})
@@ -1355,6 +1404,19 @@ export function CalculatorPage({
     return summarize(wb, profitPct, discountPct, includeInstallation, extraAmount)
   }, [overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, wbVersion])
 
+  const activeSysQty = Math.max(0, Number(systems[activeSystemIdx]?.quantity) || 0)
+
+  // Total Combined Bodies across ALL systems & sets (treats whole project as one job for transportation & accommodation)
+  // Formula: sum over each system of (singleSetBodies * sys.quantity)
+  const totalCombinedBodies = useMemo(() => {
+    return systems.reduce((acc, sys, idx) => {
+      const sysOv = idx === activeSystemIdx ? overrides : (sys.overrides || {})
+      const bodies = computeSystemTotalBodies(sys, sysOv, wb, idx === activeSystemIdx, actualSummary?.bodies)
+      const qty = Math.max(0, Number(sys.quantity) || 0)
+      return acc + (bodies * qty)
+    }, 0) || 1
+  }, [systems, activeSystemIdx, overrides, wb, actualSummary?.bodies])
+
   // Recalculate Cut-to-Cut summary live whenever inputs change
   const liveC2cSummary: Summary | null = useMemo(() => {
     if (!isAdminOrOwner) return null
@@ -1366,8 +1428,15 @@ export function CalculatorPage({
     const c2cOv = { ...filterCutToCutOverrides(overrides), ...c2cCustom }
     const labourPerBody = overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300)
     c2cOv['Total cal!B49'] = labourPerBody
-    if (overrides['Total cal!N24'] !== undefined) c2cOv['Total cal!N24'] = overrides['Total cal!N24']
-    if (overrides['Total cal!N25'] !== undefined) c2cOv['Total cal!N25'] = overrides['Total cal!N25']
+
+    const projectTrans = overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0)
+    const projectAccom = overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0)
+    const sysBodies = computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
+    const shareRatio = totalCombinedBodies > 0 ? (sysBodies / totalCombinedBodies) : 1
+    const qtyForDiv = activeSysQty > 0 ? activeSysQty : 1
+    c2cOv['Total cal!N24'] = (projectTrans * shareRatio) / qtyForDiv
+    c2cOv['Total cal!N25'] = (projectAccom * shareRatio) / qtyForDiv
+
     if (overrides['Total cal!N23'] !== undefined) c2cOv['Total cal!N23'] = overrides['Total cal!N23']
     c2cOv['__extra_amount'] = extraAmount
     c2cOv['__include_installation'] = includeInstallation ? 1 : 0
@@ -1378,7 +1447,7 @@ export function CalculatorPage({
       wb.setOverrides(overrides)
     }
     return res
-  }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, wbVersion, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides])
+  }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, wbVersion, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides, activeSysQty, totalCombinedBodies, actualSummary?.bodies, systems, activeSystemIdx])
 
   const [serverCalculating, setServerCalculating] = useState(false)
 
@@ -1397,18 +1466,7 @@ export function CalculatorPage({
     return null
   })
 
-  const activeSysQty = Math.max(1, Number(systems[activeSystemIdx]?.quantity) || 1)
 
-  // Total Combined Bodies across ALL systems & sets (treats whole project as one job for transportation & accommodation)
-  // Formula: sum over each system of (singleSetBodies * sys.quantity)
-  const totalCombinedBodies = useMemo(() => {
-    return systems.reduce((acc, sys, idx) => {
-      const sysOv = idx === activeSystemIdx ? overrides : (sys.overrides || {})
-      const bodies = computeSystemTotalBodies(sys, sysOv, wb, idx === activeSystemIdx, actualSummary?.bodies)
-      const qty = Math.max(1, Number(sys.quantity) || 1)
-      return acc + (bodies * qty)
-    }, 0) || 1
-  }, [systems, activeSystemIdx, overrides, wb, actualSummary?.bodies])
 
   // Authoritative totals from server calculate function, with profit margin applied on Direct Cost Base
   const summary: Summary = useMemo(() => {
@@ -1465,8 +1523,13 @@ export function CalculatorPage({
     const projectTrans = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
     const projectAcc = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
     const labourPerBody = (overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300))
-    const trans = (raw.transport && raw.transport > 0) ? raw.transport : projectTrans
-    const acc = (raw.accommodation && raw.accommodation > 0) ? raw.accommodation : projectAcc
+    const sysBodies = computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
+    const shareRatio = totalCombinedBodies > 0 ? (sysBodies / totalCombinedBodies) : 1
+    const qtyForDiv = activeSysQty > 0 ? activeSysQty : 1
+    const rawT = (raw.transport !== undefined && raw.transport > 0) ? raw.transport : (projectTrans * shareRatio)
+    const trans = (activeSysQty > 1 && rawT === projectTrans) ? (rawT / qtyForDiv) : rawT
+    const rawA = (raw.accommodation !== undefined && raw.accommodation > 0) ? raw.accommodation : (projectAcc * shareRatio)
+    const acc = (activeSysQty > 1 && rawA === projectAcc) ? (rawA / qtyForDiv) : rawA
     const systemBodies = raw.bodies || (raw.models?.reduce((acc: number, m: any) => acc + (m.bodies || 0), 0)) || 51
     const inst = includeInstallation ? (systemBodies * labourPerBody) : 0
     const extraTot = (raw.extraAmount ?? extraAmount ?? 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
@@ -1728,7 +1791,10 @@ export function CalculatorPage({
     )
   }, [name, status, quotationMode, systems, activeSystemIdx, wb, overrides, formulaOverrides, extraAmount, includeInstallation])
 
-  const dirty = currentSnapshot !== baseline
+  const dirty = currentSnapshot !== baseline ||
+    projectNotes !== (project.summary?.notes || '') ||
+    projectDescription !== (project.summary?.description || (project as any).description || '') ||
+    JSON.stringify(reminder || null) !== JSON.stringify(project.summary?.reminder || null)
 
   const changedInputsCount = Object.keys(overrides).filter((k) => !k.startsWith('__')).length
 
@@ -2084,6 +2150,10 @@ export function CalculatorPage({
         total_combined_bodies: quotationMode === 'unit_wise' ? (serverSummary.bodies || 36) * activeSysQty : serverTotalBodies,
         c2c_overrides: systems[activeSystemIdx]?.c2c_overrides || project.summary?.c2c_overrides,
         c2c_formula_overrides: systems[activeSystemIdx]?.c2c_formula_overrides || project.summary?.c2c_formula_overrides,
+
+        notes: projectNotes,
+        description: projectDescription,
+        reminder,
 
         profit_pct: profitPct,
 
@@ -2891,7 +2961,7 @@ export function CalculatorPage({
 
   const singleC2CRatio = singleC2CWeight > 0 ? singleC2CTotal / singleC2CWeight : 0
 
-  // Multi-system combined C2C metrics (System A + System B + System C + ...)
+  // Combined C2C metrics across all systems and quantities
   const allC2CProfit = (c2cAllSystemsTotals && allSystemsTotals)
     ? (allSystemsTotals.beforeGst - c2cAllSystemsTotals.costBase)
     : singleC2CProfit
@@ -2904,15 +2974,16 @@ export function CalculatorPage({
 
   const allC2CRatio = allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0
 
-  const c2cProfit = singleC2CProfit
-  const c2cTotal = singleC2CTotal
-  const c2cRatio = singleC2CRatio
-  const c2cTotalWeight = singleC2CWeight
+  const isMultiScope = activeSysQty > 1 || systems.length > 1
+  const c2cProfit = isMultiScope && allC2CProfit !== null ? allC2CProfit : singleC2CProfit
+  const c2cTotal = isMultiScope && allC2CTotal !== null ? allC2CTotal : singleC2CTotal
+  const c2cRatio = isMultiScope && allC2CRatio !== null ? allC2CRatio : singleC2CRatio
+  const c2cTotalWeight = isMultiScope && allC2CWeight !== null ? allC2CWeight : singleC2CWeight
 
-  // Top widget displays aggregate totals across all systems when systems.length > 1
-  const displayC2CProfit = systems.length > 1 ? allC2CProfit : singleC2CProfit
-  const displayC2CTotal = systems.length > 1 ? allC2CTotal : singleC2CTotal
-  const displayC2CRatio = systems.length > 1 ? allC2CRatio : singleC2CRatio
+  // Top widget displays aggregate totals across all systems/sets
+  const displayC2CProfit = isMultiScope ? allC2CProfit : singleC2CProfit
+  const displayC2CTotal = isMultiScope ? allC2CTotal : singleC2CTotal
+  const displayC2CRatio = isMultiScope ? allC2CRatio : singleC2CRatio
 
 
 
@@ -3071,6 +3142,28 @@ export function CalculatorPage({
                 </div>
               )}
 
+              <div className="top-desc-wrapper" style={{ flex: '1 1 150px', maxWidth: '240px', minWidth: '110px' }}>
+                <input
+                  type="text"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  placeholder="Scope / description…"
+                  disabled={isApprovedLocked}
+                  title="Project description / scope details (searchable in estimates)"
+                  style={{
+                    width: '100%',
+                    fontSize: '11px',
+                    padding: '2px 7px',
+                    borderRadius: '5px',
+                    border: '1px solid #cbd5e1',
+                    background: isApprovedLocked ? '#f8fafc' : '#ffffff',
+                    color: '#334155',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
               <div className="top-pills">
                 <select
                   className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
@@ -3159,6 +3252,14 @@ export function CalculatorPage({
                 </button>
                 <button className="top-toolbar-btn" onClick={() => setShowCopyModal(true)} title="Duplicate Project">
                   {Icon.copy} Copy
+                </button>
+                <button
+                  className="top-toolbar-btn"
+                  onClick={() => setShowReminderModal(true)}
+                  style={reminder && !reminder.dismissed ? { background: '#fef3c7', borderColor: '#f59e0b', color: '#92400e', fontWeight: 700 } : undefined}
+                  title={reminder && !reminder.dismissed ? `Reminder: ${reminder.note || 'Follow up'} (Due: ${new Date(reminder.date).toLocaleDateString()})` : 'Set a follow-up reminder for this quotation'}
+                >
+                  🔔 {reminder && !reminder.dismissed ? `${new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}` : 'Reminder'}
                 </button>
               </div>
 
@@ -3821,9 +3922,9 @@ export function CalculatorPage({
 
                 type="number"
 
-                min={1}
+                min={0}
 
-                value={systems[activeSystemIdx]?.quantity ?? 1}
+                value={systems[activeSystemIdx]?.quantity ?? 0}
 
                 onChange={(e) => {
                   const val = e.target.value
@@ -3832,13 +3933,13 @@ export function CalculatorPage({
                     return
                   }
                   const num = parseInt(val, 10)
-                  handleUpdateSystemMeta(activeSystemIdx, { quantity: isNaN(num) ? 1 : Math.max(1, num) })
+                  handleUpdateSystemMeta(activeSystemIdx, { quantity: isNaN(num) ? 0 : Math.max(0, num) })
                 }}
 
                 onBlur={() => {
                   const cur = systems[activeSystemIdx]?.quantity
-                  if (!cur || isNaN(Number(cur)) || Number(cur) < 1) {
-                    handleUpdateSystemMeta(activeSystemIdx, { quantity: 1 })
+                  if (cur === '' || cur === undefined || isNaN(Number(cur)) || Number(cur) < 0) {
+                    handleUpdateSystemMeta(activeSystemIdx, { quantity: 0 })
                   }
                 }}
 
@@ -4666,6 +4767,24 @@ export function CalculatorPage({
 
             </div>
 
+          </div>
+
+          {/* Client Instructions & Project Notes */}
+          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '5px', margin: 0 }}>
+                <span>📝 Client Instructions &amp; Project Notes</span>
+              </label>
+              <span className="tiny text-muted" style={{ fontSize: '10px' }}>Saved with quotation</span>
+            </div>
+            <textarea
+              value={projectNotes}
+              disabled={isApprovedLocked}
+              onChange={(e) => setProjectNotes(e.target.value)}
+              placeholder="Write client instructions, special requirements, delivery timeline, site contact, RAL shades, or anything discussed with client…"
+              rows={3}
+              style={{ width: '100%', fontSize: '11.5px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #cbd5e1', background: isApprovedLocked ? '#f8fafc' : '#ffffff', color: '#1e293b', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: 1.4 }}
+            />
           </div>
 
         </div>
@@ -5912,6 +6031,111 @@ export function CalculatorPage({
       )}
 
 
+
+      {/* Quotation Reminder Modal */}
+      {showReminderModal && (
+        <div className="overlay" onMouseDown={() => setShowReminderModal(false)}>
+          <div className="dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="dialog-header">
+              <div className="avatar md" style={{ background: '#fef3c7', color: '#b45309', fontWeight: 800 }}>🔔</div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Follow-up Reminder</h3>
+                <p className="tiny muted" style={{ margin: 0 }}>Schedule an alert popup on software launch</p>
+              </div>
+            </div>
+            <div className="dialog-body" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label className="tiny font-bold text-muted" style={{ display: 'block', marginBottom: 6 }}>
+                  QUICK PRESETS
+                </label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[
+                    { label: '+1 Day', days: 1 },
+                    { label: '+2 Days', days: 2 },
+                    { label: '+3 Days', days: 3 },
+                    { label: '+1 Week', days: 7 },
+                    { label: '+2 Weeks', days: 14 },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                      onClick={() => {
+                        const d = new Date()
+                        d.setDate(d.getDate() + p.days)
+                        setReminderDateInput(d.toISOString().slice(0, 10))
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="tiny font-bold text-muted" style={{ display: 'block', marginBottom: 4 }}>
+                  REMINDER DATE
+                </label>
+                <input
+                  type="date"
+                  value={reminderDateInput}
+                  onChange={(e) => setReminderDateInput(e.target.value)}
+                  style={{ width: '100%', padding: '7px 9px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6 }}
+                />
+              </div>
+
+              <div>
+                <label className="tiny font-bold text-muted" style={{ display: 'block', marginBottom: 4 }}>
+                  NOTE / ACTION ITEM
+                </label>
+                <input
+                  type="text"
+                  value={reminderNoteInput}
+                  onChange={(e) => setReminderNoteInput(e.target.value)}
+                  placeholder="e.g. Call client for PO confirmation"
+                  style={{ width: '100%', padding: '7px 9px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6 }}
+                />
+              </div>
+
+              {reminder && !reminder.dismissed && (
+                <div style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: 6, border: '1px solid #a7f3d0', fontSize: 12, color: '#065f46' }}>
+                  Active Reminder: <strong>{new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</strong> — "{reminder.note}"
+                </div>
+              )}
+            </div>
+            <div className="dialog-footer" style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+              <div>
+                {reminder && (
+                  <button
+                    type="button"
+                    className="btn ghost sm text-danger"
+                    onClick={handleClearReminder}
+                  >
+                    Clear Reminder
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setShowReminderModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn primary sm"
+                  onClick={() => handleSaveReminder(reminderDateInput, reminderNoteInput)}
+                >
+                  Save Reminder
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Unsaved Leave Guard Modal */}
       {showUnsavedLeaveModal && (

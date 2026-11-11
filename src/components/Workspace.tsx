@@ -98,6 +98,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   }, [tab, calculatorDirty, toast])
 
   const [projects, setProjects] = useState<Project[]>([])
+  const [dueReminders, setDueReminders] = useState<Project[]>([])
+  const [showDueReminderModal, setShowDueReminderModal] = useState(false)
+  const hasCheckedDueRemindersRef = useRef(false)
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [navOpen, setNavOpen] = useState(false)
@@ -223,6 +226,23 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       const list = Array.isArray(res) ? res : []
       setProjects(list)
 
+      // Alert pop-up on software launch for due reminders
+      if (!hasCheckedDueRemindersRef.current) {
+        hasCheckedDueRemindersRef.current = true
+        const endOfToday = new Date()
+        endOfToday.setHours(23, 59, 59, 999)
+        const due = list.filter((p) => {
+          const rem = p.summary?.reminder
+          if (!rem || rem.dismissed) return false
+          const remTime = new Date(rem.date).getTime()
+          return !isNaN(remTime) && remTime <= endOfToday.getTime()
+        })
+        if (due.length > 0) {
+          setDueReminders(due)
+          setShowDueReminderModal(true)
+        }
+      }
+
       if (selectId) {
         const found = list.find((p) => p.id === selectId)
         if (found) setCurrentProject(found)
@@ -271,6 +291,67 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       setNavOpen(false)
     } catch (e) {
       toast((e as Error).message, 'err')
+    }
+  }
+
+  const handleSnoozeReminder = async (p: Project, days = 1) => {
+    try {
+      const nextDate = new Date()
+      nextDate.setDate(nextDate.getDate() + days)
+      const updatedReminder = {
+        ...(p.summary?.reminder || { note: 'Follow up' }),
+        date: nextDate.toISOString(),
+        dismissed: false,
+      }
+      const updatedSummary = {
+        ...p.summary,
+        reminder: updatedReminder,
+      }
+      await api.projectUpdate(
+        session.token,
+        p.id,
+        p.name,
+        p.status,
+        p.inputs,
+        p.formula_overrides,
+        p.total,
+        updatedSummary,
+        'Snooze reminder',
+      )
+      setDueReminders((prev) => prev.filter((item) => item.id !== p.id))
+      setProjects((prev) => prev.map((item) => item.id === p.id ? { ...item, summary: updatedSummary } : item))
+      toast(`Snoozed for ${days} day(s)`, 'ok')
+    } catch (e: any) {
+      toast(e.message, 'err')
+    }
+  }
+
+  const handleDismissReminder = async (p: Project) => {
+    try {
+      const updatedReminder = {
+        ...(p.summary?.reminder || { note: 'Follow up', date: new Date().toISOString() }),
+        dismissed: true,
+      }
+      const updatedSummary = {
+        ...p.summary,
+        reminder: updatedReminder,
+      }
+      await api.projectUpdate(
+        session.token,
+        p.id,
+        p.name,
+        p.status,
+        p.inputs,
+        p.formula_overrides,
+        p.total,
+        updatedSummary,
+        'Dismiss reminder',
+      )
+      setDueReminders((prev) => prev.filter((item) => item.id !== p.id))
+      setProjects((prev) => prev.map((item) => item.id === p.id ? { ...item, summary: updatedSummary } : item))
+      toast('Reminder dismissed', 'ok')
+    } catch (e: any) {
+      toast(e.message, 'err')
     }
   }
 
@@ -1594,6 +1675,114 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           </div>
         </div>
       )}
+      {/* Software Launch Due Reminder Modal */}
+      {showDueReminderModal && dueReminders.length > 0 && (
+        <div className="overlay" onMouseDown={() => setShowDueReminderModal(false)}>
+          <div className="dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+            <div className="dialog-header">
+              <div className="avatar md" style={{ background: '#fef3c7', color: '#b45309', fontWeight: 800 }}>🔔</div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Follow-up Reminders Due</h3>
+                <p className="tiny muted" style={{ margin: 0 }}>You have {dueReminders.length} quotation reminder(s) scheduled for today or earlier</p>
+              </div>
+            </div>
+            <div className="dialog-body" style={{ maxHeight: '360px', overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {dueReminders.map((p) => {
+                const clientName = p.summary?.client_info?.buyer_name || ''
+                const qtnNo = p.summary?.client_info?.qtn_no || ''
+                const rem = p.summary?.reminder
+                const isOverdue = rem && new Date(rem.date).getTime() < new Date().setHours(0, 0, 0, 0)
+
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 8,
+                      padding: '10px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>{p.name}</strong>
+                        {qtnNo && <span className="tiny font-mono text-muted" style={{ marginLeft: 6, fontSize: '10.5px' }}>({qtnNo})</span>}
+                        {clientName && (
+                          <div style={{ fontSize: '11.5px', color: '#475569', marginTop: 1 }}>
+                            🏢 {clientName}
+                          </div>
+                        )}
+                      </div>
+                      <span
+                        className="chip sm"
+                        style={{
+                          background: isOverdue ? '#fee2e2' : '#fef3c7',
+                          color: isOverdue ? '#b91c1c' : '#92400e',
+                          fontWeight: 700,
+                          fontSize: '10px',
+                        }}
+                      >
+                        {isOverdue ? 'Overdue' : 'Due Today'}
+                      </span>
+                    </div>
+
+                    {rem?.note && (
+                      <div style={{ fontSize: '12px', color: '#334155', background: '#ffffff', padding: '5px 8px', borderRadius: 4, border: '1px solid #f1f5f9' }}>
+                        📌 <em>{rem.note}</em>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        style={{ fontSize: '11px', padding: '3px 8px' }}
+                        onClick={() => handleSnoozeReminder(p, 1)}
+                        title="Remind me again tomorrow"
+                      >
+                        ⏰ Snooze (+1d)
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        style={{ fontSize: '11px', padding: '3px 8px', color: '#64748b' }}
+                        onClick={() => handleDismissReminder(p)}
+                        title="Mark reminder as completed/dismissed"
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        className="btn primary sm"
+                        style={{ fontSize: '11px', padding: '3px 10px' }}
+                        onClick={() => {
+                          setShowDueReminderModal(false)
+                          handleOpenProject(p.id)
+                        }}
+                      >
+                        Open Quotation →
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="dialog-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 18px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setShowDueReminderModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
           {showWorkspaceUnsavedModal && (
         <div className="overlay" onMouseDown={() => setShowWorkspaceUnsavedModal(false)}>
           <div className="dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>

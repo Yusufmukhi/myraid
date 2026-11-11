@@ -24,6 +24,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [searchType, setSearchType] = useState<'all' | 'qtn' | 'client' | 'description'>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'mine' | 'shared'>(initialScope || 'all')
   const [showArchived, setShowArchived] = useState(false)
@@ -202,8 +203,43 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         }
         if (search.trim()) {
           const q = search.toLowerCase().trim()
-          // 1. Direct project name, creator, id, status
+          const clientInfo = p.summary?.client_info
+          const clientName = (clientInfo?.buyer_name || '').toLowerCase()
+          const qtnNo = (clientInfo?.qtn_no || '').toLowerCase()
+          const desc = ((p.summary?.description || (p as any).description || '') + ' ' + (p.summary?.notes || '')).toLowerCase()
+
+          if (searchType === 'qtn') {
+            if (p.name.toLowerCase().includes(q)) return true
+            if (qtnNo.includes(q)) return true
+            if (p.id && p.id.toLowerCase().includes(q)) return true
+            return false
+          }
+
+          if (searchType === 'client') {
+            if (clientName.includes(q)) return true
+            if (clientInfo) {
+              if ((clientInfo.buyer_city || '').toLowerCase().includes(q)) return true
+              if ((clientInfo.buyer_contact || '').toLowerCase().includes(q)) return true
+              if (Array.isArray(clientInfo.contacts)) {
+                for (const c of clientInfo.contacts) {
+                  if ((c.name || '').toLowerCase().includes(q)) return true
+                  if ((c.phone || '').toLowerCase().includes(q)) return true
+                }
+              }
+            }
+            return false
+          }
+
+          if (searchType === 'description') {
+            if (desc.includes(q)) return true
+            return false
+          }
+
+          // searchType === 'all' (Default)
+          // 1. Direct project name, creator, id, status, qtn_no, description, notes
           if (p.name.toLowerCase().includes(q)) return true
+          if (qtnNo.includes(q)) return true
+          if (desc.includes(q)) return true
           if (p.created_by && p.created_by.toLowerCase().includes(q)) return true
           if (p.id && p.id.toLowerCase().includes(q)) return true
           if (p.status && p.status.toLowerCase().includes(q)) return true
@@ -215,9 +251,8 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           if (tot.toLocaleString('en-IN').toLowerCase().includes(q)) return true
 
           // 3. Client info, address, city, state, pin, GST, email, contacts, custom rows
-          const clientInfo = p.summary?.client_info
           if (clientInfo) {
-            if ((clientInfo.buyer_name || '').toLowerCase().includes(q)) return true
+            if (clientName.includes(q)) return true
             if ((clientInfo.buyer_address || '').toLowerCase().includes(q)) return true
             if ((clientInfo.buyer_city || '').toLowerCase().includes(q)) return true
             if ((clientInfo.buyer_state || '').toLowerCase().includes(q)) return true
@@ -269,7 +304,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         else cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
         return sortAsc ? cmp : -cmp
       })
-  }, [projects, isAdminOrOwner, session.username, session.user_id, scopeFilter, search, statusFilter, showArchived, sortBy, sortAsc])
+  }, [projects, isAdminOrOwner, session.username, session.user_id, scopeFilter, search, searchType, statusFilter, showArchived, sortBy, sortAsc])
 
   // Group filtered projects into Project Folders
   const projectFolders = useMemo(() => {
@@ -587,6 +622,15 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
               ) : null}
               {isSelected && <span className="chip ok">Current</span>}
               {p.is_archived && <span className="chip muted-chip">Archived</span>}
+              {p.summary?.reminder && !p.summary.reminder.dismissed && (
+                <span
+                  className="chip warning sm"
+                  style={{ fontSize: '10px', padding: '1px 5px', gap: '3px', fontWeight: 600 }}
+                  title={`Reminder: ${p.summary.reminder.note || 'Follow up'} (Due: ${new Date(p.summary.reminder.date).toLocaleDateString()})`}
+                >
+                  🔔 {new Date(p.summary.reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                </span>
+              )}
               {(() => {
                 const shared = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
                 const isSharedToMe =
@@ -611,6 +655,11 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                 return null
               })()}
             </div>
+            {Boolean(p.summary?.description || (p as any).description) && (
+              <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', maxWidth: '380px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {p.summary?.description || (p as any).description}
+              </div>
+            )}
           </div>
         </td>
         <td>
@@ -777,12 +826,44 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
 
       {/* Filter and Search Bar */}
       <div className="card filter-bar">
-        <div className="search-wrap">
+        <div className="search-wrap" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <select
+            value={searchType}
+            onChange={(e) => setSearchType(e.target.value as any)}
+            className="search-type-select"
+            title="Filter search by specific field"
+            style={{
+              height: '32px',
+              border: '1px solid #cbd5e1',
+              borderRadius: '6px',
+              background: '#f8fafc',
+              fontSize: '11.5px',
+              fontWeight: 600,
+              color: '#334155',
+              padding: '0 8px',
+              cursor: 'pointer',
+              outline: 'none',
+              flexShrink: 0,
+            }}
+          >
+            <option value="all">All Fields</option>
+            <option value="qtn">Quotation / Project #</option>
+            <option value="client">Client Name</option>
+            <option value="description">Description &amp; Notes</option>
+          </select>
           <span className="search-icon">{Icon.search}</span>
           <input
             type="text"
             className="search-input"
-            placeholder="Search estimates by client, city, address, quotation #, amount, specs…"
+            placeholder={
+              searchType === 'qtn'
+                ? 'Search by quotation #, project name…'
+                : searchType === 'client'
+                ? 'Search by client / buyer name, phone…'
+                : searchType === 'description'
+                ? 'Search by description, scope, notes…'
+                : 'Search estimates by client, quotation #, amount, specs…'
+            }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
