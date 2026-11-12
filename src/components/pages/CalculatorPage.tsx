@@ -1447,8 +1447,8 @@ export function CalculatorPage({
     const sysBodies = computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
     const shareRatio = totalCombinedBodies > 0 ? (sysBodies / totalCombinedBodies) : 1
     const qtyForDiv = activeSysQty > 0 ? activeSysQty : 1
-    c2cOv['Total cal!N24'] = (projectTrans * shareRatio) / qtyForDiv
-    c2cOv['Total cal!N25'] = (projectAccom * shareRatio) / qtyForDiv
+    c2cOv['Total cal!N24'] = projectTrans * shareRatio
+    c2cOv['Total cal!N25'] = projectAccom * shareRatio
 
     if (overrides['Total cal!N23'] !== undefined) c2cOv['Total cal!N23'] = overrides['Total cal!N23']
     c2cOv['__extra_amount'] = extraAmount
