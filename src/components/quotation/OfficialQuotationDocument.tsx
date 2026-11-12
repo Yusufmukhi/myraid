@@ -1972,12 +1972,6 @@ export function OfficialQuotationDocument({
     if (project.summary?.include_full_proposal !== undefined) {
       return Boolean(project.summary.include_full_proposal)
     }
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const savedPref = localStorage.getItem('examcalc_default_include_5_page_proposal')
-      if (savedPref !== null) {
-        return savedPref === 'true'
-      }
-    }
     return true
   })
 
@@ -5265,13 +5259,7 @@ export function OfficialQuotationDocument({
                         type="checkbox"
                         checked={includeFullProposal}
                         onChange={(e) => {
-                          const val = e.target.checked
-                          setIncludeFullProposal(val)
-                          if (typeof window !== 'undefined' && window.localStorage) {
-                            try {
-                              localStorage.setItem('examcalc_default_include_5_page_proposal', String(val))
-                            } catch {}
-                          }
+                          setIncludeFullProposal(e.target.checked)
                         }}
                       />
                       <span style={{ fontSize: '12px' }}>Include Full 5-Page Technical Proposal</span>

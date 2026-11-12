@@ -420,7 +420,7 @@ export function CalculatorPage({
   })
   const [reminderNoteInput, setReminderNoteInput] = useState<string>(project.summary?.reminder?.note || 'Follow up with client on quotation')
 
-  const handleSaveReminder = (dateTimeStr: string, noteStr: string) => {
+  const handleSaveReminder = async (dateTimeStr: string, noteStr: string) => {
     const rem = {
       date: new Date(dateTimeStr).toISOString(),
       note: noteStr.trim() || 'Follow up on quotation',
@@ -428,33 +428,67 @@ export function CalculatorPage({
     }
     setReminder(rem)
     setShowReminderModal(false)
+
+    const updatedSummary = {
+      ...(project.summary || {}),
+      reminder: rem,
+    }
+
     try {
-      const stored = JSON.parse(localStorage.getItem('myriad_project_reminders') || '[]')
-      const filtered = stored.filter((r: any) => r.projectId !== project.id)
-      filtered.push({
-        projectId: project.id,
-        projectName: name || project.name,
-        clientName: project.summary?.client_info?.buyer_name || '',
-        date: rem.date,
-        note: rem.note,
-        orgId: org.id,
+      await api.projectUpdate(
+        session.token,
+        project.id,
+        name || project.name,
+        status || project.status,
+        project.inputs,
+        project.formula_overrides,
+        project.total,
+        updatedSummary,
+        'Set follow-up alarm reminder'
+      )
+      onProjectUpdated({
+        ...project,
+        summary: updatedSummary,
       })
-      localStorage.setItem('myriad_project_reminders', JSON.stringify(filtered))
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to sync reminder to database:', e)
+    }
+
     const remDate = new Date(rem.date)
     const dateFormatted = remDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
     const timeFormatted = remDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     toast(`⏰ Alarm reminder set for ${dateFormatted} at ${timeFormatted}`, 'ok')
   }
 
-  const handleClearReminder = () => {
+  const handleClearReminder = async () => {
     setReminder(null)
     setShowReminderModal(false)
+
+    const updatedSummary = {
+      ...(project.summary || {}),
+      reminder: null,
+    }
+
     try {
-      const stored = JSON.parse(localStorage.getItem('myriad_project_reminders') || '[]')
-      const filtered = stored.filter((r: any) => r.projectId !== project.id)
-      localStorage.setItem('myriad_project_reminders', JSON.stringify(filtered))
-    } catch {}
+      await api.projectUpdate(
+        session.token,
+        project.id,
+        name || project.name,
+        status || project.status,
+        project.inputs,
+        project.formula_overrides,
+        project.total,
+        updatedSummary,
+        'Cleared follow-up reminder'
+      )
+      onProjectUpdated({
+        ...project,
+        summary: updatedSummary,
+      })
+    } catch (e) {
+      console.warn('Failed to clear reminder from database:', e)
+    }
+
     toast('Reminder removed', 'ok')
   }
 
