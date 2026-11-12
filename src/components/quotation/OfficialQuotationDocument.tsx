@@ -3118,6 +3118,31 @@ export function OfficialQuotationDocument({
                             <strong>Email: </strong>{emailVal}
                           </div>
                         ) : null}
+                        {/* Additional contacts rendered uniformly with Kind Att and Contact No */}
+                        {clientInfo.show_buyer_contact !== false && Array.isArray(clientInfo.contacts) && (
+                          clientInfo.contacts
+                            .filter((cp) => cp && cp.visible !== false && (cp.name?.trim() || cp.phone?.trim()))
+                            .filter((cp) => !(cp.name?.trim().toLowerCase() === kindAttVal.toLowerCase() && cp.phone?.trim() === contactVal))
+                            .map((cp) => (
+                              <React.Fragment key={cp.id || `${cp.name}-${cp.phone}`}>
+                                {cp.name?.trim() ? (
+                                  <div className="pdf-buyer-kind-att">
+                                    <strong>Kind Att : </strong>{cp.name.trim()}
+                                  </div>
+                                ) : null}
+                                {cp.phone?.trim() ? (
+                                  <div className="pdf-buyer-contact">
+                                    <strong>Contact No: </strong>{cp.phone.trim()}
+                                  </div>
+                                ) : null}
+                                {cp.email?.trim() ? (
+                                  <div className="pdf-buyer-email">
+                                    <strong>Email: </strong>{cp.email.trim()}
+                                  </div>
+                                ) : null}
+                              </React.Fragment>
+                            ))
+                        )}
                       </>
                     )
                   })()}
@@ -6377,25 +6402,25 @@ export function OfficialQuotationDocument({
                     </div>
                   </div>
 
-                  {/* Additional Contacts: simple flat inputs */}
+                  {/* Additional Contacts: simple flat inputs with Show on PDF control */}
                   {(clientInfo.contacts || []).map((cp, idx) => (
                     <div
                       key={cp.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '1fr 1fr auto',
+                        gridTemplateColumns: '1fr 1fr auto auto',
                         gap: '8px',
                         alignItems: 'flex-end',
                       }}
                     >
                       <div>
                         <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '2px' }}>
-                          Contact Person Name
+                          Kind Attention (Name)
                         </label>
                         <input
                           type="text"
-                          className="option-input-field"
-                          placeholder="e.g. xyz"
+                          className="option-input-field font-bold"
+                          placeholder="e.g. A Dileep"
                           value={cp.name}
                           onChange={(e) => {
                             const next = (clientInfo.contacts || []).map((c, i) =>
@@ -6408,12 +6433,12 @@ export function OfficialQuotationDocument({
                       </div>
                       <div>
                         <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '2px' }}>
-                          Mobile Number
+                          Contact Number
                         </label>
                         <input
                           type="text"
                           className="option-input-field"
-                          placeholder="e.g. 123"
+                          placeholder="e.g. 98492 61819"
                           value={cp.phone}
                           onChange={(e) => {
                             const next = (clientInfo.contacts || []).map((c, i) =>
@@ -6424,6 +6449,31 @@ export function OfficialQuotationDocument({
                           style={{ height: '34px', padding: '0 8px', width: '100%' }}
                         />
                       </div>
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          height: '34px',
+                          color: '#475569',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={cp.visible !== false}
+                          onChange={(e) => {
+                            const next = (clientInfo.contacts || []).map((c, i) =>
+                              i === idx ? { ...c, visible: e.target.checked } : c
+                            )
+                            setClientInfo({ ...clientInfo, contacts: next })
+                          }}
+                        />
+                        <span>Show on PDF</span>
+                      </label>
                       <button
                         type="button"
                         className="btn ghost xs"

@@ -1970,7 +1970,7 @@ export function CalculatorPage({
 
       let serverSummary = summary
 
-      let serverTotal = summary.sales
+      let serverTotal = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
 
       let serverCleanedOverrides = cleaned
 
@@ -2036,7 +2036,9 @@ export function CalculatorPage({
             gst: g,
             sales: s,
           }
-          serverTotal = systems.length > 1 ? (serverResult.computed_total ?? s) : s
+          serverTotal = systems.length > 1
+            ? (allSystemsTotals.sales || Math.round((serverResult.computed_total ?? s) * 1.18))
+            : s
           serverCleanedOverrides = serverResult.cleaned_overrides ?? cleaned
           serverSystems = serverResult.systems || []
           serverTotalBodies = serverResult.total_combined_bodies || totalCombinedBodies

@@ -811,25 +811,25 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               </div>
             </div>
 
-            {/* Additional Contacts: simple inputs, label up, value down */}
+            {/* Additional Contacts: simple inputs, label up, value down with Show on PDF */}
             {formData.contacts.map((cp, idx) => (
               <div
                 key={cp.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr auto',
+                  gridTemplateColumns: '1fr 1fr auto auto',
                   gap: '8px',
                   alignItems: 'flex-end',
                 }}
               >
                 <div>
                   <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
-                    Contact Person Name
+                    Kind Attention (Name)
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. xyz"
-                    className="option-input-field"
+                    placeholder="e.g. A Dileep"
+                    className="option-input-field font-bold"
                     value={cp.name}
                     onChange={(e) => handleUpdateContact(idx, 'name', e.target.value)}
                     style={{ height: '34px', padding: '0 8px', width: '100%' }}
@@ -837,17 +837,42 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                 </div>
                 <div>
                   <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
-                    Mobile Number
+                    Contact Number
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. 123"
+                    placeholder="e.g. 98492 61819"
                     className="option-input-field"
                     value={cp.phone}
                     onChange={(e) => handleUpdateContact(idx, 'phone', e.target.value)}
                     style={{ height: '34px', padding: '0 8px', width: '100%' }}
                   />
                 </div>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    height: '34px',
+                    color: '#475569',
+                    fontWeight: 600,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={cp.visible !== false}
+                    onChange={(e) => {
+                      const next = formData.contacts.map((c, i) =>
+                        i === idx ? { ...c, visible: e.target.checked } : c
+                      )
+                      setFormData({ ...formData, contacts: next })
+                    }}
+                  />
+                  <span>Show on PDF</span>
+                </label>
                 <button
                   type="button"
                   className="btn ghost xs"

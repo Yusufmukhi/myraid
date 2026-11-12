@@ -755,7 +755,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           systems: summary.systems || undefined,
           calculated_on_server: true,
         }
-        const serverTotal = calcRes.computed_total ?? calcRes.summary.sales
+        const serverTotal = (cleanSystems && cleanSystems.length > 1)
+          ? (calcRes.summary.sales || (calcRes.computed_total ? Math.round(calcRes.computed_total * 1.18) : 0))
+          : (calcRes.computed_total ?? calcRes.summary.sales)
 
         await api.projectUpdate(
           session.token,

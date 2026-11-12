@@ -12,6 +12,7 @@ export interface ClientContactPerson {
   phone: string
   email?: string
   designation?: string
+  visible?: boolean
 }
 
 export interface QuotationExtraField {
