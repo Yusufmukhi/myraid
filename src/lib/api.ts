@@ -225,8 +225,12 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   if (!client) throw new Error('Database is not configured.')
   const { data, error } = await client.rpc(fn, args)
   if (error) {
-    if (/Could not find the function|schema cache/i.test(error.message))
+    if (/Could not find the function|schema cache/i.test(error.message)) {
+      if (fn === 'org_admin_change_member_password') {
+        throw new Error('Database function missing. Please run supabase/patch_admin_password_and_access.sql in your Supabase SQL editor to enable Admin Password Reset.')
+      }
       throw new Error('Database tables are missing or schema outdated. Run supabase/schema.sql in Supabase SQL editor.')
+    }
     throw new Error(error.message)
   }
   return data as T
