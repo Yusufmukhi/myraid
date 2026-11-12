@@ -2749,7 +2749,11 @@ export function CalculatorPage({
   const isApprovedLocked = status === 'won' || status === 'approved'
   const isSharedLocked = Boolean(project.summary?.shared_locked || project.summary?.locked_after_share || (status as string) === 'shared')
   const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
-  const [isEditingMode, setIsEditingMode] = useState<boolean>(false)
+  const [isEditingMode, setIsEditingMode] = useState<boolean>(() => Boolean(isAdminOrOwner))
+
+  useEffect(() => {
+    setIsEditingMode(Boolean(isAdminOrOwner))
+  }, [isAdminOrOwner])
 
   const handleToggleEditing = () => {
     if (isApprovedLocked) {
