@@ -39,7 +39,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [showArchived, setShowArchived] = useState(false)
   const [sortBy, setSortBy] = useState<SortField>('updated_at')
   const [sortAsc, setSortAsc] = useState(false)
-  const [viewMode, setViewMode] = useState<'folders' | 'flat'>('folders')
+  const [viewMode, setViewMode] = useState<'folders' | 'flat' | 'pipeline'>('folders')
   // By default, all folders are closed (collapsed) until clicked
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({})
 
@@ -234,6 +234,11 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         const isNegotiating = p.status === 'negotiating'
         const isQuoted = p.status === 'quoted' || (!isLoss && !isWon && !isNegotiating)
 
+        // Pipeline board view shows all non-archived projects across stages
+        if (viewMode === 'pipeline') {
+          if (!showArchived && p.is_archived) return false
+          return true
+        }
         if (statusFilter === 'all') {
           // When actively searching, search across ALL projects regardless of status!
           // Only filter out won/loss if NOT actively searching (clean pipeline view)
@@ -474,6 +479,73 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
       return sortAsc ? cmp : -cmp
     })
   }, [filteredProjects, currentProjectId, sortBy, sortAsc])
+  // Sales Pipeline Kanban Board States & Data
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null)
+
+  const PIPELINE_COLUMNS: { id: ProjectStatus; title: string; color: string; icon: string; bg: string; border: string }[] = [
+    { id: 'draft', title: 'Draft / Preparation', color: '#475569', icon: '📝', bg: '#f8fafc', border: '#cbd5e1' },
+    { id: 'quoted', title: 'Quotation Sent', color: '#1d4ed8', icon: '📤', bg: '#eff6ff', border: '#93c5fd' },
+    { id: 'negotiating', title: 'Negotiating / Review', color: '#b45309', icon: '🤝', bg: '#fffbeb', border: '#fcd34d' },
+    { id: 'won', title: 'Won / PO Received', color: '#15803d', icon: '🎉', bg: '#f0fdf4', border: '#86efac' },
+    { id: 'loss', title: 'Lost / Closed', color: '#b91c1c', icon: '✕', bg: '#fef2f2', border: '#fca5a5' },
+  ]
+
+  const pipelineData = useMemo(() => {
+    const groups: Record<string, Project[]> = {
+      draft: [],
+      quoted: [],
+      negotiating: [],
+      won: [],
+      loss: [],
+    }
+    for (const p of filteredProjects) {
+      if (p.is_archived || p.status === 'loss' || p.status === 'lost' || p.status === 'archived') {
+        groups.loss.push(p)
+      } else if (p.status === 'won' || p.status === 'approved') {
+        groups.won.push(p)
+      } else if (p.status === 'negotiating') {
+        groups.negotiating.push(p)
+      } else if (p.status === 'draft') {
+        groups.draft.push(p)
+      } else {
+        groups.quoted.push(p)
+      }
+    }
+    const totals = {
+      draft: groups.draft.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+      quoted: groups.quoted.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+      negotiating: groups.negotiating.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+      won: groups.won.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+      loss: groups.loss.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+    }
+    const activePipelineTotal = totals.draft + totals.quoted + totals.negotiating
+    return { groups, totals, activePipelineTotal }
+  }, [filteredProjects])
+
+  const handleUpdateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
+    const target = projects.find((p) => p.id === projectId)
+    if (!target) return
+    if (target.status === newStatus) return
+    try {
+      await api.projectUpdate(
+        session.token,
+        target.id,
+        target.name,
+        newStatus,
+        target.inputs,
+        target.formula_overrides,
+        target.total,
+        target.summary,
+        `Quotation status moved to ${newStatus}`
+      )
+      toast(`Quotation moved to ${newStatus.toUpperCase()}`)
+      loadProjects()
+      onProjectsChanged?.()
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    }
+  }
 
   // Selection helpers
   const allVisibleSelected = useMemo(() => {
@@ -978,6 +1050,13 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             >
               <span className="file-icon">{Icon.fileText}</span> All Files ({filteredProjects.length})
             </button>
+            <button
+              className={'view-mode-btn ' + (viewMode === 'pipeline' ? 'active' : '')}
+              onClick={() => setViewMode('pipeline')}
+              title="Sales Pipeline Funnel Kanban Board"
+            >
+              <span style={{ fontSize: 13 }}>📋</span> Pipeline ({filteredProjects.length})
+            </button>
           </div>
           {viewMode === 'folders' && projectFolders.length > 0 && (
             <div className="row gap" style={{ marginLeft: 4 }}>
@@ -1347,6 +1426,203 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                 {Icon.plus} Create First Project
               </button>
             )}
+          </div>
+        ) : viewMode === 'pipeline' ? (
+          <div>
+            {/* Pipeline Funnel Header */}
+            <div
+              style={{
+                padding: '12px 16px',
+                background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <div>
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Active Pipeline Value
+                  </span>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af' }}>
+                    {inr(Math.round(pipelineData.activePipelineTotal))}
+                  </div>
+                </div>
+                <div style={{ width: '1px', height: '28px', background: '#cbd5e1' }} />
+                <div>
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Won Deals Total
+                  </span>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a' }}>
+                    {inr(Math.round(pipelineData.totals.won))}
+                  </div>
+                </div>
+                <div style={{ width: '1px', height: '28px', background: '#cbd5e1' }} />
+                <div>
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Total Opportunities
+                  </span>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
+                    {filteredProjects.length} Deals
+                  </div>
+                </div>
+              </div>
+              <div className="tiny text-muted" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>💡 Drag &amp; drop cards between columns or use the stage selector to advance deals</span>
+              </div>
+            </div>
+
+            {/* 5-Column Pipeline Kanban */}
+            <div className="pipeline-board-container">
+              {PIPELINE_COLUMNS.map((col) => {
+                const colProjects = pipelineData.groups[col.id] || []
+                const colTotal = pipelineData.totals[col.id as keyof typeof pipelineData.totals] || 0
+                const isDragOver = dragOverColumn === col.id
+
+                return (
+                  <div
+                    key={col.id}
+                    className={'pipeline-column ' + (isDragOver ? 'drag-over' : '')}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (dragOverColumn !== col.id) setDragOverColumn(col.id)
+                    }}
+                    onDragLeave={(e) => {
+                      if (dragOverColumn === col.id) setDragOverColumn(null)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setDragOverColumn(null)
+                      const pId = e.dataTransfer.getData('text/plain') || draggedProjectId
+                      if (pId) handleUpdateProjectStatus(pId, col.id)
+                      setDraggedProjectId(null)
+                    }}
+                  >
+                    {/* Column Header */}
+                    <div className="pipeline-column-header">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{col.icon}</span>
+                          <strong style={{ fontSize: '12.5px', color: col.color }}>{col.title}</strong>
+                        </div>
+                        <span
+                          className="chip sm font-bold"
+                          style={{
+                            fontSize: '10px',
+                            background: col.bg,
+                            color: col.color,
+                            borderColor: col.border,
+                          }}
+                        >
+                          {colProjects.length}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#047857' }}>
+                        {inr(Math.round(colTotal))}
+                      </div>
+                    </div>
+
+                    {/* Column Cards */}
+                    <div className="pipeline-cards-list">
+                      {colProjects.length === 0 ? (
+                        <div
+                          className="tiny muted text-center"
+                          style={{ padding: '30px 10px', border: '1.5px dashed #e2e8f0', borderRadius: '6px' }}
+                        >
+                          No quotations in this stage
+                        </div>
+                      ) : (
+                        colProjects.map((p) => {
+                          const buyer = p.summary?.client_info?.buyer_name || p.summary?.client_info?.name || ''
+                          const city = p.summary?.client_info?.city || p.summary?.client_info?.state || ''
+                          const bodies = p.summary?.total_combined_bodies || p.summary?.bodies
+                          const rev = parseRevision(p.name).currentRev
+
+                          return (
+                            <div
+                              key={p.id}
+                              className="pipeline-card"
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('text/plain', p.id)
+                                setDraggedProjectId(p.id)
+                              }}
+                              onDragEnd={() => setDraggedProjectId(null)}
+                              onClick={() => onOpenProject(p.id)}
+                              title="Click to open quotation in Calculator (Drag to move stage)"
+                            >
+                              {/* Card Header: QTN Name & Stage Selector */}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+                                <div>
+                                  <strong style={{ fontSize: '13px', color: '#1e40af', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    📄 {p.name}
+                                  </strong>
+                                  {rev && (
+                                    <span className="version-pill" style={{ fontSize: 9.5, padding: '0 4px', marginTop: 2 }}>
+                                      Rev {rev}
+                                    </span>
+                                  )}
+                                </div>
+                                <select
+                                  value={col.id}
+                                  onChange={(e) => handleUpdateProjectStatus(p.id, e.target.value as ProjectStatus)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="pipeline-status-select"
+                                  title="Change deal stage"
+                                >
+                                  <option value="draft">📝 Draft</option>
+                                  <option value="quoted">📤 Quoted</option>
+                                  <option value="negotiating">🤝 Negotiating</option>
+                                  <option value="won">🎉 Won</option>
+                                  <option value="loss">✕ Lost</option>
+                                </select>
+                              </div>
+
+                              {/* Client & Specs */}
+                              <div style={{ fontSize: '11.5px', color: '#334155' }}>
+                                <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                                  {buyer || '(Client not specified)'}
+                                </div>
+                                {city && <div className="tiny muted">{city}</div>}
+                                {bodies ? (
+                                  <div className="tiny" style={{ color: '#0369a1', fontWeight: 600, marginTop: 2 }}>
+                                    📦 {bodies} Bodies
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {/* Quotation Amount & Badges */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px dashed #e2e8f0', paddingTop: 6 }}>
+                                <strong style={{ fontSize: '13.5px', color: '#16a34a' }}>
+                                  {p.total ? inr(Number(p.total)) : '—'}
+                                </strong>
+                                <div className="tiny text-muted">
+                                  @{p.created_by || 'staff'}
+                                </div>
+                              </div>
+
+                              {/* Active Reminders / Badges */}
+                              {p.summary?.reminder && !p.summary.reminder.dismissed && (
+                                <div
+                                  className="chip warning sm"
+                                  style={{ fontSize: 9.5, padding: '1px 5px', display: 'flex', alignItems: 'center', gap: 3 }}
+                                >
+                                  🔔 {new Date(p.summary.reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}, {new Date(p.summary.reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         ) : (
           <div className="table-scroll-wrap">
