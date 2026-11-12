@@ -2767,7 +2767,7 @@ export function CalculatorPage({
   const isApprovedLocked = status === 'won' || status === 'approved'
   const isSharedLocked = Boolean(project.summary?.shared_locked || project.summary?.locked_after_share || (status as string) === 'shared')
   const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
-  const [isEditingMode, setIsEditingMode] = useState<boolean>(true)
+  const [isEditingMode, setIsEditingMode] = useState<boolean>(false)
 
   const handleToggleEditing = () => {
     if (isApprovedLocked) {
@@ -4263,15 +4263,12 @@ export function CalculatorPage({
                       <button
 
                         type="button"
-
                         className="icon-btn xs"
-
+                        disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                         onClick={(e) => {
-
                           e.stopPropagation()
-
+                          if (isApprovedLocked || isStaffRateLocked || !isEditingMode) return
                           handleRemoveSystemMatrix(idx)
-
                         }}
 
                         style={{ color: '#ef4444', padding: '1px', marginLeft: 2 }}
@@ -4295,9 +4292,8 @@ export function CalculatorPage({
               <button
 
                 type="button"
-
                 className="btn ghost sm"
-
+                disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 onClick={handleAddSystemMatrix}
 
                 style={{ fontSize: 11, padding: '3px 8px', border: '1px dashed #94a3b8' }}
@@ -4321,7 +4317,7 @@ export function CalculatorPage({
               <input
 
                 type="text"
-
+                disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 value={systems[activeSystemIdx]?.name ?? ''}
                 placeholder={`SYSTEM ${String.fromCharCode(65 + activeSystemIdx)}`}
 
@@ -4336,9 +4332,8 @@ export function CalculatorPage({
               <input
 
                 type="number"
-
                 min={1}
-
+                disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 value={systems[activeSystemIdx]?.quantity ? Math.max(1, Number(systems[activeSystemIdx].quantity)) : 1}
 
                 onChange={(e) => {
@@ -4365,9 +4360,8 @@ export function CalculatorPage({
               <button
 
                 type="button"
-
                 className="btn ghost sm"
-
+                disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 onClick={() => handleDuplicateSystemMatrix(activeSystemIdx)}
 
                 style={{ fontSize: 10, padding: '2px 6px' }}
