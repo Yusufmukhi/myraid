@@ -56,10 +56,16 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     org_name: string
   } | null>(null)
 
-  // Password change state
+  // Password change state (requires admin password authorization)
   const [changePasswordMember, setChangePasswordMember] = useState<Member | null>(null)
   const [newMemberPassword, setNewMemberPassword] = useState('')
+  const [adminChangePasswordAuth, setAdminChangePasswordAuth] = useState('')
   const [savingPassword, setSavingPassword] = useState(false)
+
+  // Role change state (requires admin password authorization)
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{ member: Member; newRole: string } | null>(null)
+  const [adminRolePassword, setAdminRolePassword] = useState('')
+  const [changingRole, setChangingRole] = useState(false)
 
   // Member deletion with admin password confirmation state
   const [deleteMemberTarget, setDeleteMemberTarget] = useState<Member | null>(null)
@@ -111,21 +117,47 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     })
   }, [members, searchQuery, roleFilter])
 
-  const handleRoleChange = async (member: Member, newRole: string) => {
+  const handleInitiateRoleChange = (member: Member, newRole: string) => {
     if (!isAdminOrOwner) return toast('Admin privileges required', 'err')
     if (member.role === 'owner') return toast('Cannot change owner role', 'err')
+    if (member.role === newRole) return
+    setRoleChangeTarget({ member, newRole })
+    setAdminRolePassword('')
+  }
+
+  const handleConfirmRoleChange = async () => {
+    if (!roleChangeTarget?.member.id) return
+    if (!adminRolePassword.trim()) {
+      return toast('Please enter your password to authorize role change.', 'err')
+    }
+
+    setChangingRole(true)
     try {
-      if (member.id) await api.orgUpdateRole(session.token, org.id, member.id, newRole)
+      // 1. Re-authenticate admin/owner with their password
+      try {
+        await api.login(session.username, adminRolePassword.trim())
+      } catch {
+        toast('Incorrect password. Member role was not changed.', 'err')
+        setChangingRole(false)
+        return
+      }
+
+      // 2. Verified! Update role in organisation
+      await api.orgUpdateRole(session.token, org.id, roleChangeTarget.member.id, roleChangeTarget.newRole)
       const roleLabel =
-        newRole === 'viewer' || newRole === 'floor_operator'
+        roleChangeTarget.newRole === 'viewer' || roleChangeTarget.newRole === 'floor_operator'
           ? 'Floor Operator'
-          : newRole === 'admin'
+          : roleChangeTarget.newRole === 'admin'
           ? 'Admin'
           : 'Staff Member'
-      toast(`Updated ${member.username} role to ${roleLabel}`)
+      toast(`Updated ${roleChangeTarget.member.username}'s role to ${roleLabel}`)
+      setRoleChangeTarget(null)
+      setAdminRolePassword('')
       loadMembers()
     } catch (e) {
       toast((e as Error).message, 'err')
+    } finally {
+      setChangingRole(false)
     }
   }
 
@@ -160,16 +192,29 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     }
   }
 
-  // Password change for a member by Admin/Owner
+  // Password change for a member by Admin/Owner (Requires Admin/Owner password verification)
   const handleSaveMemberPassword = async () => {
     if (!changePasswordMember?.id) return
     const pwd = newMemberPassword.trim()
     if (pwd.length < 10) {
       return toast('Password must be at least 10 characters long.', 'err')
     }
+    if (!adminChangePasswordAuth.trim()) {
+      return toast('Please enter your password to authorize this change.', 'err')
+    }
 
     setSavingPassword(true)
     try {
+      // 1. Re-authenticate admin/owner with their password
+      try {
+        await api.login(session.username, adminChangePasswordAuth.trim())
+      } catch {
+        toast('Incorrect password. Member password was not changed.', 'err')
+        setSavingPassword(false)
+        return
+      }
+
+      // 2. Verified! Update target member password
       await api.orgAdminChangeMemberPassword(session.token, org.id, changePasswordMember.id, pwd)
       toast(`Password updated for ${changePasswordMember.username}!`)
       copy(
@@ -178,6 +223,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
       )
       setChangePasswordMember(null)
       setNewMemberPassword('')
+      setAdminChangePasswordAuth('')
     } catch (e) {
       toast((e as Error).message, 'err')
     } finally {
@@ -554,7 +600,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                           <select
                             className="role-select-custom"
                             value={m.role === 'floor_operator' ? 'viewer' : m.role}
-                            onChange={(e) => handleRoleChange(m, e.target.value)}
+                            onChange={(e) => handleInitiateRoleChange(m, e.target.value)}
                             title={`Change role for ${m.username}`}
                           >
                             <option value="admin">🛡️ Admin</option>
@@ -680,9 +726,25 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
               )}
             </div>
 
+            {/* Admin Password Authentication (Required) */}
+            <div style={{ marginBottom: '14px' }}>
+              <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '4px' }}>
+                Your Password ({session.username}) <span style={{ color: '#dc2626' }}>*Required to Authorize</span>
+              </label>
+              <input
+                type="password"
+                className="option-input-field"
+                value={adminChangePasswordAuth}
+                onChange={(e) => setAdminChangePasswordAuth(e.target.value)}
+                placeholder="Enter your current password to authorize…"
+                style={{ width: '100%', height: '36px', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                autoFocus
+              />
+            </div>
+
             <div style={{ marginBottom: '16px' }}>
               <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '4px' }}>
-                New Password (minimum 10 characters)
+                New Password for Member (minimum 10 characters)
               </label>
               <div style={{ display: 'flex', gap: '6px' }}>
                 <input
@@ -692,7 +754,6 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                   onChange={(e) => setNewMemberPassword(e.target.value)}
                   placeholder="Enter new password…"
                   style={{ flex: 1, height: '36px', padding: '0 10px', fontSize: '13px' }}
-                  autoFocus
                 />
                 <button
                   type="button"
@@ -715,7 +776,10 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
               <button
                 type="button"
                 className="btn ghost sm"
-                onClick={() => setChangePasswordMember(null)}
+                onClick={() => {
+                  setChangePasswordMember(null)
+                  setAdminChangePasswordAuth('')
+                }}
                 disabled={savingPassword}
               >
                 Cancel
@@ -724,10 +788,120 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                 type="button"
                 className="btn primary sm"
                 onClick={handleSaveMemberPassword}
-                disabled={savingPassword || newMemberPassword.trim().length < 10}
+                disabled={savingPassword || newMemberPassword.trim().length < 10 || !adminChangePasswordAuth.trim()}
                 style={{ fontWeight: 700 }}
               >
                 {savingPassword ? <Spinner size={13} /> : 'Save New Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Confirm Role Change Modal (Password Verification) */}
+      {roleChangeTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '16px',
+          }}
+          onClick={() => !changingRole && setRoleChangeTarget(null)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '10px',
+              border: '1px solid #cbd5e1',
+              padding: '24px',
+              width: '440px',
+              maxWidth: '96vw',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🛡️</span> Authorize Role Change
+              </h3>
+              <button
+                type="button"
+                className="icon-btn sm"
+                onClick={() => setRoleChangeTarget(null)}
+                disabled={changingRole}
+                style={{ fontSize: '16px', lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '6px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#334155', marginBottom: '6px' }}>
+                Change role for <strong>{roleChangeTarget.member.username}</strong>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700 }}>
+                <span style={{ color: '#64748b' }}>
+                  {roleChangeTarget.member.role === 'admin' ? '🛡️ Admin' : roleChangeTarget.member.role === 'viewer' || (roleChangeTarget.member.role as string) === 'floor_operator' ? '🏭 Floor Operator' : '💼 Staff Member'}
+                </span>
+                <span>➔</span>
+                <span style={{ color: '#2563eb' }}>
+                  {roleChangeTarget.newRole === 'admin' ? '🛡️ Admin' : roleChangeTarget.newRole === 'viewer' || roleChangeTarget.newRole === 'floor_operator' ? '🏭 Floor Operator' : '💼 Staff Member'}
+                </span>
+              </div>
+            </div>
+
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#64748b', lineHeight: 1.5 }}>
+              Role changes alter quotation permissions and database access. Please enter your password to authorize this update.
+            </p>
+
+            <div style={{ marginBottom: '18px' }}>
+              <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '4px' }}>
+                Your Password ({session.username}) <span style={{ color: '#dc2626' }}>*Required to Authorize</span>
+              </label>
+              <input
+                type="password"
+                className="option-input-field"
+                value={adminRolePassword}
+                onChange={(e) => setAdminRolePassword(e.target.value)}
+                placeholder="Enter your current password…"
+                style={{ width: '100%', height: '36px', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && adminRolePassword.trim() && !changingRole) {
+                    handleConfirmRoleChange()
+                  }
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => {
+                  setRoleChangeTarget(null)
+                  setAdminRolePassword('')
+                }}
+                disabled={changingRole}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={handleConfirmRoleChange}
+                disabled={changingRole || !adminRolePassword.trim()}
+                style={{ fontWeight: 700 }}
+              >
+                {changingRole ? <Spinner size={13} /> : 'Verify Password & Update Role'}
               </button>
             </div>
           </div>
