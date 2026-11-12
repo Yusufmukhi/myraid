@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ActivityItem, api, Org, Session } from '../../lib/api'
+import { ActivityItem, api, Member, Org, Session } from '../../lib/api'
 import { inr, timeAgo } from '../../lib/format'
 import { cleanDiffText } from '../../lib/revision'
 import { fetchClientIp, formatAuditDevice, formatAuditNetwork, getCachedClientIp } from '../../lib/clientInfo'
@@ -27,9 +27,11 @@ function getPageNumbers(current: number, total: number): (number | string)[] {
 export function ActivityPage({ session, org, onOpenProject }: Props) {
   const { toast } = useUI()
   const [logs, setLogs] = useState<ActivityItem[]>([])
+  const [orgMembers, setOrgMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [filterAction, setFilterAction] = useState<string>('all')
   const [selectedStaff, setSelectedStaff] = useState<string>('all')
+  const [dateRange, setDateRange] = useState<'all' | 'today' | '7days' | '30days' | '90days'>('all')
   const [search, setSearch] = useState('')
   const [projectMap, setProjectMap] = useState<Map<string, any>>(new Map())
   const [projectRevisionsMap, setProjectRevisionsMap] = useState<Map<string, any[]>>(new Map())
@@ -37,17 +39,19 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set())
   const [modalLog, setModalLog] = useState<ActivityItem | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [summaryTimeframe, setSummaryTimeframe] = useState<'today' | 'week' | 'all'>('week')
+  const [summaryTimeframe, setSummaryTimeframe] = useState<'all' | 'today' | 'week' | 'month'>('all')
   const PAGE_SIZE = 20
 
   const loadActivity = async () => {
     try {
       setLoading(true)
-      const [data, projs] = await Promise.all([
-        api.activityList(session.token, org.id, 100),
+      const [data, projs, members] = await Promise.all([
+        api.activityList(session.token, org.id, 1000),
         api.projectList(session.token, org.id, true).catch(() => []),
+        api.orgMembers(session.token, org.id).catch(() => []),
       ])
       setLogs(Array.isArray(data) ? data : [])
+      setOrgMembers(Array.isArray(members) ? members : [])
       const pMap = new Map<string, any>()
       for (const p of projs) {
         pMap.set(p.id, p)
@@ -95,16 +99,39 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
 
   const ownerUsername = (org.role === 'owner' || org.role === 'admin') ? session.username : undefined
 
+  // Identify Admin & Owner usernames to strictly exclude them from Staff activity & performance monitoring
+  const adminAndOwnerUsernames = useMemo(() => {
+    const set = new Set<string>()
+    for (const m of orgMembers) {
+      if (m.role === 'owner' || m.role === 'admin') {
+        if (m.username) set.add(m.username.toLowerCase().trim())
+      }
+    }
+    // Also protect current session user if they hold admin or owner role
+    if (org.role === 'owner' || org.role === 'admin') {
+      if (session.username) set.add(session.username.toLowerCase().trim())
+    }
+    return set
+  }, [orgMembers, org.role, session.username])
+
+  // Staff members list strictly excludes Admin and Owner accounts
   const staffMembers = useMemo(() => {
     const set = new Set<string>()
+    // 1. Registered org members with staff roles (member or viewer)
+    for (const m of orgMembers) {
+      if (m.role !== 'owner' && m.role !== 'admin' && m.username) {
+        set.add(m.username.trim())
+      }
+    }
+    // 2. Also check log actors, strictly excluding admin and owner
     for (const l of logs || []) {
-      const actor = l.user_name || (l as any).username || l.details?.username || l.details?.user_name
-      if (actor && typeof actor === 'string' && actor.trim()) {
-        set.add(actor.trim())
+      const actor = (l.user_name || (l as any).username || l.details?.username || l.details?.user_name || '').trim()
+      if (actor && !adminAndOwnerUsernames.has(actor.toLowerCase())) {
+        set.add(actor)
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b))
-  }, [logs])
+  }, [orgMembers, logs, adminAndOwnerUsernames])
 
   const securityAlertsCount = useMemo(() => {
     return (logs || []).filter((l) => checkSecurityIncident(l, ownerUsername).isIncident).length
@@ -114,6 +141,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
     const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000
+    const thirtyDaysAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000
 
     const summaryMap = new Map<string, {
       username: string
@@ -141,9 +169,10 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
       const logTime = new Date(log.created_at).getTime()
       if (summaryTimeframe === 'today' && logTime < startOfToday) continue
       if (summaryTimeframe === 'week' && logTime < sevenDaysAgo) continue
+      if (summaryTimeframe === 'month' && logTime < thirtyDaysAgo) continue
 
       const actor = (log.user_name || (log as any).username || log.details?.username || log.details?.user_name || '').trim()
-      if (!actor) continue
+      if (!actor || adminAndOwnerUsernames.has(actor.toLowerCase())) continue
 
       let entry = summaryMap.get(actor)
       if (!entry) {
@@ -176,19 +205,42 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
     }
 
     return Array.from(summaryMap.values()).sort((a, b) => b.totalActions - a.totalActions)
-  }, [logs, staffMembers, summaryTimeframe])
+  }, [logs, staffMembers, summaryTimeframe, adminAndOwnerUsernames])
 
   const filteredLogs = useMemo(() => {
+    const now = new Date().getTime()
+    const startOfToday = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000
+    const ninetyDaysAgo = now - 90 * 24 * 60 * 60 * 1000
+
     return (logs || []).filter((item) => {
+      // Date range filter
+      if (dateRange !== 'all') {
+        const itemTime = new Date(item.created_at).getTime()
+        if (dateRange === 'today' && itemTime < startOfToday) return false
+        if (dateRange === '7days' && itemTime < sevenDaysAgo) return false
+        if (dateRange === '30days' && itemTime < thirtyDaysAgo) return false
+        if (dateRange === '90days' && itemTime < ninetyDaysAgo) return false
+      }
+
       if (filterAction === 'security_alerts') {
         if (!checkSecurityIncident(item, ownerUsername).isIncident) return false
       } else if (filterAction !== 'all' && item.action !== filterAction) {
         return false
       }
+
       if (selectedStaff !== 'all') {
-        const actor = item.user_name || (item as any).username || item.details?.username || item.details?.user_name
-        if (actor !== selectedStaff) return false
+        const actor = (item.user_name || (item as any).username || item.details?.username || item.details?.user_name || '').trim().toLowerCase()
+        if (selectedStaff === '__staff_only__') {
+          if (adminAndOwnerUsernames.has(actor)) return false
+        } else if (selectedStaff === '__leadership__') {
+          if (!adminAndOwnerUsernames.has(actor)) return false
+        } else {
+          if (actor !== selectedStaff.toLowerCase()) return false
+        }
       }
+
       if (search.trim()) {
         const q = search.toLowerCase()
         const userMatch = item.user_name?.toLowerCase().includes(q)
@@ -198,12 +250,12 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
       }
       return true
     })
-  }, [logs, filterAction, selectedStaff, search, ownerUsername])
+  }, [logs, dateRange, filterAction, selectedStaff, search, ownerUsername, adminAndOwnerUsernames])
 
-  // Reset to page 1 whenever filters or search change
+  // Reset to page 1 whenever filters, date range, or search change
   useEffect(() => {
     setCurrentPage(1)
-  }, [filterAction, selectedStaff, search])
+  }, [filterAction, selectedStaff, search, dateRange])
 
   const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE))
   const activePage = Math.min(currentPage, totalPages)
@@ -315,12 +367,21 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
                   ? 'Actions recorded today since midnight'
                   : summaryTimeframe === 'week'
                   ? 'Activity over the past 7 days (Weekly summary)'
-                  : 'All recorded activity logs'}
+                  : summaryTimeframe === 'month'
+                  ? 'Activity over the past 30 days (Monthly summary)'
+                  : 'All recorded activity logs across all history'}
               </span>
             </div>
           </div>
 
           <div className="status-tabs" style={{ margin: 0 }}>
+            <button
+              className={'status-tab ' + (summaryTimeframe === 'all' ? 'active' : '')}
+              onClick={() => setSummaryTimeframe('all')}
+              style={{ fontSize: '11px', padding: '3px 10px' }}
+            >
+              🌐 All Time
+            </button>
             <button
               className={'status-tab ' + (summaryTimeframe === 'today' ? 'active' : '')}
               onClick={() => setSummaryTimeframe('today')}
@@ -333,14 +394,14 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
               onClick={() => setSummaryTimeframe('week')}
               style={{ fontSize: '11px', padding: '3px 10px' }}
             >
-              🗓️ Last 7 Days (Weekly)
+              🗓️ Last 7 Days
             </button>
             <button
-              className={'status-tab ' + (summaryTimeframe === 'all' ? 'active' : '')}
-              onClick={() => setSummaryTimeframe('all')}
+              className={'status-tab ' + (summaryTimeframe === 'month' ? 'active' : '')}
+              onClick={() => setSummaryTimeframe('month')}
               style={{ fontSize: '11px', padding: '3px 10px' }}
             >
-              All Time
+              📆 Last 30 Days
             </button>
           </div>
         </div>
@@ -425,22 +486,39 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
         </div>
 
         <div className="filter-controls" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {staffMembers.length > 0 && (
-            <select
-              className="select-input"
-              value={selectedStaff}
-              onChange={(e) => setSelectedStaff(e.target.value)}
-              title="Filter activity by staff member"
-              style={{ minWidth: '150px' }}
-            >
-              <option value="all">👤 All Staff ({staffMembers.length})</option>
-              {staffMembers.map((staff) => (
-                <option key={staff} value={staff}>
-                  👤 {staff}
-                </option>
-              ))}
-            </select>
-          )}
+          {/* Timeframe Date Filter */}
+          <select
+            className="select-input"
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value as any)}
+            title="Filter audit log by date range"
+            style={{ minWidth: '150px' }}
+          >
+            <option value="all">🌐 All History (No Date Limit)</option>
+            <option value="today">📅 Today</option>
+            <option value="7days">🗓️ Past 7 Days</option>
+            <option value="30days">📆 Past 30 Days</option>
+            <option value="90days">⌛ Past 90 Days</option>
+          </select>
+
+          <select
+            className="select-input"
+            value={selectedStaff}
+            onChange={(e) => setSelectedStaff(e.target.value)}
+            title="Filter activity by actor"
+            style={{ minWidth: '160px' }}
+          >
+            <option value="all">👥 All Activity ({logs.length} events)</option>
+            {staffMembers.length > 0 && (
+              <option value="__staff_only__">👤 Staff Members Only (Exclude Admin/Owner)</option>
+            )}
+            {staffMembers.map((staff) => (
+              <option key={staff} value={staff}>
+                &nbsp;&nbsp;↳ 👤 @{staff}
+              </option>
+            ))}
+            <option value="__leadership__">👑 Admin &amp; Owner Actions Only</option>
+          </select>
 
           <select
             className="select-input"

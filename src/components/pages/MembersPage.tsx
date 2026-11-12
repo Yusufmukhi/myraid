@@ -164,6 +164,9 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
   // Deletion with required Admin/Owner password verification
   const handleConfirmDeleteMember = async () => {
     if (!deleteMemberTarget?.id) return
+    if (deleteMemberTarget.role === 'owner' || deleteMemberTarget.role === 'admin') {
+      return toast('Admin and Owner accounts cannot be removed from organisation.', 'err')
+    }
     if (!adminConfirmPassword.trim()) {
       return toast('Please enter your password to confirm removal.', 'err')
     }
@@ -644,8 +647,8 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                               </button>
                             )}
 
-                            {/* Delete Member button (requires current admin password) */}
-                            {m.role !== 'owner' && !isCurrentSessionUser && (
+                            {/* Delete Member button (Admin & Owner cannot be removed - only staff members) */}
+                            {m.role !== 'owner' && m.role !== 'admin' && !isCurrentSessionUser && (
                               <button
                                 className="btn ghost sm danger"
                                 onClick={() => {

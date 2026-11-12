@@ -126,18 +126,20 @@ export function StaffPerformancePage({ session, org, onOpenProject, onNavigate }
   const staffList = useMemo<StaffMetrics[]>(() => {
     const grouped = new Map<string, Project[]>()
 
-    // Ensure every known member has an entry
+    // Ensure every known staff member (excluding admin and owner) has an entry
     for (const m of members) {
+      if (m.role === 'owner' || m.role === 'admin') continue
       const key = m.username
       if (!grouped.has(key)) {
         grouped.set(key, [])
       }
     }
 
-    // Distribute filtered projects to creators
+    // Distribute filtered projects to creators (excluding admin and owner creators)
     for (const p of filteredProjects) {
       const creatorKey = p.created_by || 'Unknown'
       const matchedMember = memberMap.get(creatorKey.toLowerCase()) || memberMap.get(creatorKey)
+      if (matchedMember?.role === 'owner' || matchedMember?.role === 'admin') continue
       const effectiveKey = matchedMember?.username || creatorKey
 
       const existing = grouped.get(effectiveKey) || []
