@@ -70,9 +70,18 @@ export function ApprovalsPage({
         decided_by: session.username,
         decided_at: new Date().toISOString(),
       }
+      const updatedSystems = Array.isArray(p.summary?.systems)
+        ? p.summary.systems.map((sys: any) => ({
+            ...sys,
+            discountPct: item.requested_pct,
+            overrides: { ...(sys.overrides || {}), __discount_pct: item.requested_pct },
+          }))
+        : p.summary?.systems
       const updatedSummary = {
         ...p.summary,
         discount_request: updatedReq,
+        discount_pct: item.requested_pct,
+        systems: updatedSystems,
       }
       const nextOverrides: Record<string, number | null> = {
         ...(p.inputs || {}),
@@ -82,6 +91,10 @@ export function ApprovalsPage({
         ? Number(nextOverrides['__profit_pct'])
         : 25
       const s = summarize(wb, profitVal, item.requested_pct)
+      const prevDiscount = Number(p.summary?.discount_pct || p.inputs?.['__discount_pct'] || 0)
+      const finalSales = Array.isArray(updatedSystems) && updatedSystems.length > 1 && p.total
+        ? Math.round((p.total / Math.max(0.01, 1 - (prevDiscount / 100))) * (1 - (item.requested_pct / 100)))
+        : s.sales
       await api.projectUpdate(
         session.token,
         p.id,
@@ -89,7 +102,7 @@ export function ApprovalsPage({
         p.status,
         cleanOverrides(wb, nextOverrides),
         p.formula_overrides,
-        s.sales,
+        finalSales,
         updatedSummary,
         `Owner/Admin authorized ${item.requested_pct}% discount requested by @${item.requested_by}`,
       )
@@ -120,11 +133,20 @@ export function ApprovalsPage({
         decided_by: session.username,
         decided_at: new Date().toISOString(),
       }
+      const fallbackPct = Math.min(10, Number(p.inputs?.['__discount_pct'] || 0))
+      const updatedSystems = Array.isArray(p.summary?.systems)
+        ? p.summary.systems.map((sys: any) => ({
+            ...sys,
+            discountPct: fallbackPct,
+            overrides: { ...(sys.overrides || {}), __discount_pct: fallbackPct },
+          }))
+        : p.summary?.systems
       const updatedSummary = {
         ...p.summary,
         discount_request: updatedReq,
+        discount_pct: fallbackPct,
+        systems: updatedSystems,
       }
-      const fallbackPct = Math.min(10, Number(p.inputs?.['__discount_pct'] || 0))
       const nextOverrides: Record<string, number | null> = {
         ...(p.inputs || {}),
         __discount_pct: fallbackPct,
@@ -133,6 +155,10 @@ export function ApprovalsPage({
         ? Number(nextOverrides['__profit_pct'])
         : 25
       const s = summarize(wb, profitVal, fallbackPct)
+      const prevDiscount = Number(p.summary?.discount_pct || p.inputs?.['__discount_pct'] || 0)
+      const finalSales = Array.isArray(updatedSystems) && updatedSystems.length > 1 && p.total
+        ? Math.round((p.total / Math.max(0.01, 1 - (prevDiscount / 100))) * (1 - (fallbackPct / 100)))
+        : s.sales
       await api.projectUpdate(
         session.token,
         p.id,
@@ -140,7 +166,7 @@ export function ApprovalsPage({
         p.status,
         cleanOverrides(wb, nextOverrides),
         p.formula_overrides,
-        s.sales,
+        finalSales,
         updatedSummary,
         `Owner/Admin declined ${item.requested_pct}% discount requested by @${item.requested_by}`,
       )

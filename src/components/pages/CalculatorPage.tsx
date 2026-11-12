@@ -1153,39 +1153,34 @@ export function CalculatorPage({
 
     }
 
+    const updatedSystems = systems.map((s) => ({
+      ...s,
+      discountPct: pct,
+      overrides: { ...(s.overrides || {}), __discount_pct: pct },
+    }))
     const updatedSummary = {
-
       ...project.summary,
-
+      ...summary,
       discount_request: newRequest,
-
+      systems: updatedSystems,
+      quotation_sets: compiledSets,
+      profit_pct: profitPct,
+      discount_pct: pct,
     }
-
+    const finalSales = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
     try {
-
       await api.projectUpdate(
-
         session.token,
-
         project.id,
-
         name,
-
         status,
-
         cleanOverrides(wb, { ...overrides, __discount_pct: pct }),
-
         formulaOverrides,
-
-        summary.sales,
-
+        finalSales,
         updatedSummary,
-
         `Staff @${session.username} submitted discount authorization request for ${pct}%`,
-
       )
-
-      onProjectUpdated({ ...project, summary: updatedSummary })
+      onProjectUpdated({ ...project, summary: updatedSummary, total: finalSales })
 
       toast(`Discount approval request for ${pct}% sent to Owner and Administrators!`)
 
@@ -1221,43 +1216,37 @@ export function CalculatorPage({
 
     }
 
+    const updatedSystems = systems.map((s) => ({
+      ...s,
+      discountPct: approvedPct,
+      overrides: { ...(s.overrides || {}), __discount_pct: approvedPct },
+    }))
     const updatedSummary = {
-
       ...project.summary,
-
+      ...summary,
       discount_request: updatedRequest,
-
+      systems: updatedSystems,
+      quotation_sets: compiledSets,
+      profit_pct: profitPct,
+      discount_pct: approvedPct,
     }
-
     const nextOverrides = { ...overrides, __discount_pct: approvedPct }
-
     setOverrides(nextOverrides)
-
+    setSystems(updatedSystems)
+    const finalSales = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
     try {
-
       await api.projectUpdate(
-
         session.token,
-
         project.id,
-
         name,
-
         status,
-
         cleanOverrides(wb, nextOverrides),
-
         formulaOverrides,
-
-        summary.sales,
-
+        finalSales,
         updatedSummary,
-
         `Owner/Admin approved ${approvedPct}% discount requested by @${discountRequest.requested_by}`,
-
       )
-
-      onProjectUpdated({ ...project, summary: updatedSummary })
+      onProjectUpdated({ ...project, summary: updatedSummary, total: finalSales })
 
       toast(`Approved ${approvedPct}% discount for @${discountRequest.requested_by}`)
 
@@ -1287,45 +1276,38 @@ export function CalculatorPage({
 
     }
 
-    const updatedSummary = {
-
-      ...project.summary,
-
-      discount_request: updatedRequest,
-
-    }
-
     const fallbackPct = Math.min(10, discountPct)
-
+    const updatedSystems = systems.map((s) => ({
+      ...s,
+      discountPct: fallbackPct,
+      overrides: { ...(s.overrides || {}), __discount_pct: fallbackPct },
+    }))
+    const updatedSummary = {
+      ...project.summary,
+      ...summary,
+      discount_request: updatedRequest,
+      systems: updatedSystems,
+      quotation_sets: compiledSets,
+      profit_pct: profitPct,
+      discount_pct: fallbackPct,
+    }
     const nextOverrides = { ...overrides, __discount_pct: fallbackPct }
-
     setOverrides(nextOverrides)
-
+    setSystems(updatedSystems)
+    const finalSales = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
     try {
-
       await api.projectUpdate(
-
         session.token,
-
         project.id,
-
         name,
-
         status,
-
         cleanOverrides(wb, nextOverrides),
-
         formulaOverrides,
-
-        summary.sales,
-
+        finalSales,
         updatedSummary,
-
         `Owner/Admin declined ${discountRequest.requested_pct}% discount request by @${discountRequest.requested_by}`,
-
       )
-
-      onProjectUpdated({ ...project, summary: updatedSummary })
+      onProjectUpdated({ ...project, summary: updatedSummary, total: finalSales })
 
       toast(`Declined ${discountRequest.requested_pct}% discount request`)
 
@@ -4914,7 +4896,7 @@ export function CalculatorPage({
 
         {/* Clean All Systems Overview & Comparison Card (Only visible in System / Set-Wise mode) */}
 
-        {quotationMode === 'set_wise' && systems.length > 1 && isAdminOrOwner && (
+        {quotationMode === 'set_wise' && systems.length > 1 && (
 
           <div style={{ marginTop: 12, padding: '12px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
 
@@ -5346,6 +5328,26 @@ export function CalculatorPage({
                   </>
                 ) : (
                   <>
+                    {compiledSets[0] && (
+                      <tr style={{ background: '#f0f9ff' }}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '13px' }}>
+                              {compiledSets[0].system_title || 'SYSTEM A'}
+                            </span>
+                            <span className="chip sm" style={{ fontSize: '10px' }}>
+                              {compiledSets[0].quantity} {compiledSets[0].unit || 'SET'}{compiledSets[0].quantity > 1 ? 'S' : ''}
+                            </span>
+                          </div>
+                          <div className="tiny muted" style={{ fontSize: '10px', marginTop: '2px' }}>
+                            Base Cost: {inr2(compiledSets[0].breakdown?.totalCostBase || summary.costBase || 0)}
+                          </div>
+                        </td>
+                        <td className="r font-mono font-bold" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
+                          {inr2(compiledSets[0].amount)}
+                        </td>
+                      </tr>
+                    )}
                 <tr>
                   <td>Ex-Works Subtotal (N22)</td>
                   <td className="r font-mono">{renderLiveVal(summary.subtotal)}</td>
@@ -5700,6 +5702,23 @@ export function CalculatorPage({
                   </>
                 ) : (
                   <>
+                    {compiledSets[0] && (
+                      <tr style={{ background: '#f0f9ff' }}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 700, color: '#1e40af' }}>
+                              {compiledSets[0].system_title || 'SYSTEM A'}
+                            </span>
+                            <span className="chip sm" style={{ fontSize: '10px' }}>
+                              {compiledSets[0].quantity} {compiledSets[0].unit || 'SET'}{compiledSets[0].quantity > 1 ? 'S' : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="r font-mono font-bold">
+                          {inr2(compiledSets[0].amount)}
+                        </td>
+                      </tr>
+                    )}
                 <tr>
                   <td>Base Quotation</td>
                   <td className="r font-mono font-bold">{inr2(summary.subtotalWithProfit)}</td>

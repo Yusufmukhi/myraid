@@ -1697,7 +1697,7 @@ export function OfficialQuotationDocument({
     if (initialSets && Array.isArray(initialSets) && initialSets.length > 0) {
       return initialSets.map((s: any, idx: number) => ({
         ...s,
-        system_title: s.system_title !== undefined ? s.system_title : (initialSets.length > 1 ? (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`) : ''),
+        system_title: (s.system_title !== undefined && s.system_title !== '') ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`),
         set_label: s.set_label || (Number(s.quantity) > 1 ? `${s.quantity} ${s.unit || 'SET'}S` : `1 ${s.unit || 'SET'}`),
         unit: s.unit || 'SET',
         rate: Number(s.rate) || 0,
@@ -1727,7 +1727,7 @@ export function OfficialQuotationDocument({
       return [
         {
           id: '1',
-          system_title: '', // EMPTY so no "SYSTEM A" row in the table!
+          system_title: (initialSets?.[0]?.system_title || project.summary?.systems?.[0]?.name || 'SYSTEM A'),
           set_label: sysQty > 1 ? `${sysQty} ${initialSets?.[0]?.unit || 'SET'}S` : `1 ${initialSets?.[0]?.unit || 'SET'}`,
           quantity: sysQty,
           unit: initialSets?.[0]?.unit || 'SET',
@@ -1825,11 +1825,9 @@ export function OfficialQuotationDocument({
         initialSets.map((s: any, idx: number) => ({
           ...s,
           system_title:
-            s.system_title !== undefined
+            (s.system_title !== undefined && s.system_title !== '')
               ? s.system_title
-              : initialSets.length > 1
-              ? (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`)
-              : '',
+              : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`),
           set_label: s.set_label || (Number(s.quantity) > 1 ? `${s.quantity} ${s.unit || 'SET'}S` : `1 ${s.unit || 'SET'}`),
           unit: s.unit || 'SET',
           rate: Number(s.rate) || 0,
@@ -1874,7 +1872,7 @@ export function OfficialQuotationDocument({
       return [
         {
           id: '1',
-          system_title: isMultiSystem ? 'SYSTEM A' : '',
+          system_title: 'SYSTEM A',
           set_label: `${qty} SET`,
           unit: 'SET',
           items: breakdownResult.rows.map((r, idx) => ({
@@ -3439,7 +3437,7 @@ export function OfficialQuotationDocument({
                       {chunkSets.map((s, relIdx) => {
                         const sIdx = chunk.startSetIndex + relIdx
                         const nextChar = String.fromCharCode(65 + sIdx)
-                        const systemTitle = (!isMultiSystem ? '' : (s.system_title !== undefined ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`))).trim()
+                        const systemTitle = ((s.system_title !== undefined && s.system_title !== '') ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)).trim()
                         const hasItems = s.items && s.items.length > 0
 
                         const sysDoubleDrive = systemHasDoubleDrive(s)
