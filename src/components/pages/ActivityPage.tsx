@@ -37,6 +37,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set())
   const [modalLog, setModalLog] = useState<ActivityItem | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
+  const [summaryTimeframe, setSummaryTimeframe] = useState<'today' | 'week' | 'all'>('week')
   const PAGE_SIZE = 20
 
   const loadActivity = async () => {
@@ -108,6 +109,74 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   const securityAlertsCount = useMemo(() => {
     return (logs || []).filter((l) => checkSecurityIncident(l, ownerUsername).isIncident).length
   }, [logs, ownerUsername])
+
+  const staffActivitySummary = useMemo(() => {
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000
+
+    const summaryMap = new Map<string, {
+      username: string
+      totalActions: number
+      created: number
+      updated: number
+      shared: number
+      lastAction: string
+      lastActionTime: string
+    }>()
+
+    for (const member of staffMembers) {
+      summaryMap.set(member, {
+        username: member,
+        totalActions: 0,
+        created: 0,
+        updated: 0,
+        shared: 0,
+        lastAction: 'No activity in period',
+        lastActionTime: '',
+      })
+    }
+
+    for (const log of logs || []) {
+      const logTime = new Date(log.created_at).getTime()
+      if (summaryTimeframe === 'today' && logTime < startOfToday) continue
+      if (summaryTimeframe === 'week' && logTime < sevenDaysAgo) continue
+
+      const actor = (log.user_name || (log as any).username || log.details?.username || log.details?.user_name || '').trim()
+      if (!actor) continue
+
+      let entry = summaryMap.get(actor)
+      if (!entry) {
+        entry = {
+          username: actor,
+          totalActions: 0,
+          created: 0,
+          updated: 0,
+          shared: 0,
+          lastAction: '',
+          lastActionTime: '',
+        }
+        summaryMap.set(actor, entry)
+      }
+
+      entry.totalActions++
+      const action = (log.action || '').toLowerCase()
+      if (action.includes('create') || action.includes('new')) {
+        entry.created++
+      } else if (action.includes('update') || action.includes('save') || action.includes('calc') || action.includes('revise')) {
+        entry.updated++
+      } else if (action.includes('share') || action.includes('pdf')) {
+        entry.shared++
+      }
+
+      if (!entry.lastActionTime || logTime > new Date(entry.lastActionTime).getTime()) {
+        entry.lastActionTime = log.created_at
+        entry.lastAction = log.action
+      }
+    }
+
+    return Array.from(summaryMap.values()).sort((a, b) => b.totalActions - a.totalActions)
+  }, [logs, staffMembers, summaryTimeframe])
 
   const filteredLogs = useMemo(() => {
     return (logs || []).filter((item) => {
@@ -213,6 +282,129 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
           </div>
         </div>
       )}
+
+      {/* Staff Activity Summary (Daily / Weekly) */}
+      <div
+        className="card mb-3"
+        style={{
+          background: '#ffffff',
+          border: '1px solid #cbd5e1',
+          borderRadius: '10px',
+          padding: '14px 18px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '12px',
+            flexWrap: 'wrap',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '18px' }}>📈</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+                Staff Activity &amp; Productivity Summary
+              </h3>
+              <span className="tiny text-muted">
+                {summaryTimeframe === 'today'
+                  ? 'Actions recorded today since midnight'
+                  : summaryTimeframe === 'week'
+                  ? 'Activity over the past 7 days (Weekly summary)'
+                  : 'All recorded activity logs'}
+              </span>
+            </div>
+          </div>
+
+          <div className="status-tabs" style={{ margin: 0 }}>
+            <button
+              className={'status-tab ' + (summaryTimeframe === 'today' ? 'active' : '')}
+              onClick={() => setSummaryTimeframe('today')}
+              style={{ fontSize: '11px', padding: '3px 10px' }}
+            >
+              📅 Today
+            </button>
+            <button
+              className={'status-tab ' + (summaryTimeframe === 'week' ? 'active' : '')}
+              onClick={() => setSummaryTimeframe('week')}
+              style={{ fontSize: '11px', padding: '3px 10px' }}
+            >
+              🗓️ Last 7 Days (Weekly)
+            </button>
+            <button
+              className={'status-tab ' + (summaryTimeframe === 'all' ? 'active' : '')}
+              onClick={() => setSummaryTimeframe('all')}
+              style={{ fontSize: '11px', padding: '3px 10px' }}
+            >
+              All Time
+            </button>
+          </div>
+        </div>
+
+        {staffActivitySummary.length === 0 ? (
+          <div className="tiny muted text-center" style={{ padding: '12px 0' }}>
+            No staff activity recorded for this time period.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+            {staffActivitySummary.map((staff) => {
+              const isSelected = selectedStaff === staff.username
+              return (
+                <div
+                  key={staff.username}
+                  onClick={() => setSelectedStaff(isSelected ? 'all' : staff.username)}
+                  style={{
+                    background: isSelected ? '#eff6ff' : '#f8fafc',
+                    border: isSelected ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title={"Click to filter audit trail for @" + staff.username}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '13px' }}>👤</span>
+                      <strong style={{ fontSize: '13px', color: '#1e293b' }}>@{staff.username}</strong>
+                    </div>
+                    <span
+                      className="chip sm font-bold"
+                      style={{
+                        fontSize: '10px',
+                        background: staff.totalActions > 0 ? '#dbeafe' : '#f1f5f9',
+                        color: staff.totalActions > 0 ? '#1d4ed8' : '#64748b',
+                      }}
+                    >
+                      {staff.totalActions} action{staff.totalActions === 1 ? '' : 's'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#475569', marginBottom: '6px' }}>
+                    <span>Created: <strong style={{ color: '#16a34a' }}>{staff.created}</strong></span>
+                    <span>Updated: <strong style={{ color: '#2563eb' }}>{staff.updated}</strong></span>
+                    <span>Shared: <strong style={{ color: '#7c3aed' }}>{staff.shared}</strong></span>
+                  </div>
+
+                  <div style={{ fontSize: '10px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {staff.lastActionTime ? (
+                      <>
+                        Last: <span style={{ fontWeight: 600 }}>{staff.lastAction}</span> ({timeAgo(staff.lastActionTime)})
+                      </>
+                    ) : (
+                      <span style={{ fontStyle: 'italic' }}>No activity in selected range</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Filter and Search Bar */}
       <div className="card filter-bar mb-3">

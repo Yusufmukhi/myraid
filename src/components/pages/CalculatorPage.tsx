@@ -658,12 +658,27 @@ export function CalculatorPage({
     try {
 
       const nextSummary = await api.projectShare(session.token, project.id, updated)
+      let finalSummary = nextSummary
+      if (!isAdminOrOwner && updated.includes(targetUsername)) {
+        finalSummary = { ...nextSummary, shared_locked: true, locked_after_share: true }
+        api.projectUpdate(
+          session.token,
+          project.id,
+          project.name,
+          project.status,
+          project.inputs,
+          project.formula_overrides,
+          project.total,
+          finalSummary,
+          `Quotation locked after sharing by @${session.username}`
+        ).catch(() => {})
+      }
 
       onProjectUpdated({
 
         ...project,
 
-        summary: nextSummary,
+        summary: finalSummary,
 
       })
 
@@ -1516,6 +1531,22 @@ export function CalculatorPage({
     if (serverCalculating) {
       toast('Calculating latest rates from server. Please wait a moment before opening PDF…', 'err')
       return
+    }
+    if (!isAdminOrOwner && !isSharedLocked) {
+      const nextSummary = { ...project.summary, shared_locked: true, locked_after_share: true }
+      api.projectUpdate(
+        session.token,
+        project.id,
+        project.name,
+        project.status,
+        project.inputs,
+        project.formula_overrides,
+        project.total,
+        nextSummary,
+        `Quotation locked after official quotation opened by @${session.username}`
+      ).then(() => {
+        onProjectUpdated({ ...project, summary: nextSummary })
+      }).catch(() => {})
     }
     setShowOfficialQuotation(true)
   }
@@ -2734,6 +2765,44 @@ export function CalculatorPage({
 
 
   const isApprovedLocked = status === 'won' || status === 'approved'
+  const isSharedLocked = Boolean(project.summary?.shared_locked || project.summary?.locked_after_share || (status as string) === 'shared')
+  const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
+  const [isEditingMode, setIsEditingMode] = useState<boolean>(true)
+
+  const handleToggleEditing = () => {
+    if (isApprovedLocked) {
+      toast('This quotation is approved / won and cannot be edited.', 'err')
+      return
+    }
+    if (isStaffRateLocked) {
+      toast('🔒 Quotation is locked after sharing. Contact Admin to approve changes.', 'err')
+      return
+    }
+    setIsEditingMode((prev) => !prev)
+  }
+
+  const handleToggleSharedLock = async () => {
+    if (!isAdminOrOwner) return
+    const nextLock = !isSharedLocked
+    const nextSummary = { ...project.summary, shared_locked: nextLock, locked_after_share: nextLock }
+    try {
+      await api.projectUpdate(
+        session.token,
+        project.id,
+        project.name,
+        project.status,
+        project.inputs,
+        project.formula_overrides,
+        project.total,
+        nextSummary,
+        nextLock ? 'Admin locked quotation for staff editing' : 'Admin unlocked quotation for staff editing'
+      )
+      onProjectUpdated({ ...project, summary: nextSummary })
+      toast(nextLock ? 'Quotation locked for staff editing' : 'Quotation unlocked for staff editing')
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    }
+  }
 
 
 
@@ -2796,7 +2865,7 @@ export function CalculatorPage({
 
         isOverridden={isOverridden}
 
-        disabled={isApprovedLocked}
+        disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
 
         onCommit={setInput}
 
@@ -3558,6 +3627,8 @@ export function CalculatorPage({
 
 
 
+            {isAdminOrOwner && (
+              <>
             <div className="excel-kpi-card">
               <span className="kpi-label">SP TOTAL</span>
               <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
@@ -3599,6 +3670,8 @@ export function CalculatorPage({
                 {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.totalWeight)}
               </span>
             </div>
+              </>
+            )}
 
             <div className="excel-kpi-card highlight-mech">
               <span className="kpi-label">WT WITH MACHINE</span>
@@ -3718,30 +3791,7 @@ export function CalculatorPage({
                   </div>
                 )}
               </>
-            ) : (
-              <div className="excel-kpi-card highlight">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
-                  {serverCalculating ? (
-                    <span className="kpi-calculating-watermark">
-                      <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
-                  )}
-                </div>
-                <strong className="kpi-val sales-val" style={{ fontSize: '14.5px', lineHeight: 1.25 }}>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                    {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                  </span>
-                  {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '12px' }}>calculating…</span> : inr(activeSysSales)}
-                </strong>
-                <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                  {inr(allSystemsTotals.sales)}
-                </span>
-              </div>
-            )}
+            ) : null}
           </>
         ) : (
           <>
@@ -3766,6 +3816,8 @@ export function CalculatorPage({
               </span>
             </div>
 
+            {isAdminOrOwner && (
+              <>
             <div className="excel-kpi-card">
               <span className="kpi-label">SP TOTAL</span>
               <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal * activeSysQty)}</strong>
@@ -3783,6 +3835,8 @@ export function CalculatorPage({
               <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight * activeSysQty)}</strong>
               <span className="kpi-sub">{isAdminOrOwner ? 'C2C SP + Trolley' : 'SP + Trolley Steel'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
             </div>
+              </>
+            )}
 
             <div className="excel-kpi-card highlight-mech">
               <span className="kpi-label">WT WITH MACHINE</span>
@@ -3872,26 +3926,7 @@ export function CalculatorPage({
                   </div>
                 )}
               </>
-            ) : (
-              <div className="excel-kpi-card highlight">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
-                  {serverCalculating ? (
-                    <span className="kpi-calculating-watermark">
-                      <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
-                  )}
-                </div>
-                <strong className="kpi-val sales-val">
-                  {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(Math.round(summary.sales * activeSysQty))}
-                </strong>
-                <span className="kpi-sub">
-                  {serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`}
-                </span>
-              </div>
-            )}
+            ) : null}
           </>
 
         )}
@@ -3900,6 +3935,72 @@ export function CalculatorPage({
 
 
 
+      {/* Quotation Locked After Sharing Alerts */}
+      {isStaffRateLocked && (
+        <div
+          className="card warn mb-3"
+          style={{
+            background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+            border: '1.5px solid #f59e0b',
+            borderRadius: '8px',
+            padding: '12px 18px',
+            boxShadow: '0 2px 4px rgba(245, 158, 11, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '22px' }}>🔒</span>
+              <div>
+                <strong style={{ fontSize: '13.5px', color: '#92400e', display: 'block' }}>
+                  Quotation Locked After Sharing
+                </strong>
+                <span style={{ fontSize: '12px', color: '#78350f' }}>
+                  This quotation has been shared with the client. Rates, matrix specifications, dimensions, and freight charges are locked. Contact an Administrator to approve modifications or revise.
+                </span>
+              </div>
+            </div>
+            <span className="chip warn sm font-bold" style={{ fontSize: '11px' }}>
+              Read-Only for Staff
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isAdminOrOwner && isSharedLocked && (
+        <div
+          className="card info mb-3"
+          style={{
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            border: '1.5px solid #3b82f6',
+            borderRadius: '8px',
+            padding: '10px 18px',
+            boxShadow: '0 2px 4px rgba(37, 99, 235, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '20px' }}>🛡️</span>
+              <div>
+                <strong style={{ fontSize: '13px', color: '#1e40af', display: 'block' }}>
+                  Quotation Locked for Staff (Admin Editing Enabled)
+                </strong>
+                <span style={{ fontSize: '11.5px', color: '#1d4ed8' }}>
+                  Staff members cannot modify this quotation. As an Administrator, you retain full edit access or can unlock it for staff.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={handleToggleSharedLock}
+              style={{ background: '#ffffff', borderColor: '#93c5fd', color: '#1e40af', fontWeight: 700, fontSize: '11.5px' }}
+              title="Click to unlock this quotation so staff can edit"
+            >
+              🔓 Unlock for Staff
+            </button>
+          </div>
+        </div>
+      )}
       {/* ------------------------------------------------ Main Horizontal Calculation Matrix */}
 
       <div className="card excel-calc-card">
@@ -3992,7 +4093,7 @@ export function CalculatorPage({
                 type="number"
                 min={1}
                 step={1}
-                disabled={isApprovedLocked}
+                disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 value={bayInput}
                 title="Bay count (Press / to jump here)"
 
@@ -4051,6 +4152,39 @@ export function CalculatorPage({
               />
 
             </div>
+
+            {/* Enable Editing toggle button */}
+            <button
+              type="button"
+              className={'btn sm ' + (isEditingMode && !isStaffRateLocked && !isApprovedLocked ? 'primary' : 'ghost')}
+              onClick={handleToggleEditing}
+              title={
+                isApprovedLocked
+                  ? 'Quotation is approved / won (read-only)'
+                  : isStaffRateLocked
+                  ? 'Quotation locked after sharing. Contact Admin to approve changes.'
+                  : isEditingMode
+                  ? 'Editing enabled for Matrix & Logistics. Click to lock view.'
+                  : 'Click to enable editing of Matrix & Logistics'
+              }
+              style={{
+                fontSize: '11px',
+                padding: '3px 10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontWeight: 700,
+                cursor: (isApprovedLocked || isStaffRateLocked) ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isApprovedLocked
+                ? '🔒 Approved (Locked)'
+                : isStaffRateLocked
+                ? '🔒 Locked After Sharing'
+                : isEditingMode
+                ? '✏️ Editing Enabled'
+                : '🔒 Enable Editing'}
+            </button>
 
           </div>
 
@@ -4970,7 +5104,7 @@ export function CalculatorPage({
 
                 value={extraAmount === 0 ? '' : extraAmount}
 
-                disabled={isApprovedLocked}
+                disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
 
                 placeholder="0"
 
@@ -5010,7 +5144,7 @@ export function CalculatorPage({
 
                     checked={includeInstallation}
 
-                    disabled={isApprovedLocked}
+                    disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
 
                     onChange={(e) => setIncludeInstallation(e.target.checked)}
 
@@ -5054,15 +5188,17 @@ export function CalculatorPage({
           <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '5px', margin: 0 }}>
-                <span>📝 Client Instructions &amp; Project Notes</span>
+                <span>📝 Internal Quotation Notes &amp; Client Instructions</span>
               </label>
-              <span className="tiny text-muted" style={{ fontSize: '10px' }}>Saved with quotation</span>
+              <span className="chip primary sm" style={{ fontSize: '9.5px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '1px 6px' }}>
+                🔒 Team Internal — Never printed on PDF
+              </span>
             </div>
             <textarea
               value={projectNotes}
               disabled={isApprovedLocked}
               onChange={(e) => setProjectNotes(e.target.value)}
-              placeholder="Write client instructions, special requirements, delivery timeline, site contact, RAL shades, or anything discussed with client…"
+              placeholder="Write internal staff notes, client instructions, special requirements, delivery timeline, site contacts, discussion logs… (Saved for team & Admin, strictly excluded from customer PDF)"
               rows={3}
               style={{ width: '100%', fontSize: '11.5px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #cbd5e1', background: isApprovedLocked ? '#f8fafc' : '#ffffff', color: '#1e293b', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: 1.4 }}
             />

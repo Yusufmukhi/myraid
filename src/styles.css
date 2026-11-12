@@ -1661,6 +1661,11 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 }
 
 /* Tier 2: Dedicated Excel Top Metrics Bar (Matching Total cal Q5:Q9 & J44) */
+.excel-kpi-bar.staff-kpi-bar {
+  grid-template-columns: repeat(2, minmax(200px, 340px));
+  max-width: 700px;
+}
+
 .excel-kpi-bar {
   display: grid;
   grid-template-columns: repeat(8, 1fr);

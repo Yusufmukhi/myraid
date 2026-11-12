@@ -175,6 +175,34 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     return projects.filter((p) => p.summary?.reminder && !p.summary.reminder.dismissed).length
   }, [projects])
 
+  const staffStats = useMemo(() => {
+    const myProjects = (projects || []).filter(
+      (p) => p.created_by === session.username || p.created_by === session.user_id
+    )
+    const myTotalVal = myProjects.reduce((sum, p) => sum + (Number(p.total) || 0), 0)
+    const wonCount = myProjects.filter(
+      (p) => !p.is_archived && (p.status === 'won' || p.status === 'approved')
+    ).length
+    const lossCount = myProjects.filter(
+      (p) => p.is_archived || p.status === 'loss' || p.status === 'archived' || p.status === 'lost'
+    ).length
+    const activeCount = myProjects.filter(
+      (p) => !p.is_archived && p.status !== 'won' && p.status !== 'approved' && p.status !== 'loss' && p.status !== 'archived' && p.status !== 'lost'
+    ).length
+    const totalDecided = wonCount + lossCount
+    const winRate = totalDecided > 0 ? Math.round((wonCount / totalDecided) * 100) : 0
+    const myReminders = myProjects.filter((p) => p.summary?.reminder && !p.summary.reminder.dismissed)
+    return {
+      count: myProjects.length,
+      totalVal: myTotalVal,
+      wonCount,
+      lossCount,
+      activeCount,
+      winRate,
+      remindersCount: myReminders.length,
+    }
+  }, [projects, session.username, session.user_id])
+
   const filteredProjects = useMemo(() => {
     return (projects || [])
       .filter((p) => {
@@ -893,13 +921,15 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             >
               {Icon.copy}
             </button>
-            <button
-              className="icon-btn sm"
-              title={p.is_archived ? 'Unarchive' : 'Archive'}
-              onClick={() => handleArchive(p)}
-            >
-              {Icon.archive}
-            </button>
+            {isAdminOrOwner && (
+              <button
+                className="icon-btn sm"
+                title={p.is_archived ? 'Unarchive' : 'Archive'}
+                onClick={() => handleArchive(p)}
+              >
+                {Icon.archive}
+              </button>
+            )}
             {isAdminOrOwner && (
               <button
                 className="icon-btn sm del"
@@ -961,6 +991,151 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           {Icon.plus} New Project
         </button>
       </div>
+
+      {/* Staff Personal Sales Dashboard */}
+      {!isAdminOrOwner && (
+        <div
+          className="card staff-dashboard-card mb-3"
+          style={{
+            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+            border: '1px solid #cbd5e1',
+            borderRadius: '10px',
+            padding: '14px 18px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '12px',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px' }}>📊</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                  My Performance Dashboard
+                </h3>
+                <span className="tiny text-muted">Personal sales metrics for @{session.username}</span>
+              </div>
+            </div>
+            <span
+              className="chip primary sm font-bold"
+              style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}
+            >
+              👤 Staff Member
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+            {/* My Quotations */}
+            <div
+              className="kpi-mini-card"
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                cursor: 'pointer',
+                transition: 'transform 0.1s ease',
+              }}
+              onClick={() => setScopeFilter('mine')}
+              title="Click to show only my quotations"
+            >
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                My Quotations
+              </span>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#1e40af', marginTop: '2px' }}>
+                {staffStats.count}
+              </div>
+              <span style={{ fontSize: '10px', color: '#0284c7', fontWeight: 600 }}>
+                {staffStats.activeCount} currently active
+              </span>
+            </div>
+
+            {/* Total Quotation Value */}
+            <div
+              className="kpi-mini-card"
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '10px 14px',
+              }}
+              title="Total combined quotation value created by me"
+            >
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total Quoted Value
+              </span>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a', marginTop: '2px' }}>
+                {inr(Math.round(staffStats.totalVal))}
+              </div>
+              <span style={{ fontSize: '10px', color: '#64748b' }}>
+                across {staffStats.count} quotation{staffStats.count === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {/* Won / Loss Ratio */}
+            <div
+              className="kpi-mini-card"
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '10px 14px',
+              }}
+              title="Win/Loss ratio of closed quotations"
+            >
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Won / Loss Ratio
+              </span>
+              <div style={{ fontSize: '17px', fontWeight: 800, color: '#0f172a', marginTop: '2px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ color: '#16a34a' }}>{staffStats.wonCount}W</span>
+                <span style={{ color: '#cbd5e1' }}>/</span>
+                <span style={{ color: '#dc2626' }}>{staffStats.lossCount}L</span>
+                {staffStats.wonCount + staffStats.lossCount > 0 && (
+                  <span style={{ fontSize: '11px', color: '#2563eb', fontWeight: 700 }}>
+                    ({staffStats.winRate}%)
+                  </span>
+                )}
+              </div>
+              <span style={{ fontSize: '10px', color: '#64748b' }}>
+                {staffStats.wonCount + staffStats.lossCount === 0 ? 'No closed quotations yet' : (staffStats.wonCount + staffStats.lossCount) + ' decided'}
+              </span>
+            </div>
+
+            {/* Pending Follow-Ups */}
+            <div
+              className="kpi-mini-card"
+              style={{
+                background: staffStats.remindersCount > 0 ? '#fffbeb' : '#ffffff',
+                border: '1px solid ' + (staffStats.remindersCount > 0 ? '#fde68a' : '#e2e8f0'),
+                borderRadius: '8px',
+                padding: '10px 14px',
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                if (staffStats.remindersCount > 0) setScopeFilter('reminders')
+              }}
+              title="Click to view quotations with active reminders"
+            >
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: staffStats.remindersCount > 0 ? '#b45309' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Pending Follow-Ups
+              </span>
+              <div style={{ fontSize: '19px', fontWeight: 800, color: staffStats.remindersCount > 0 ? '#d97706' : '#64748b', marginTop: '2px' }}>
+                🔔 {staffStats.remindersCount}
+              </div>
+              <span style={{ fontSize: '10px', color: staffStats.remindersCount > 0 ? '#b45309' : '#94a3b8', fontWeight: 600 }}>
+                {staffStats.remindersCount > 0 ? 'Active alarm reminders' : 'No pending alarms'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="card filter-bar">
