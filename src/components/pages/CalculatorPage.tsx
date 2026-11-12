@@ -8,6 +8,8 @@ import { count, inr, inr2, kg } from '../../lib/format'
 
 import { cleanOverrides, extractTemplateDefaults, summarize, Summary, filterCutToCutOverrides } from '../../lib/model'
 
+import { exportWorkbookToXLSX } from '../../lib/excelExport'
+
 import { detectValueChanges, parseRevision } from '../../lib/revision'
 
 import { fetchClientIp, getCachedClientIp } from '../../lib/clientInfo'
@@ -402,19 +404,25 @@ export function CalculatorPage({
   const [projectNotes, setProjectNotes] = useState<string>(project.summary?.notes || '')
   const [reminder, setReminder] = useState<{ date: string; note: string; dismissed?: boolean } | null>(project.summary?.reminder || null)
   const [showReminderModal, setShowReminderModal] = useState(false)
-  const [reminderDateInput, setReminderDateInput] = useState<string>(() => {
+  const [reminderDateTimeInput, setReminderDateTimeInput] = useState<string>(() => {
     if (project.summary?.reminder?.date) {
-      return project.summary.reminder.date.slice(0, 10)
+      const d = new Date(project.summary.reminder.date)
+      if (!isNaN(d.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, '0')
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+      }
     }
     const d = new Date()
-    d.setDate(d.getDate() + 2) // Default +2 days
-    return d.toISOString().slice(0, 10)
+    d.setDate(d.getDate() + 1)
+    d.setHours(10, 0, 0, 0) // Default tomorrow 10:00 AM
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
   })
   const [reminderNoteInput, setReminderNoteInput] = useState<string>(project.summary?.reminder?.note || 'Follow up with client on quotation')
 
-  const handleSaveReminder = (dateStr: string, noteStr: string) => {
+  const handleSaveReminder = (dateTimeStr: string, noteStr: string) => {
     const rem = {
-      date: new Date(dateStr).toISOString(),
+      date: new Date(dateTimeStr).toISOString(),
       note: noteStr.trim() || 'Follow up on quotation',
       dismissed: false,
     }
@@ -433,7 +441,10 @@ export function CalculatorPage({
       })
       localStorage.setItem('myriad_project_reminders', JSON.stringify(filtered))
     } catch {}
-    toast(`Reminder set for ${new Date(rem.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`, 'ok')
+    const remDate = new Date(rem.date)
+    const dateFormatted = remDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
+    const timeFormatted = remDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    toast(`⏰ Alarm reminder set for ${dateFormatted} at ${timeFormatted}`, 'ok')
   }
 
   const handleClearReminder = () => {
@@ -757,7 +768,7 @@ export function CalculatorPage({
         {
           id: '1',
           name: 'SYSTEM A',
-          quantity: project.summary?.systems?.[0]?.quantity ?? 0,
+          quantity: project.summary?.systems?.[0]?.quantity ? Math.max(1, Number(project.summary.systems[0].quantity)) : 1,
           unit: 'SET',
           overrides: project.inputs || {},
           formulaOverrides: project.formula_overrides || {},
@@ -767,13 +778,16 @@ export function CalculatorPage({
       ]
     }
     if (project.summary?.systems && Array.isArray(project.summary.systems) && project.summary.systems.length > 0) {
-      return project.summary.systems
+      return project.summary.systems.map((s: any) => ({
+        ...s,
+        quantity: (!s.quantity || Number(s.quantity) < 1) ? 1 : Number(s.quantity),
+      }))
     }
     return [
       {
         id: '1',
         name: 'SYSTEM A',
-        quantity: 0,
+        quantity: 1,
         unit: 'SET',
         overrides: project.inputs || {},
         formulaOverrides: project.formula_overrides || {},
@@ -903,7 +917,7 @@ export function CalculatorPage({
 
       name: `SYSTEM ${nextChar}`,
 
-      quantity: 0,
+      quantity: 1,
 
       unit: 'SET',
 
@@ -2614,6 +2628,52 @@ export function CalculatorPage({
     onNavigateToSheets(activeSystemIdx)
   }
 
+  const handleDownloadC2CExcel = async () => {
+    try {
+      toast('Generating Cut-to-Cut Excel workbook…', 'ok')
+      let targetWb = c2cWb
+      if ((!targetWb || targetWb.sheets.size <= 1) && session?.token && org?.id) {
+        try {
+          const res = await api.getFullWorksheets(session.token, org.id)
+          if (res?.c2c_workbook) {
+            targetWb = new Workbook(res.c2c_workbook, res.named_constants)
+          }
+        } catch {}
+      }
+
+      const wbToExport = targetWb || activeWb
+      if (wbToExport) {
+        // Apply cut-to-cut inputs & formula overrides
+        const actInputs = systems[activeSystemIdx]?.overrides || overrides
+        const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
+        const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
+        const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
+        const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
+        const c2cInputs = { ...filterCutToCutOverrides(actInputs), ...mergedC2COv }
+        wbToExport.setOverrides(c2cInputs)
+        wbToExport.setFormulaOverrides({ ...formulaOverrides, ...mergedC2CFO })
+
+        const qtnTitle = (project.summary?.client_info?.qtn_no || name || project.name || 'Quotation').replace(/[/\\?%*:|"<>]/g, '_')
+        const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
+        const fileName = `${qtnTitle}_${activeSysName}_Cut_to_Cut_Analysis.xlsx`
+
+        const c2cData = {
+          profit: displayC2CProfit,
+          total: displayC2CTotal,
+          ratio: displayC2CRatio,
+          costBase: c2cSummary?.costBase,
+          labour: c2cSummary?.labourSubtotal,
+          steelWeight: c2cSummary?.totalWeight,
+        }
+
+        exportWorkbookToXLSX(wbToExport, fileName, c2cData)
+        toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
+      }
+    } catch (e: any) {
+      toast(`Export failed: ${e?.message || 'Error creating Excel file'}`, 'err')
+    }
+  }
+
 
 
   const hasNewerTemplate = (org.current_template_version || 1) > project.template_version
@@ -3326,9 +3386,9 @@ export function CalculatorPage({
                   className="top-toolbar-btn"
                   onClick={() => setShowReminderModal(true)}
                   style={reminder && !reminder.dismissed ? { background: '#fef3c7', borderColor: '#f59e0b', color: '#92400e', fontWeight: 700 } : undefined}
-                  title={reminder && !reminder.dismissed ? `Reminder: ${reminder.note || 'Follow up'} (Due: ${new Date(reminder.date).toLocaleDateString()})` : 'Set a follow-up reminder for this quotation'}
+                  title={reminder && !reminder.dismissed ? `Alarm Reminder: ${reminder.note || 'Follow up'} (Due: ${new Date(reminder.date).toLocaleDateString()} at ${new Date(reminder.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : 'Set a follow-up reminder / alarm for this quotation'}
                 >
-                  🔔 {reminder && !reminder.dismissed ? `${new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}` : 'Reminder'}
+                  🔔 {reminder && !reminder.dismissed ? `${new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}, ${new Date(reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : 'Reminder'}
                 </button>
               </div>
 
@@ -3367,6 +3427,55 @@ export function CalculatorPage({
           </div>
         </div>
       </div>
+
+      {/* Prominent Active Reminder / Alarm Banner */}
+      {reminder && !reminder.dismissed && (
+        <div
+          style={{
+            margin: '0 20px 14px 20px',
+            background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+            border: '1.5px solid #f59e0b',
+            borderRadius: '8px',
+            padding: '10px 16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '10px',
+            boxShadow: '0 2px 4px rgba(245, 158, 11, 0.1)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '22px' }}>⏰</span>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#92400e' }}>
+                Follow-Up Alarm Reminder: <strong>{new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong>
+              </div>
+              <div style={{ fontSize: '12px', color: '#78350f', marginTop: '2px' }}>
+                📌 <em>{reminder.note || 'Follow up with client on quotation'}</em>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn xs ghost"
+              onClick={() => setShowReminderModal(true)}
+              style={{ color: '#92400e', borderColor: '#fcd34d', fontWeight: 700, fontSize: '11px', background: '#fff' }}
+            >
+              ✏️ Edit Alarm
+            </button>
+            <button
+              type="button"
+              className="btn xs ghost text-danger"
+              onClick={handleClearReminder}
+              style={{ borderColor: '#fcd34d', fontSize: '11px', background: '#fff' }}
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------ TOP TIER 2: Excel Top Metrics Bar */}
 
@@ -4060,9 +4169,9 @@ export function CalculatorPage({
 
                 type="number"
 
-                min={0}
+                min={1}
 
-                value={systems[activeSystemIdx]?.quantity ?? 0}
+                value={systems[activeSystemIdx]?.quantity ? Math.max(1, Number(systems[activeSystemIdx].quantity)) : 1}
 
                 onChange={(e) => {
                   const val = e.target.value
@@ -4071,13 +4180,13 @@ export function CalculatorPage({
                     return
                   }
                   const num = parseInt(val, 10)
-                  handleUpdateSystemMeta(activeSystemIdx, { quantity: isNaN(num) ? 0 : Math.max(0, num) })
+                  handleUpdateSystemMeta(activeSystemIdx, { quantity: isNaN(num) ? 1 : Math.max(1, num) })
                 }}
 
                 onBlur={() => {
                   const cur = systems[activeSystemIdx]?.quantity
-                  if (cur === '' || cur === undefined || isNaN(Number(cur)) || Number(cur) < 0) {
-                    handleUpdateSystemMeta(activeSystemIdx, { quantity: 0 })
+                  if (cur === '' || cur === undefined || isNaN(Number(cur)) || Number(cur) < 1) {
+                    handleUpdateSystemMeta(activeSystemIdx, { quantity: 1 })
                   }
                 }}
 
@@ -5665,21 +5774,25 @@ export function CalculatorPage({
 
               </div>
 
-              <button
-
-                type="button"
-
-                className="btn primary sm"
-
-                style={{ background: '#7c3aed', borderColor: '#6d28d9', color: '#fff', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-
-                onClick={handleNavigateToSheets}
-
-              >
-
-                {Icon.grid} Open 15-Sheet Detail Grid
-
-              </button>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn primary sm"
+                  style={{ background: '#7c3aed', borderColor: '#6d28d9', color: '#fff', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  onClick={handleNavigateToSheets}
+                >
+                  {Icon.grid} Open 15-Sheet Detail Grid
+                </button>
+                <button
+                  type="button"
+                  className="btn sm"
+                  style={{ background: '#15803d', borderColor: '#166534', color: '#fff', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+                  onClick={handleDownloadC2CExcel}
+                  title="Download Cut-to-Cut Excel spreadsheet with all sheets and C2C calculations at E26:G28"
+                >
+                  📥 Download C2C Excel (.xlsx)
+                </button>
+              </div>
 
             </div>
 
@@ -6177,35 +6290,41 @@ export function CalculatorPage({
             <div className="dialog-header">
               <div className="avatar md" style={{ background: '#fef3c7', color: '#b45309', fontWeight: 800 }}>🔔</div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 16 }}>Follow-up Reminder</h3>
-                <p className="tiny muted" style={{ margin: 0 }}>Schedule an alert popup on software launch</p>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Follow-up Alarm &amp; Reminder</h3>
+                <p className="tiny muted" style={{ margin: 0 }}>Set an exact date &amp; time alarm to follow up on this quotation</p>
               </div>
             </div>
             <div className="dialog-body" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label className="tiny font-bold text-muted" style={{ display: 'block', marginBottom: 6 }}>
-                  QUICK PRESETS
+                  ⏰ QUICK ALARM PRESETS
                 </label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {[
-                    { label: '+1 Day', days: 1 },
-                    { label: '+2 Days', days: 2 },
-                    { label: '+3 Days', days: 3 },
-                    { label: '+1 Week', days: 7 },
-                    { label: '+2 Weeks', days: 14 },
+                    { label: 'Tomorrow 10:00 AM', days: 1, hour: 10, min: 0 },
+                    { label: 'In 2 Days 10:00 AM', days: 2, hour: 10, min: 0 },
+                    { label: 'Next Week', days: 7, hour: 10, min: 0 },
+                    { label: 'In 1 Hour', hoursOffset: 1 },
+                    { label: 'In 3 Hours', hoursOffset: 3 },
                   ].map((p) => (
                     <button
                       key={p.label}
                       type="button"
                       className="btn ghost sm"
-                      style={{ fontSize: 11, padding: '3px 8px' }}
+                      style={{ fontSize: 11, padding: '3px 8px', fontWeight: 600 }}
                       onClick={() => {
                         const d = new Date()
-                        d.setDate(d.getDate() + p.days)
-                        setReminderDateInput(d.toISOString().slice(0, 10))
+                        if (p.hoursOffset) {
+                          d.setHours(d.getHours() + p.hoursOffset)
+                        } else {
+                          d.setDate(d.getDate() + (p.days || 1))
+                          d.setHours(p.hour ?? 10, p.min ?? 0, 0, 0)
+                        }
+                        const pad = (n: number) => String(n).padStart(2, '0')
+                        setReminderDateTimeInput(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`)
                       }}
                     >
-                      {p.label}
+                      ⏰ {p.label}
                     </button>
                   ))}
                 </div>
@@ -6213,13 +6332,13 @@ export function CalculatorPage({
 
               <div>
                 <label className="tiny font-bold text-muted" style={{ display: 'block', marginBottom: 4 }}>
-                  REMINDER DATE
+                  EXACT DATE &amp; TIME (ALARM)
                 </label>
                 <input
-                  type="date"
-                  value={reminderDateInput}
-                  onChange={(e) => setReminderDateInput(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  type="datetime-local"
+                  value={reminderDateTimeInput}
+                  onChange={(e) => setReminderDateTimeInput(e.target.value)}
+                  style={{ width: '100%', padding: '7px 9px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, fontWeight: 700 }}
                 />
               </div>
 
@@ -6238,7 +6357,7 @@ export function CalculatorPage({
 
               {reminder && !reminder.dismissed && (
                 <div style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: 6, border: '1px solid #a7f3d0', fontSize: 12, color: '#065f46' }}>
-                  Active Reminder: <strong>{new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</strong> — "{reminder.note}"
+                  ⏰ Active Alarm: <strong>{new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong> — "{reminder.note}"
                 </div>
               )}
             </div>
@@ -6250,7 +6369,7 @@ export function CalculatorPage({
                     className="btn ghost sm text-danger"
                     onClick={handleClearReminder}
                   >
-                    Clear Reminder
+                    Clear Alarm
                   </button>
                 )}
               </div>
@@ -6265,9 +6384,9 @@ export function CalculatorPage({
                 <button
                   type="button"
                   className="btn primary sm"
-                  onClick={() => handleSaveReminder(reminderDateInput, reminderNoteInput)}
+                  onClick={() => handleSaveReminder(reminderDateTimeInput, reminderNoteInput)}
                 >
-                  Save Reminder
+                  Save Alarm Reminder
                 </button>
               </div>
             </div>

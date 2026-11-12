@@ -101,6 +101,19 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const [dueReminders, setDueReminders] = useState<Project[]>([])
   const [showDueReminderModal, setShowDueReminderModal] = useState(false)
   const hasCheckedDueRemindersRef = useRef(false)
+
+  const activeRemindersList = useMemo(() => {
+    return projects.filter((p) => p.summary?.reminder && !p.summary.reminder.dismissed)
+  }, [projects])
+
+  const dueRemindersCount = useMemo(() => {
+    const endOfToday = new Date()
+    endOfToday.setHours(23, 59, 59, 999)
+    return activeRemindersList.filter((p) => {
+      const remTime = new Date(p.summary.reminder.date).getTime()
+      return !isNaN(remTime) && remTime <= endOfToday.getTime()
+    }).length
+  }, [activeRemindersList])
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [navOpen, setNavOpen] = useState(false)
@@ -1050,6 +1063,38 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
 
         <div className="grow" />
 
+        {/* Global Reminders Bell Button */}
+        <button
+          className="btn ghost sm"
+          onClick={() => {
+            setDueReminders(activeRemindersList.length > 0 ? activeRemindersList : [])
+            setShowDueReminderModal(true)
+          }}
+          title={activeRemindersList.length > 0 ? `${activeRemindersList.length} quotation follow-up reminder(s)` : 'No active quotation reminders'}
+          style={{ position: 'relative', gap: 6, height: 32, padding: '0 10px', marginRight: 6, background: activeRemindersList.length > 0 ? '#fef3c7' : undefined, borderColor: activeRemindersList.length > 0 ? '#fcd34d' : undefined }}
+        >
+          <span style={{ fontSize: 13 }}>🔔</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: activeRemindersList.length > 0 ? '#92400e' : '#475569' }}>
+            Reminders
+          </span>
+          {activeRemindersList.length > 0 && (
+            <span
+              className="chip sm"
+              style={{
+                background: dueRemindersCount > 0 ? '#ef4444' : '#f59e0b',
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '1px 6px',
+                borderRadius: 10,
+                lineHeight: 1.2,
+              }}
+            >
+              {activeRemindersList.length}
+            </span>
+          )}
+        </button>
+
         {/* User Profile Quick Access */}
         <button
           className="btn ghost sm"
@@ -1699,59 +1744,72 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           </div>
         </div>
       )}
-      {/* Software Launch Due Reminder Modal */}
-      {showDueReminderModal && dueReminders.length > 0 && (
+      {/* Quotation Reminders & Alarms Modal */}
+      {showDueReminderModal && (
         <div className="overlay" onMouseDown={() => setShowDueReminderModal(false)}>
-          <div className="dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+          <div className="dialog" role="dialog" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
             <div className="dialog-header">
               <div className="avatar md" style={{ background: '#fef3c7', color: '#b45309', fontWeight: 800 }}>🔔</div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 16 }}>Follow-up Reminders Due</h3>
-                <p className="tiny muted" style={{ margin: 0 }}>You have {dueReminders.length} quotation reminder(s) scheduled for today or earlier</p>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Quotation Follow-up Reminders &amp; Alarms</h3>
+                <p className="tiny muted" style={{ margin: 0 }}>
+                  {dueReminders.length > 0
+                    ? `You have ${dueReminders.length} active follow-up reminder(s)`
+                    : 'No active quotation reminders scheduled'}
+                </p>
               </div>
             </div>
-            <div className="dialog-body" style={{ maxHeight: '360px', overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {dueReminders.map((p) => {
-                const clientName = p.summary?.client_info?.buyer_name || ''
-                const qtnNo = p.summary?.client_info?.qtn_no || ''
-                const rem = p.summary?.reminder
-                const isOverdue = rem && new Date(rem.date).getTime() < new Date().setHours(0, 0, 0, 0)
+            <div className="dialog-body" style={{ maxHeight: '380px', overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {dueReminders.length === 0 ? (
+                <div style={{ padding: '30px 20px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                  No active follow-up reminders. Set a reminder from any quotation using the 🔔 Reminder button!
+                </div>
+              ) : dueReminders.map((p) => {
+                  const clientName = p.summary?.client_info?.buyer_name || ''
+                  const qtnNo = p.summary?.client_info?.qtn_no || ''
+                  const rem = p.summary?.reminder
+                  const isOverdue = rem && new Date(rem.date).getTime() < Date.now()
 
-                return (
-                  <div
-                    key={p.id}
-                    style={{
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>{p.name}</strong>
-                        {qtnNo && <span className="tiny font-mono text-muted" style={{ marginLeft: 6, fontSize: '10.5px' }}>({qtnNo})</span>}
-                        {clientName && (
-                          <div style={{ fontSize: '11.5px', color: '#475569', marginTop: 1 }}>
-                            🏢 {clientName}
-                          </div>
-                        )}
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <strong style={{ fontSize: '13px', color: '#0f172a' }}>{p.name}</strong>
+                          {qtnNo && <span className="tiny font-mono text-muted" style={{ marginLeft: 6, fontSize: '10.5px' }}>({qtnNo})</span>}
+                          {clientName && (
+                            <div style={{ fontSize: '11.5px', color: '#475569', marginTop: 1 }}>
+                              🏢 {clientName}
+                            </div>
+                          )}
+                          {rem?.date && (
+                            <div style={{ fontSize: '11.5px', color: isOverdue ? '#b91c1c' : '#b45309', fontWeight: 700, marginTop: 3 }}>
+                              ⏰ Alarm: {new Date(rem.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(rem.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </div>
+                        <span
+                          className="chip sm"
+                          style={{
+                            background: isOverdue ? '#fee2e2' : '#fef3c7',
+                            color: isOverdue ? '#b91c1c' : '#92400e',
+                            fontWeight: 700,
+                            fontSize: '10px',
+                          }}
+                        >
+                          {isOverdue ? 'Overdue' : 'Scheduled'}
+                        </span>
                       </div>
-                      <span
-                        className="chip sm"
-                        style={{
-                          background: isOverdue ? '#fee2e2' : '#fef3c7',
-                          color: isOverdue ? '#b91c1c' : '#92400e',
-                          fontWeight: 700,
-                          fontSize: '10px',
-                        }}
-                      >
-                        {isOverdue ? 'Overdue' : 'Due Today'}
-                      </span>
-                    </div>
 
                     {rem?.note && (
                       <div style={{ fontSize: '12px', color: '#334155', background: '#ffffff', padding: '5px 8px', borderRadius: 4, border: '1px solid #f1f5f9' }}>

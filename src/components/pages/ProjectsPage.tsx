@@ -35,7 +35,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     }
   }, [org.id])
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [scopeFilter, setScopeFilter] = useState<'all' | 'mine' | 'shared'>(initialScope || 'all')
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'mine' | 'shared' | 'reminders'>(initialScope || 'all')
   const [showArchived, setShowArchived] = useState(false)
   const [sortBy, setSortBy] = useState<SortField>('updated_at')
   const [sortAsc, setSortAsc] = useState(false)
@@ -171,6 +171,10 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     return { myProjectsCount: mine, sharedProjectsCount: shared }
   }, [projects, showArchived, session.username, session.user_id])
 
+  const remindersCount = useMemo(() => {
+    return projects.filter((p) => p.summary?.reminder && !p.summary.reminder.dismissed).length
+  }, [projects])
+
   const filteredProjects = useMemo(() => {
     return (projects || [])
       .filter((p) => {
@@ -194,6 +198,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         // Scope filter
         if (scopeFilter === 'mine' && !isMine) return false
         if (scopeFilter === 'shared' && !isSharedWithMe) return false
+        if (scopeFilter === 'reminders' && (!p.summary?.reminder || p.summary.reminder.dismissed)) return false
 
         if (!showArchived && p.is_archived && statusFilter !== 'lost' && statusFilter !== 'loss') return false
         const isLoss = p.is_archived || p.status === 'loss' || p.status === 'archived' || p.status === 'lost'
@@ -749,9 +754,9 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                 <span
                   className="chip warning sm"
                   style={{ fontSize: '10px', padding: '1px 5px', gap: '3px', fontWeight: 600 }}
-                  title={`Reminder: ${p.summary.reminder.note || 'Follow up'} (Due: ${new Date(p.summary.reminder.date).toLocaleDateString()})`}
+                  title={`Alarm Reminder: ${p.summary.reminder.note || 'Follow up'} (Due: ${new Date(p.summary.reminder.date).toLocaleDateString()} at ${new Date(p.summary.reminder.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
                 >
-                  🔔 {new Date(p.summary.reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                  🔔 {new Date(p.summary.reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}, {new Date(p.summary.reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
               {(() => {
@@ -1043,6 +1048,16 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             >
               🤝 Shared with Me {sharedProjectsCount > 0 ? `(${sharedProjectsCount})` : ''}
             </button>
+            {remindersCount > 0 && (
+              <button
+                className={`status-tab ${scopeFilter === 'reminders' ? 'active' : ''}`}
+                onClick={() => setScopeFilter('reminders')}
+                style={{ color: scopeFilter === 'reminders' ? '#fff' : '#b45309', background: scopeFilter === 'reminders' ? '#f59e0b' : '#fffbeb', borderColor: '#fcd34d', fontWeight: 700 }}
+                title="Show quotations with active follow-up alarms & reminders"
+              >
+                🔔 Reminders ({remindersCount})
+              </button>
+            )}
           </div>
 
           <div className="status-tabs">
@@ -1283,6 +1298,15 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                               title={`Staff @${latest.summary.discount_request.requested_by} requested ${latest.summary.discount_request.requested_pct}% discount`}
                             >
                               ⏳ {latest.summary.discount_request.requested_pct}% Disc Req
+                            </span>
+                          )}
+                          {latest.summary?.reminder && !latest.summary.reminder.dismissed && (
+                            <span
+                              className="chip warning sm"
+                              style={{ marginLeft: '4px', fontSize: '10px', padding: '1px 5px', gap: '3px', fontWeight: 600 }}
+                              title={`Alarm Reminder: ${latest.summary.reminder.note || 'Follow up'} (Due: ${new Date(latest.summary.reminder.date).toLocaleDateString()} at ${new Date(latest.summary.reminder.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
+                            >
+                              🔔 {new Date(latest.summary.reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}, {new Date(latest.summary.reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </td>

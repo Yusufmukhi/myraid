@@ -4,6 +4,7 @@ import { fmtCell } from '../../lib/format'
 import { EXTRA_EDITABLE } from '../../lib/inputs'
 import { filterCutToCutOverrides } from '../../lib/model'
 import { api, Org, Session } from '../../lib/api'
+import { exportWorkbookToXLSX } from '../../lib/excelExport'
 import { Icon, NumField, useUI } from '../ui'
 
 interface Props {
@@ -268,6 +269,41 @@ export function CalculationDetails({
     ? (workbookType === 'c2c' ? serverWb.c2c : serverWb.actual)
     : (workbookType === 'c2c' && c2cWb ? c2cWb : wb)
 
+  const c2cAnalysis = useMemo(() => {
+    const actWbToUse = serverWb ? serverWb.actual : wb
+    const c2cWbToUse = serverWb ? serverWb.c2c : (c2cWb || wb)
+    if (!actWbToUse || !c2cWbToUse) return { profit: 0, total: 0, ratio: 0 }
+
+    const actualBeforeGst = actWbToUse.num('Total cal', 'N27') || 0
+    const c2cExWorks = c2cWbToUse.num('Total cal', 'N22') || 0
+    const c2cTransport = c2cWbToUse.num('Total cal', 'N24') || 0
+    const c2cAcc = c2cWbToUse.num('Total cal', 'N25') || 0
+    const c2cInst = c2cWbToUse.num('Total cal', 'N23') || 0
+    const c2cCostBase = c2cExWorks + c2cTransport + c2cAcc + c2cInst
+    const profit = actualBeforeGst - c2cCostBase
+
+    const c2cLabour = c2cWbToUse.num('Total cal', 'N50') || 0
+    const total = profit + c2cLabour
+
+    const c2cWeight = c2cWbToUse.num('Total cal', 'J44') || c2cWbToUse.num('Total cal', 'J45') || 1
+    const ratio = c2cWeight > 0 ? (total / c2cWeight) : 0
+
+    return { profit, total, ratio, costBase: c2cCostBase, labour: c2cLabour, steelWeight: c2cWeight }
+  }, [serverWb, wb, c2cWb, effectiveSysOverrides, effectiveSysC2COverrides])
+
+  const handleDownloadExcel = (type: 'c2c' | 'actual') => {
+    const targetWb = type === 'c2c'
+      ? (serverWb ? serverWb.c2c : (c2cWb || wb))
+      : (serverWb ? serverWb.actual : wb)
+
+    if (!targetWb) return
+    const sysName = systems && systems[currentSystemIdx]?.name ? systems[currentSystemIdx].name.replace(/\s+/g, '_') : 'System'
+    const fileName = `${sysName}_${type === 'c2c' ? 'Cut_to_Cut_Cost_Sheets' : 'Actual_Quotation_Sheets'}.xlsx`
+
+    exportWorkbookToXLSX(targetWb, fileName, type === 'c2c' ? c2cAnalysis : undefined)
+    toast(`${type === 'c2c' ? 'Cut-to-Cut' : 'Actual'} Excel spreadsheet downloaded!`, 'ok')
+  }
+
   const [name, setName] = useState('Total cal')
   const [sel, setSel] = useState<{ r: number; c: number } | null>(null)
   const [editFormulaMode, setEditFormulaMode] = useState(false)
@@ -435,6 +471,15 @@ export function CalculationDetails({
               Cut-to-Cut Cost Baseline
             </span>
           )}
+          <button
+            type="button"
+            className="btn xs"
+            onClick={() => handleDownloadExcel(workbookType)}
+            style={{ background: '#15803d', borderColor: '#166534', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '3px 9px', marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            title={`Download ${workbookType === 'c2c' ? 'Cut-to-Cut' : 'Actual'} multi-sheet Excel spreadsheet (.xlsx)`}
+          >
+            📥 Download {workbookType === 'c2c' ? 'C2C' : 'Actual'} Excel (.xlsx)
+          </button>
         </div>
         <div className="row gap" style={{ alignItems: 'center' }}>
           <div className="legend-pills row gap">
@@ -600,8 +645,23 @@ export function CalculationDetails({
                     if (covered.has(rc)) return null
                     const sp = spans.get(rc)
                     const key = Workbook.key(name, r, c)
-                    const val = activeWb.value(name, r, c)
-                    const raw = activeWb.raw(name, r, c)
+                    let val = activeWb.value(name, r, c)
+                    let raw = activeWb.raw(name, r, c)
+
+                    // Inject 3-line C2C Widget live at E26:G28 on Total cal
+                    if (name === 'Total cal') {
+                      if (r === 25 && c === 4) { raw = 'C2C PROFIT'; val = 'C2C PROFIT' }
+                      if (r === 25 && c === 5) { raw = c2cAnalysis.profit; val = c2cAnalysis.profit }
+                      if (r === 25 && c === 6) { raw = 'Actual Before GST - C2C Cost Base'; val = 'Actual Before GST - C2C Cost Base' }
+
+                      if (r === 26 && c === 4) { raw = 'C2C TOTAL'; val = 'C2C TOTAL' }
+                      if (r === 26 && c === 5) { raw = c2cAnalysis.total; val = c2cAnalysis.total }
+                      if (r === 26 && c === 6) { raw = 'Profit + C2C Labour'; val = 'Profit + C2C Labour' }
+
+                      if (r === 27 && c === 4) { raw = 'C2C RATIO'; val = 'C2C RATIO' }
+                      if (r === 27 && c === 5) { raw = Number(c2cAnalysis.ratio.toFixed(2)); val = Number(c2cAnalysis.ratio.toFixed(2)) }
+                      if (r === 27 && c === 6) { raw = 'Total / C2C Weight (₹/kg)'; val = 'Total / C2C Weight (₹/kg)' }
+                    }
                     const isCellInput = activeWb.isInput(name, r, c) || EXTRA_EDITABLE.has(key)
                     const isCellChangedInput = key in activeOverrides
                     const isCellFormulaOvr = key in activeFormulaOverrides
