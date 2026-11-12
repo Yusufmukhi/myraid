@@ -56,6 +56,16 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     org_name: string
   } | null>(null)
 
+  // Password change state
+  const [changePasswordMember, setChangePasswordMember] = useState<Member | null>(null)
+  const [newMemberPassword, setNewMemberPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
+
+  // Member deletion with admin password confirmation state
+  const [deleteMemberTarget, setDeleteMemberTarget] = useState<Member | null>(null)
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
+  const [deletingMember, setDeletingMember] = useState(false)
+
   const isOwner = org.role === 'owner'
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
 
@@ -119,27 +129,65 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     }
   }
 
-  const handleRemoveMember = async (member: Member) => {
-    if (!isAdminOrOwner) return toast('Admin privileges required', 'err')
-    if (member.role === 'owner') return toast('Cannot remove owner', 'err')
-    const ok = await confirm({
-      title: `Remove ${member.username}?`,
-      body: `Revoke access for ${member.username} from ${org.name}? They will no longer be able to access this organisation's quotations.`,
-      confirmLabel: 'Remove Member',
-      danger: true,
-    })
-    if (!ok) return
+  // Deletion with required Admin/Owner password verification
+  const handleConfirmDeleteMember = async () => {
+    if (!deleteMemberTarget?.id) return
+    if (!adminConfirmPassword.trim()) {
+      return toast('Please enter your password to confirm removal.', 'err')
+    }
+
+    setDeletingMember(true)
     try {
-      if (member.id) await api.orgRemoveMember(session.token, org.id, member.id)
-      toast(`Removed ${member.username}`)
+      // 1. Re-authenticate admin/owner with their password
+      try {
+        await api.login(session.username, adminConfirmPassword.trim())
+      } catch {
+        toast('Incorrect password. Member was not removed.', 'err')
+        setDeletingMember(false)
+        return
+      }
+
+      // 2. Verified! Remove member from organisation
+      await api.orgRemoveMember(session.token, org.id, deleteMemberTarget.id)
+      toast(`Removed ${deleteMemberTarget.username} from ${org.name}`)
+      setDeleteMemberTarget(null)
+      setAdminConfirmPassword('')
       loadMembers()
     } catch (e) {
       toast((e as Error).message, 'err')
+    } finally {
+      setDeletingMember(false)
     }
   }
 
+  // Password change for a member by Admin/Owner
+  const handleSaveMemberPassword = async () => {
+    if (!changePasswordMember?.id) return
+    const pwd = newMemberPassword.trim()
+    if (pwd.length < 10) {
+      return toast('Password must be at least 10 characters long.', 'err')
+    }
+
+    setSavingPassword(true)
+    try {
+      await api.orgAdminChangeMemberPassword(session.token, org.id, changePasswordMember.id, pwd)
+      toast(`Password updated for ${changePasswordMember.username}!`)
+      copy(
+        `Login credentials for ${changePasswordMember.username}:\nPortal: ${window.location.origin}\nUsername: ${changePasswordMember.username}\nNew Password: ${pwd}`,
+        `New password copied to clipboard!`
+      )
+      setChangePasswordMember(null)
+      setNewMemberPassword('')
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  // Provisioning new account (Owners and Admins have same access)
   const handleSendInvite = async () => {
-    if (!isOwner) return toast('Only the organisation owner can provision new staff accounts.', 'err')
+    if (!isAdminOrOwner) return toast('Admin privileges required to provision accounts.', 'err')
     if (!inviteEmail || !inviteEmail.includes('@')) return toast('Enter a valid email address.', 'err')
     setInviting(true)
     const targetEmail = inviteEmail.trim()
@@ -193,7 +241,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
     if (isOwner) return toast('Owners cannot leave without transferring ownership', 'err')
     const ok = await confirm({
       title: `Leave ${org.name}?`,
-      body: 'You will need an invitation from the owner to access this organisation again.',
+      body: 'You will need an invitation to access this organisation again.',
       confirmLabel: 'Leave Organisation',
       danger: true,
     })
@@ -218,18 +266,13 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
       {/* Streamlined Top Header */}
       <div className="card p-3 mb-2" style={{ borderRadius: '10px', boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                👥 Team Members &amp; Access Management
-              </h2>
-              <span className="chip primary font-bold" style={{ textTransform: 'uppercase' }}>
-                {org.name}
-              </span>
-            </div>
-            <div className="tiny muted mt-1" style={{ fontSize: '11.5px', color: '#64748b' }}>
-              Manage active user accounts, grant role permissions, and provision secure credentials for {org.name}.
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+              👥 Team Members &amp; Access
+            </h2>
+            <span className="chip primary font-bold" style={{ textTransform: 'uppercase' }}>
+              {org.name}
+            </span>
           </div>
 
           {!isOwner && (
@@ -293,67 +336,13 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
         </div>
       </div>
 
-      {/* Role Permissions Reference Guide */}
-      <div className="role-guide-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '15px' }}>🛡️</span>
-            <strong style={{ fontSize: '12.5px', color: '#0f172a' }}>Role Permissions &amp; Access Levels</strong>
-          </div>
-          <span className="tiny muted">Assigned roles control sheets, pricing visibility, and editing scope</span>
-        </div>
-        <div className="role-guide-grid">
-          <div className="role-guide-item">
-            <div className="role-guide-title">
-              <span>👑</span>
-              <span>Owner</span>
-            </div>
-            <div className="role-guide-desc">
-              Full authority. Manages organization settings, billing, confidential profit margins, and provisions staff accounts.
-            </div>
-          </div>
-          <div className="role-guide-item">
-            <div className="role-guide-title">
-              <span>🛡️</span>
-              <span>Admin</span>
-            </div>
-            <div className="role-guide-desc">
-              Access to all 15 calculation sheets, custom formula overrides, template switching, and team role updates.
-            </div>
-          </div>
-          <div className="role-guide-item">
-            <div className="role-guide-title">
-              <span>💼</span>
-              <span>Staff Member</span>
-            </div>
-            <div className="role-guide-desc">
-              Standard commercial access. Can create quotations, manage assigned client accounts, and export official proposal PDFs.
-            </div>
-          </div>
-          <div className="role-guide-item">
-            <div className="role-guide-title">
-              <span>🏭</span>
-              <span>Floor Operator</span>
-            </div>
-            <div className="role-guide-desc">
-              Production shop floor access. Read-only specifications, body quantities, and dimensions with pricing hidden.
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Owner-Only Email Provisioning Box */}
-      {isOwner && (
+      {/* Provisioning Box (Available to both Owner & Admin) */}
+      {isAdminOrOwner && (
         <div className="card p-3" style={{ borderLeft: '4px solid #2563eb', borderRadius: '10px', boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)' }}>
-          <div className="row between border-b pb-2 mb-3">
-            <div>
-              <strong style={{ fontSize: '14.5px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>✉️</span> Provision New Staff Account
-              </strong>
-              <div className="tiny muted mt-1" style={{ fontSize: '11.5px', color: '#64748b' }}>
-                Directly create a staff account for {org.name}. A temporary password will be generated for immediate sign-in.
-              </div>
-            </div>
+          <div className="border-b pb-2 mb-3">
+            <strong style={{ fontSize: '14px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>✉️</span> Add Team Member
+            </strong>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -397,7 +386,7 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                 <div className="row gap" style={{ alignItems: 'center' }}>
                   <span style={{ fontSize: '18px' }}>🎉</span>
                   <strong style={{ color: '#166534', fontSize: '14px' }}>
-                    {createdUser.is_new ? 'New Staff Account Provisioned!' : 'Staff Member Added!'}
+                    {createdUser.is_new ? 'New Account Provisioned!' : 'Team Member Added!'}
                   </strong>
                 </div>
                 <button className="btn ghost sm" onClick={() => setCreatedUser(null)}>
@@ -443,10 +432,6 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
                 <a className="btn ghost sm" href={getMailtoUrl()} target="_blank" rel="noopener noreferrer">
                   📬 Open in Mail App
                 </a>
-              </div>
-
-              <div className="tiny muted mt-2" style={{ color: '#15803d' }}>
-                ✓ The staff member can now sign in directly at the login screen using either their Email or Username with the password above.
               </div>
             </div>
           )}
@@ -597,16 +582,37 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
 
                       {isAdminOrOwner && (
                         <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          {m.role !== 'owner' && !isCurrentSessionUser && (
-                            <button
-                              className="btn ghost sm danger"
-                              onClick={() => handleRemoveMember(m)}
-                              title={`Remove ${m.username} from organisation`}
-                              style={{ padding: '4px 8px', height: '28px' }}
-                            >
-                              {Icon.trash}
-                            </button>
-                          )}
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            {/* Change Password button for Admin/Owner */}
+                            {m.id && (
+                              <button
+                                className="btn ghost sm"
+                                onClick={() => {
+                                  setChangePasswordMember(m)
+                                  setNewMemberPassword(generateRandom10CharPassword())
+                                }}
+                                title={`Change password for ${m.username}`}
+                                style={{ padding: '4px 8px', height: '28px', color: '#2563eb', border: '1px solid #cbd5e1' }}
+                              >
+                                🔑 Password
+                              </button>
+                            )}
+
+                            {/* Delete Member button (requires current admin password) */}
+                            {m.role !== 'owner' && !isCurrentSessionUser && (
+                              <button
+                                className="btn ghost sm danger"
+                                onClick={() => {
+                                  setDeleteMemberTarget(m)
+                                  setAdminConfirmPassword('')
+                                }}
+                                title={`Remove ${m.username} from organisation`}
+                                style={{ padding: '4px 8px', height: '28px' }}
+                              >
+                                {Icon.trash}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -617,6 +623,204 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
           )}
         </div>
       </div>
+
+      {/* Change Member Password Modal */}
+      {changePasswordMember && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '16px',
+          }}
+          onClick={() => !savingPassword && setChangePasswordMember(null)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '10px',
+              border: '1px solid #cbd5e1',
+              padding: '24px',
+              width: '440px',
+              maxWidth: '96vw',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🔑</span> Change Password
+              </h3>
+              <button
+                type="button"
+                className="icon-btn sm"
+                onClick={() => setChangePasswordMember(null)}
+                disabled={savingPassword}
+                style={{ fontSize: '16px', lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '6px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                {changePasswordMember.username}
+              </div>
+              {changePasswordMember.email && (
+                <div style={{ fontSize: '11.5px', color: '#64748b' }}>
+                  {changePasswordMember.email}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '4px' }}>
+                New Password (minimum 10 characters)
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  className="option-input-field font-mono"
+                  value={newMemberPassword}
+                  onChange={(e) => setNewMemberPassword(e.target.value)}
+                  placeholder="Enter new password…"
+                  style={{ flex: 1, height: '36px', padding: '0 10px', fontSize: '13px' }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setNewMemberPassword(generateRandom10CharPassword())}
+                  title="Generate 10-char random secure password"
+                  style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
+                >
+                  🎲 Auto Generate
+                </button>
+              </div>
+              {newMemberPassword.length > 0 && newMemberPassword.length < 10 && (
+                <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '4px' }}>
+                  Password must be at least 10 characters ({newMemberPassword.length}/10)
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setChangePasswordMember(null)}
+                disabled={savingPassword}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={handleSaveMemberPassword}
+                disabled={savingPassword || newMemberPassword.trim().length < 10}
+                style={{ fontWeight: 700 }}
+              >
+                {savingPassword ? <Spinner size={13} /> : 'Save New Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Confirm Delete Member Modal (Password Verification) */}
+      {deleteMemberTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '16px',
+          }}
+          onClick={() => !deletingMember && setDeleteMemberTarget(null)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '10px',
+              border: '1px solid #cbd5e1',
+              padding: '24px',
+              width: '440px',
+              maxWidth: '96vw',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', marginBottom: '12px' }}>
+              <span style={{ fontSize: '20px' }}>⚠️</span>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#dc2626' }}>
+                Confirm Member Removal
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#334155', margin: '0 0 14px 0', lineHeight: 1.5 }}>
+              You are removing <strong>{deleteMemberTarget.username}</strong> from <strong>{org.name}</strong>.
+              They will immediately lose access to this organisation's projects and quotations.
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '6px' }}>
+                Enter YOUR password to confirm removal:
+              </label>
+              <input
+                type="password"
+                className="option-input-field"
+                value={adminConfirmPassword}
+                onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                placeholder="Your account password…"
+                style={{ width: '100%', height: '36px', padding: '0 10px', fontSize: '13px' }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && adminConfirmPassword.trim()) {
+                    handleConfirmDeleteMember()
+                  }
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => {
+                  setDeleteMemberTarget(null)
+                  setAdminConfirmPassword('')
+                }}
+                disabled={deletingMember}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn danger sm"
+                onClick={handleConfirmDeleteMember}
+                disabled={deletingMember || !adminConfirmPassword.trim()}
+                style={{ fontWeight: 700 }}
+              >
+                {deletingMember ? <Spinner size={13} /> : 'Verify Password & Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

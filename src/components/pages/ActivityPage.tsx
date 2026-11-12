@@ -92,7 +92,7 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
     fetchClientIp().then(setClientIp).catch(() => {})
   }, [org.id])
 
-  const ownerUsername = org.role === 'owner' ? session.username : undefined
+  const ownerUsername = (org.role === 'owner' || org.role === 'admin') ? session.username : undefined
 
   const staffMembers = useMemo(() => {
     const set = new Set<string>()
