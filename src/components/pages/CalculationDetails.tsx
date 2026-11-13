@@ -4,7 +4,6 @@ import { fmtCell } from '../../lib/format'
 import { EXTRA_EDITABLE } from '../../lib/inputs'
 import { filterCutToCutOverrides } from '../../lib/model'
 import { api, Org, Session } from '../../lib/api'
-import { exportWorkbookToXLSX } from '../../lib/excelExport'
 import { Icon, NumField, useUI } from '../ui'
 
 interface Props {
@@ -291,19 +290,6 @@ export function CalculationDetails({
     return { profit, total, ratio, costBase: c2cCostBase, labour: c2cLabour, steelWeight: c2cWeight }
   }, [serverWb, wb, c2cWb, effectiveSysOverrides, effectiveSysC2COverrides])
 
-  const handleDownloadExcel = (type: 'c2c' | 'actual') => {
-    const targetWb = type === 'c2c'
-      ? (serverWb ? serverWb.c2c : (c2cWb || wb))
-      : (serverWb ? serverWb.actual : wb)
-
-    if (!targetWb) return
-    const sysName = systems && systems[currentSystemIdx]?.name ? systems[currentSystemIdx].name.replace(/\s+/g, '_') : 'System'
-    const fileName = `${sysName}_${type === 'c2c' ? 'Cut_to_Cut_Cost_Sheets' : 'Actual_Quotation_Sheets'}.xlsx`
-
-    exportWorkbookToXLSX(targetWb, fileName, type === 'c2c' ? c2cAnalysis : undefined)
-    toast(`${type === 'c2c' ? 'Cut-to-Cut' : 'Actual'} Excel spreadsheet downloaded!`, 'ok')
-  }
-
   const [name, setName] = useState('Total cal')
   const [sel, setSel] = useState<{ r: number; c: number } | null>(null)
   const [editFormulaMode, setEditFormulaMode] = useState(false)
@@ -471,15 +457,6 @@ export function CalculationDetails({
               Cut-to-Cut Cost Baseline
             </span>
           )}
-          <button
-            type="button"
-            className="btn xs"
-            onClick={() => handleDownloadExcel(workbookType)}
-            style={{ background: '#15803d', borderColor: '#166534', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '3px 9px', marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-            title={`Download ${workbookType === 'c2c' ? 'Cut-to-Cut' : 'Actual'} multi-sheet Excel spreadsheet (.xlsx)`}
-          >
-            📥 Download {workbookType === 'c2c' ? 'C2C' : 'Actual'} Excel (.xlsx)
-          </button>
         </div>
         <div className="row gap" style={{ alignItems: 'center' }}>
           <div className="legend-pills row gap">

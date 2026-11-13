@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, Org, Project, ProjectStatus, Session, Template } from '../../lib/api'
 
@@ -582,6 +582,10 @@ export function CalculatorPage({
   const [showShareModal, setShowShareModal] = useState(false)
 
   const [showOfficialQuotation, setShowOfficialQuotation] = useState(false)
+  const [expandedPerSetBreakdown, setExpandedPerSetBreakdown] = useState<Record<number, boolean>>({})
+  const togglePerSetBreakdown = (idx: number) => {
+    setExpandedPerSetBreakdown((prev) => ({ ...prev, [idx]: !prev[idx] }))
+  }
 
   const [shareMembers, setShareMembers] = useState<any[]>([])
 
@@ -1167,7 +1171,7 @@ export function CalculatorPage({
       profit_pct: profitPct,
       discount_pct: pct,
     }
-    const finalSales = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
+    const finalSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
     try {
       await api.projectUpdate(
         session.token,
@@ -1233,7 +1237,7 @@ export function CalculatorPage({
     const nextOverrides = { ...overrides, __discount_pct: approvedPct }
     setOverrides(nextOverrides)
     setSystems(updatedSystems)
-    const finalSales = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
+    const finalSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
     try {
       await api.projectUpdate(
         session.token,
@@ -1294,7 +1298,7 @@ export function CalculatorPage({
     const nextOverrides = { ...overrides, __discount_pct: fallbackPct }
     setOverrides(nextOverrides)
     setSystems(updatedSystems)
-    const finalSales = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
+    const finalSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
     try {
       await api.projectUpdate(
         session.token,
@@ -2031,7 +2035,7 @@ export function CalculatorPage({
 
       let serverSummary = summary
 
-      let serverTotal = systems.length > 1 ? (allSystemsTotals.sales || summary.sales) : summary.sales
+      let serverTotal = allSystemsTotals.sales || (summary.sales * activeSysQty)
 
       let serverCleanedOverrides = cleaned
 
@@ -2097,9 +2101,7 @@ export function CalculatorPage({
             gst: g,
             sales: s,
           }
-          serverTotal = systems.length > 1
-            ? (allSystemsTotals.sales || Math.round((serverResult.computed_total ?? s) * 1.18))
-            : s
+          serverTotal = allSystemsTotals.sales || (Math.round((serverResult.computed_total ?? s) * 1.18) * activeSysQty)
           serverCleanedOverrides = serverResult.cleaned_overrides ?? cleaned
           serverSystems = serverResult.systems || []
           serverTotalBodies = serverResult.total_combined_bodies || totalCombinedBodies
@@ -2704,6 +2706,7 @@ export function CalculatorPage({
         const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
         const fileName = `${qtnTitle}_${activeSysName}_Cut_to_Cut_Analysis.xlsx`
 
+        const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
         const c2cData = {
           profit: displayC2CProfit,
           total: displayC2CTotal,
@@ -2711,9 +2714,14 @@ export function CalculatorPage({
           costBase: c2cSummary?.costBase,
           labour: c2cSummary?.labourSubtotal,
           steelWeight: c2cSummary?.totalWeight,
+          subtotalBeforeGst: activeSysBeforeGst,
+          setsQty: activeSysQty,
         }
 
-        exportWorkbookToXLSX(wbToExport, fileName, c2cData)
+        exportWorkbookToXLSX(wbToExport, fileName, c2cData, {
+          setsQty: activeSysQty,
+          subtotalBeforeGst: activeSysBeforeGst,
+        })
         toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
       }
     } catch (e: any) {
@@ -5206,23 +5214,104 @@ export function CalculatorPage({
               <tbody>
                 {systems.length > 1 ? (
                   <>
-                    {compiledSets.map((s, idx) => (
-                      <tr key={s.id || idx} style={{ background: idx === activeSystemIdx ? '#f0f9ff' : undefined }}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '13px' }}>{s.system_title}</span>
-                            <span className="chip sm" style={{ fontSize: '10px' }}>{s.quantity} {s.unit || 'SET'}{s.quantity > 1 ? 'S' : ''}</span>
-                            {idx === activeSystemIdx && <span className="chip primary xs" style={{ fontSize: '9px' }}>Current System</span>}
-                          </div>
-                          <div className="tiny muted" style={{ fontSize: '10px', marginTop: '2px' }}>
-                            Base Cost: {inr2(s.breakdown?.totalCostBase || s.summary?.costBase || 0)}
-                          </div>
-                        </td>
-                        <td className="r font-mono font-bold" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
-                          {inr2(s.amount)}
-                        </td>
-                      </tr>
-                    ))}
+                    {compiledSets.map((s, idx) => {
+                      const sQty = s.quantity || 1
+                      const sSum = s.summary || summary
+                      const sUnitBaseCost = s.breakdown?.totalCostBase || sSum.costBase || 0
+                      const sTotalBaseCost = sUnitBaseCost * sQty
+                      const isExpanded = !!expandedPerSetBreakdown[idx]
+
+                      return (
+                        <Fragment key={s.id || idx}>
+                          <tr
+                            onClick={() => togglePerSetBreakdown(idx)}
+                            style={{ background: idx === activeSystemIdx ? '#f0f9ff' : undefined, cursor: 'pointer', transition: 'background 0.15s' }}
+                            title="Click to toggle 1-Set breakdown details"
+                          >
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '13px' }}>{s.system_title}</span>
+                                <span className="chip sm" style={{ fontSize: '10px' }}>{sQty} {s.unit || 'SET'}{sQty > 1 ? 'S' : ''}</span>
+                                {idx === activeSystemIdx && <span className="chip primary xs" style={{ fontSize: '9px' }}>Current System</span>}
+                                <span className="chip xs" style={{ fontSize: '9.5px', background: isExpanded ? '#1e40af' : '#e0e7ff', color: isExpanded ? '#fff' : '#1e40af', fontWeight: 600, cursor: 'pointer' }}>
+                                  {isExpanded ? '▲ Hide 1-Set Breakdown' : '▼ View 1-Set Breakdown'}
+                                </span>
+                              </div>
+                              <div className="tiny muted" style={{ fontSize: '10px', marginTop: '2px' }}>
+                                Base Cost: {inr2(sTotalBaseCost)}{sQty > 1 ? ` (${inr2(sUnitBaseCost)} / set)` : ''}
+                              </div>
+                            </td>
+                            <td className="r font-mono font-bold" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
+                              {inr2(s.amount)}
+                              {sQty > 1 && (
+                                <div className="tiny muted" style={{ fontSize: '9.5px', fontWeight: 'normal' }}>
+                                  {inr2(s.rate)} / set
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr style={{ background: '#f8fafc', borderLeft: '3px solid #3b82f6' }}>
+                              <td colSpan={2} style={{ padding: '8px 12px' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '6px' }}>
+                                  📋 {s.system_title} — Per-Set Breakdown (1 of {sQty} Sets)
+                                </div>
+                                <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                                  <tbody>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Ex-Works Subtotal (N22)</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(sSum.subtotal)}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Transport / Freight (N24)</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(sSum.transport)}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Accommodation (N25)</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(sSum.accommodation ?? sSum.accessories)}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Installation (N23)</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{includeInstallation ? inr2(sSum.installation) : '₹0.00'}</td>
+                                    </tr>
+                                    <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 600 }}>
+                                      <td style={{ padding: '3px 0', color: '#334155' }}>1-Set Direct Cost Base</td>
+                                      <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(sUnitBaseCost)}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#2563eb', padding: '2px 0' }}>1-Set Profit Margin ({profitPct}%)</td>
+                                      <td className="r font-mono" style={{ color: '#2563eb', padding: '2px 0' }}>+{inr2(sUnitBaseCost * (profitPct / 100))}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#334155', padding: '2px 0' }}>1-Set Subtotal with Profit</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(s.pre_discount_rate)}</td>
+                                    </tr>
+                                    {discountPct > 0 && (
+                                      <tr>
+                                        <td style={{ color: '#dc2626', padding: '2px 0' }}>1-Set Discount ({discountPct}%)</td>
+                                        <td className="r font-mono" style={{ color: '#dc2626', padding: '2px 0' }}>-{inr2(s.pre_discount_rate - s.rate)}</td>
+                                      </tr>
+                                    )}
+                                    <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 700 }}>
+                                      <td style={{ padding: '3px 0', color: '#0f172a' }}>1-Set Subtotal Before GST</td>
+                                      <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(s.rate)}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set GST (18%)</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(s.rate * 0.18)}</td>
+                                    </tr>
+                                    <tr style={{ fontWeight: 700, color: '#15803d' }}>
+                                      <td style={{ padding: '3px 0' }}>1-Set Total Quotation Value</td>
+                                      <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(Math.round(s.rate * 1.18))}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                     <tr className="subtotal-row" style={{ background: '#f8fafc', borderTop: '1.5px solid #cbd5e1' }}>
                       <td>
                         <strong>Total Direct Cost Base ({systems.length} Systems)</strong>
@@ -5333,45 +5422,119 @@ export function CalculatorPage({
                 ) : (
                   <>
                     {compiledSets[0] && (
-                      <tr style={{ background: '#f0f9ff' }}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '13px' }}>
-                              {compiledSets[0].system_title || 'SYSTEM A'}
-                            </span>
-                            <span className="chip sm" style={{ fontSize: '10px' }}>
-                              {compiledSets[0].quantity} {compiledSets[0].unit || 'SET'}{compiledSets[0].quantity > 1 ? 'S' : ''}
-                            </span>
-                          </div>
-                          <div className="tiny muted" style={{ fontSize: '10px', marginTop: '2px' }}>
-                            Base Cost: {inr2(compiledSets[0].breakdown?.totalCostBase || summary.costBase || 0)}
-                          </div>
-                        </td>
-                        <td className="r font-mono font-bold" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
-                          {inr2(compiledSets[0].amount)}
-                        </td>
-                      </tr>
+                      <Fragment>
+                        <tr
+                          onClick={() => togglePerSetBreakdown(0)}
+                          style={{ background: '#f0f9ff', cursor: 'pointer', transition: 'background 0.15s' }}
+                          title="Click to toggle 1-Set breakdown details"
+                        >
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '13px' }}>
+                                {compiledSets[0].system_title || 'SYSTEM A'}
+                              </span>
+                              <span className="chip sm" style={{ fontSize: '10px' }}>
+                                {compiledSets[0].quantity} {compiledSets[0].unit || 'SET'}{compiledSets[0].quantity > 1 ? 'S' : ''}
+                              </span>
+                              <span className="chip xs" style={{ fontSize: '9.5px', background: expandedPerSetBreakdown[0] ? '#1e40af' : '#e0e7ff', color: expandedPerSetBreakdown[0] ? '#fff' : '#1e40af', fontWeight: 600, cursor: 'pointer' }}>
+                                {expandedPerSetBreakdown[0] ? '▲ Hide 1-Set Breakdown' : '▼ View 1-Set Breakdown'}
+                              </span>
+                            </div>
+                            <div className="tiny muted" style={{ fontSize: '10px', marginTop: '2px' }}>
+                              Base Cost: {inr2((compiledSets[0].breakdown?.totalCostBase || summary.costBase || 0) * (compiledSets[0].quantity || 1))}
+                              {compiledSets[0].quantity > 1 && ` (${inr2(compiledSets[0].breakdown?.totalCostBase || summary.costBase || 0)} / set)`}
+                            </div>
+                          </td>
+                          <td className="r font-mono font-bold" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
+                            {inr2(compiledSets[0].amount)}
+                            {compiledSets[0].quantity > 1 && (
+                              <div className="tiny muted" style={{ fontSize: '9.5px', fontWeight: 'normal' }}>
+                                {inr2(compiledSets[0].rate)} / set
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedPerSetBreakdown[0] && (
+                          <tr style={{ background: '#f8fafc', borderLeft: '3px solid #3b82f6' }}>
+                            <td colSpan={2} style={{ padding: '8px 12px' }}>
+                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '6px' }}>
+                                📋 {compiledSets[0].system_title || 'SYSTEM A'} — Per-Set Breakdown (1 of {compiledSets[0].quantity} Sets)
+                              </div>
+                              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                                <tbody>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Ex-Works Subtotal (N22)</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.subtotal)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Transport / Freight (N24)</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.transport)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Accommodation (N25)</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.accommodation ?? summary.accessories)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Installation (N23)</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{includeInstallation ? inr2(summary.installation) : '₹0.00'}</td>
+                                  </tr>
+                                  <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 600 }}>
+                                    <td style={{ padding: '3px 0', color: '#334155' }}>1-Set Direct Cost Base</td>
+                                    <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(summary.costBase)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#2563eb', padding: '2px 0' }}>1-Set Profit Margin ({profitPct}%)</td>
+                                    <td className="r font-mono" style={{ color: '#2563eb', padding: '2px 0' }}>+{inr2(summary.costBase * (profitPct / 100))}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#334155', padding: '2px 0' }}>1-Set Subtotal with Profit</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.subtotalWithProfit)}</td>
+                                  </tr>
+                                  {discountPct > 0 && (
+                                    <tr>
+                                      <td style={{ color: '#dc2626', padding: '2px 0' }}>1-Set Discount ({discountPct}%)</td>
+                                      <td className="r font-mono" style={{ color: '#dc2626', padding: '2px 0' }}>-{inr2(summary.discountAmount)}</td>
+                                    </tr>
+                                  )}
+                                  <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 700 }}>
+                                    <td style={{ padding: '3px 0', color: '#0f172a' }}>1-Set Subtotal Before GST</td>
+                                    <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(summary.beforeGst)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set GST (18%)</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.gst)}</td>
+                                  </tr>
+                                  <tr style={{ fontWeight: 700, color: '#15803d' }}>
+                                    <td style={{ padding: '3px 0' }}>1-Set Total Quotation Value</td>
+                                    <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(summary.sales)}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     )}
                 <tr>
-                  <td>Ex-Works Subtotal (N22)</td>
-                  <td className="r font-mono">{renderLiveVal(summary.subtotal)}</td>
+                  <td>Ex-Works Subtotal (N22){activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.subtotal * activeSysQty)}</td>
                 </tr>
 
                 {/* Packing & Forwarding REMOVED per user request */}
 
                 <tr>
 
-                  <td>Transport / Freight (N24)</td>
+                  <td>Transport / Freight (N24){activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</td>
 
-                  <td className="r font-mono">{renderLiveVal(summary.transport)}</td>
+                  <td className="r font-mono">{renderLiveVal(summary.transport * activeSysQty)}</td>
 
                 </tr>
 
                 <tr>
 
-                  <td>Accommodation (N25)</td>
+                  <td>Accommodation (N25){activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</td>
 
-                  <td className="r font-mono">{renderLiveVal(summary.accommodation ?? summary.accessories)}</td>
+                  <td className="r font-mono">{renderLiveVal((summary.accommodation ?? summary.accessories) * activeSysQty)}</td>
 
                 </tr>
 
@@ -5397,7 +5560,7 @@ export function CalculatorPage({
 
                         />
 
-                        <span>Installation (N23)</span>
+                        <span>Installation (N23){activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
 
                       </label>
 
@@ -5413,7 +5576,7 @@ export function CalculatorPage({
 
                   <td className="r font-mono">
 
-                    {includeInstallation ? inr2(summary.installation) : <span className="text-muted">₹0.00</span>}
+                    {includeInstallation ? inr2(summary.installation * activeSysQty) : <span className="text-muted">₹0.00</span>}
 
                   </td>
 
@@ -5423,11 +5586,11 @@ export function CalculatorPage({
 
                   <td>
 
-                    <strong>Direct Cost Base</strong>
+                    <strong>Direct Cost Base{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                   </td>
 
-                  <td className="r font-mono font-bold">{inr2(summary.costBase)}</td>
+                  <td className="r font-mono font-bold">{inr2(summary.costBase * activeSysQty)}</td>
 
                 </tr>
 
@@ -5439,7 +5602,7 @@ export function CalculatorPage({
 
                       <div className="margin-title">
 
-                        <strong>Profit Margin</strong>
+                        <strong>Profit Margin{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                       </div>
 
@@ -5477,7 +5640,7 @@ export function CalculatorPage({
 
                   <td className="r font-mono font-bold text-blue" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
 
-                    +{inr2(summary.profitAmount)}
+                    +{inr2(summary.costBase * activeSysQty * (profitPct / 100))}
 
                   </td>
 
@@ -5487,11 +5650,11 @@ export function CalculatorPage({
 
                   <td>
 
-                    <strong>Subtotal with Profit</strong>
+                    <strong>Subtotal with Profit{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                   </td>
 
-                  <td className="r font-mono font-bold">{inr2(summary.subtotalWithProfit)}</td>
+                  <td className="r font-mono font-bold">{inr2((summary.costBase * activeSysQty) * (1 + profitPct / 100))}</td>
 
                 </tr>
 
@@ -5503,7 +5666,7 @@ export function CalculatorPage({
 
                       <div className="margin-title">
 
-                        <strong>Discount</strong>
+                        <strong>Discount{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                       </div>
 
@@ -5583,7 +5746,7 @@ export function CalculatorPage({
 
                   <td className="r font-mono font-bold text-danger" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
 
-                    -{inr2(summary.discountAmount)}
+                    -{inr2(allSystemsTotals.discountAmount || (summary.discountAmount * activeSysQty))}
 
                   </td>
 
@@ -5593,19 +5756,19 @@ export function CalculatorPage({
 
                   <td>
 
-                    <strong>Subtotal Before GST</strong>
+                    <strong>Subtotal Before GST{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                   </td>
 
-                  <td className="r font-mono font-bold">{renderLiveVal(summary.beforeGst)}</td>
+                  <td className="r font-mono font-bold">{renderLiveVal(compiledSets[0]?.amount || (summary.beforeGst * activeSysQty))}</td>
 
                 </tr>
 
                 <tr>
 
-                  <td>GST (18%)</td>
+                  <td>GST (18%){activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</td>
 
-                  <td className="r font-mono">{renderLiveVal(summary.gst)}</td>
+                  <td className="r font-mono">{renderLiveVal((compiledSets[0]?.amount || (summary.beforeGst * activeSysQty)) * 0.18)}</td>
 
                 </tr>
 
@@ -5614,7 +5777,7 @@ export function CalculatorPage({
                     <strong>Total Quotation Value ({activeSysName})</strong>
                   </td>
                   <td className="r font-mono font-bold text-green" style={{ fontSize: 18 }}>
-                    {renderLiveVal(summary.sales, inr)}
+                    {renderLiveVal(Math.round((compiledSets[0]?.amount || (summary.beforeGst * activeSysQty)) * 1.18), inr)}
                   </td>
                 </tr>
                   </>
@@ -5643,18 +5806,75 @@ export function CalculatorPage({
               <tbody>
                 {systems.length > 1 ? (
                   <>
-                    {compiledSets.map((s, idx) => (
-                      <tr key={s.id || idx} style={{ background: idx === activeSystemIdx ? '#f0f9ff' : undefined }}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 700, color: '#1e40af' }}>{s.system_title}</span>
-                            <span className="chip sm" style={{ fontSize: '10px' }}>{s.quantity} {s.unit || 'SET'}{s.quantity > 1 ? 'S' : ''}</span>
-                            {idx === activeSystemIdx && <span className="chip primary xs" style={{ fontSize: '9px' }}>Current</span>}
-                          </div>
-                        </td>
-                        <td className="r font-mono font-bold">{inr2(s.amount)}</td>
-                      </tr>
-                    ))}
+                    {compiledSets.map((s, idx) => {
+                      const sQty = s.quantity || 1
+                      const sSum = s.summary || summary
+                      const isExpanded = !!expandedPerSetBreakdown[idx]
+
+                      return (
+                        <Fragment key={s.id || idx}>
+                          <tr
+                            onClick={() => togglePerSetBreakdown(idx)}
+                            style={{ background: idx === activeSystemIdx ? '#f0f9ff' : undefined, cursor: 'pointer', transition: 'background 0.15s' }}
+                            title="Click to toggle 1-Set breakdown details"
+                          >
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 700, color: '#1e40af' }}>{s.system_title}</span>
+                                <span className="chip sm" style={{ fontSize: '10px' }}>{sQty} {s.unit || 'SET'}{sQty > 1 ? 'S' : ''}</span>
+                                {idx === activeSystemIdx && <span className="chip primary xs" style={{ fontSize: '9px' }}>Current</span>}
+                                <span className="chip xs" style={{ fontSize: '9.5px', background: isExpanded ? '#1e40af' : '#e0e7ff', color: isExpanded ? '#fff' : '#1e40af', fontWeight: 600, cursor: 'pointer' }}>
+                                  {isExpanded ? '▲ Hide 1-Set' : '▼ View 1-Set'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="r font-mono font-bold">
+                              {inr2(s.amount)}
+                              {sQty > 1 && (
+                                <div className="tiny muted" style={{ fontSize: '9.5px', fontWeight: 'normal' }}>
+                                  {inr2(s.rate)} / set
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr style={{ background: '#f8fafc', borderLeft: '3px solid #3b82f6' }}>
+                              <td colSpan={2} style={{ padding: '8px 12px' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '6px' }}>
+                                  📋 {s.system_title} — Per-Set Breakdown (1 of {sQty} Sets)
+                                </div>
+                                <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                                  <tbody>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Base Quotation</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(s.pre_discount_rate || sSum.subtotalWithProfit)}</td>
+                                    </tr>
+                                    {discountPct > 0 && (
+                                      <tr>
+                                        <td style={{ color: '#dc2626', padding: '2px 0' }}>1-Set Discount ({discountPct}%)</td>
+                                        <td className="r font-mono" style={{ color: '#dc2626', padding: '2px 0' }}>-{inr2((s.pre_discount_rate || 0) - (s.rate || 0))}</td>
+                                      </tr>
+                                    )}
+                                    <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 700 }}>
+                                      <td style={{ padding: '3px 0', color: '#0f172a' }}>1-Set Subtotal Before GST</td>
+                                      <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(s.rate || sSum.beforeGst)}</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set GST (18%)</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2((s.rate || sSum.beforeGst || 0) * 0.18)}</td>
+                                    </tr>
+                                    <tr style={{ fontWeight: 700, color: '#15803d' }}>
+                                      <td style={{ padding: '3px 0' }}>1-Set Total Quotation Amount</td>
+                                      <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(Math.round((s.rate || sSum.beforeGst || 0) * 1.18))}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                     <tr>
                       <td>Base Quotation (All Systems)</td>
                       <td className="r font-mono font-bold">{inr2(allSystemsTotals.subtotalWithProfit)}</td>
@@ -5707,25 +5927,74 @@ export function CalculatorPage({
                 ) : (
                   <>
                     {compiledSets[0] && (
-                      <tr style={{ background: '#f0f9ff' }}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 700, color: '#1e40af' }}>
-                              {compiledSets[0].system_title || 'SYSTEM A'}
-                            </span>
-                            <span className="chip sm" style={{ fontSize: '10px' }}>
-                              {compiledSets[0].quantity} {compiledSets[0].unit || 'SET'}{compiledSets[0].quantity > 1 ? 'S' : ''}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="r font-mono font-bold">
-                          {inr2(compiledSets[0].amount)}
-                        </td>
-                      </tr>
+                      <Fragment>
+                        <tr
+                          onClick={() => togglePerSetBreakdown(0)}
+                          style={{ background: '#f0f9ff', cursor: 'pointer', transition: 'background 0.15s' }}
+                          title="Click to toggle 1-Set breakdown details"
+                        >
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 700, color: '#1e40af' }}>
+                                {compiledSets[0].system_title || 'SYSTEM A'}
+                              </span>
+                              <span className="chip sm" style={{ fontSize: '10px' }}>
+                                {compiledSets[0].quantity} {compiledSets[0].unit || 'SET'}{compiledSets[0].quantity > 1 ? 'S' : ''}
+                              </span>
+                              <span className="chip xs" style={{ fontSize: '9.5px', background: expandedPerSetBreakdown[0] ? '#1e40af' : '#e0e7ff', color: expandedPerSetBreakdown[0] ? '#fff' : '#1e40af', fontWeight: 600, cursor: 'pointer' }}>
+                                {expandedPerSetBreakdown[0] ? '▲ Hide 1-Set Breakdown' : '▼ View 1-Set Breakdown'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="r font-mono font-bold">
+                            {inr2(compiledSets[0].amount)}
+                            {compiledSets[0].quantity > 1 && (
+                              <div className="tiny muted" style={{ fontSize: '9.5px', fontWeight: 'normal' }}>
+                                {inr2(compiledSets[0].rate)} / set
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedPerSetBreakdown[0] && (
+                          <tr style={{ background: '#f8fafc', borderLeft: '3px solid #3b82f6' }}>
+                            <td colSpan={2} style={{ padding: '8px 12px' }}>
+                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '6px' }}>
+                                📋 {compiledSets[0].system_title || 'SYSTEM A'} — Per-Set Breakdown (1 of {compiledSets[0].quantity} Sets)
+                              </div>
+                              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                                <tbody>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Base Quotation</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.subtotalWithProfit)}</td>
+                                  </tr>
+                                  {discountPct > 0 && (
+                                    <tr>
+                                      <td style={{ color: '#dc2626', padding: '2px 0' }}>1-Set Discount ({discountPct}%)</td>
+                                      <td className="r font-mono" style={{ color: '#dc2626', padding: '2px 0' }}>-{inr2(summary.discountAmount)}</td>
+                                    </tr>
+                                  )}
+                                  <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 700 }}>
+                                    <td style={{ padding: '3px 0', color: '#0f172a' }}>1-Set Subtotal Before GST</td>
+                                    <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(summary.beforeGst)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set GST (18%)</td>
+                                    <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(summary.gst)}</td>
+                                  </tr>
+                                  <tr style={{ fontWeight: 700, color: '#15803d' }}>
+                                    <td style={{ padding: '3px 0' }}>1-Set Total Quotation Amount</td>
+                                    <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(summary.sales)}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     )}
                 <tr>
-                  <td>Base Quotation</td>
-                  <td className="r font-mono font-bold">{inr2(summary.subtotalWithProfit)}</td>
+                  <td>Base Quotation{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</td>
+                  <td className="r font-mono font-bold">{inr2(compiledSets[0]?.pre_discount_amount || (summary.subtotalWithProfit * activeSysQty))}</td>
                 </tr>
 
                 <tr className="discount-row">
@@ -5736,7 +6005,7 @@ export function CalculatorPage({
 
                       <div className="margin-title">
 
-                        <strong>Discount %</strong>
+                        <strong>Discount %{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                       </div>
 
@@ -5858,7 +6127,7 @@ export function CalculatorPage({
 
                   <td className="r font-mono font-bold text-danger" style={{ verticalAlign: 'middle', fontSize: '13px' }}>
 
-                    -{inr2(summary.discountAmount)}
+                    -{inr2(allSystemsTotals.discountAmount || ((compiledSets[0]?.pre_discount_amount || (summary.subtotalWithProfit * activeSysQty)) - (compiledSets[0]?.amount || (summary.beforeGst * activeSysQty))))}
 
                   </td>
 
@@ -5868,19 +6137,19 @@ export function CalculatorPage({
 
                   <td>
 
-                    <strong>Subtotal Before GST</strong>
+                    <strong>Subtotal Before GST{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</strong>
 
                   </td>
 
-                  <td className="r font-mono font-bold text-navy">{renderLiveVal(summary.beforeGst)}</td>
+                  <td className="r font-mono font-bold text-navy">{renderLiveVal(compiledSets[0]?.amount || (summary.beforeGst * activeSysQty))}</td>
 
                 </tr>
 
                 <tr>
 
-                  <td>GST (18% on Before GST)</td>
+                  <td>GST (18% on Before GST){activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</td>
 
-                  <td className="r font-mono">{renderLiveVal(summary.gst)}</td>
+                  <td className="r font-mono">{renderLiveVal((compiledSets[0]?.amount || (summary.beforeGst * activeSysQty)) * 0.18)}</td>
 
                 </tr>
 
@@ -5891,7 +6160,7 @@ export function CalculatorPage({
                     <strong style={{ fontSize: 14 }}>Total Quotation Amount ({activeSysName})</strong>
                   </td>
                   <td className="r font-mono font-bold text-green" style={{ fontSize: 20 }}>
-                    {renderLiveVal(summary.sales, inr)}
+                    {renderLiveVal(Math.round((compiledSets[0]?.amount || (summary.beforeGst * activeSysQty)) * 1.18), inr)}
                   </td>
                 </tr>
                   </>
