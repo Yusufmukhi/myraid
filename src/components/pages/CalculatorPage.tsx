@@ -281,59 +281,36 @@ function CellInput({
 
 
 function computeSystemTotalBodies(
-
   sys: any,
-
   sysOverrides: Overrides,
-
   wbInstance: Workbook,
-
   isCurrent: boolean,
-
   currentBodies?: number,
-
 ): number {
-
   if (isCurrent && currentBodies !== undefined && currentBodies > 0) {
-
     return currentBodies
-
   }
 
-  if (sys?.summary?.bodies && sys.summary.bodies > 0) {
-
-    return sys.summary.bodies
-
-  }
-
-  const dfmuRows = Number(sysOverrides['Total cal!A3'] ?? wbInstance.num('Total cal', 'A3') ?? 0)
-
+  const dfmuRows = Number(sysOverrides['Total cal!A3'] ?? (isCurrent ? wbInstance.num('Total cal', 'A3') : 4) ?? 4)
   const sfmuRows = Number(sysOverrides['Total cal!A7'] ?? Math.max(0, Math.round(dfmuRows / 2)))
-
   const sffuRows = Number(sysOverrides['Total cal!A11'] ?? Math.max(0, Math.round(dfmuRows / 2)))
-
   const dffuRows = Number(sysOverrides['Total cal!A15'] ?? dfmuRows)
-
   const dfmudRows = Number(sysOverrides['Total cal!A19'] ?? dfmuRows)
 
-
-
-  const dfmuQty = Number(sysOverrides['Total cal!G4'] ?? wbInstance.num('Total cal', 'G4') ?? 0)
-
-  const sfmuQty = Number(sysOverrides['Total cal!G8'] ?? wbInstance.num('Total cal', 'G8') ?? 0)
-
-  const sffuQty = Number(sysOverrides['Total cal!G12'] ?? wbInstance.num('Total cal', 'G12') ?? 0)
-
-  const dffuQty = Number(sysOverrides['Total cal!G16'] ?? wbInstance.num('Total cal', 'G16') ?? 0)
-
-  const dfmudQty = Number(sysOverrides['Total cal!G20'] ?? wbInstance.num('Total cal', 'G20') ?? 0)
-
-
+  const dfmuQty = Number(sysOverrides['Total cal!G4'] ?? (isCurrent ? wbInstance.num('Total cal', 'G4') : 0) ?? 0)
+  const sfmuQty = Number(sysOverrides['Total cal!G8'] ?? (isCurrent ? wbInstance.num('Total cal', 'G8') : 0) ?? 0)
+  const sffuQty = Number(sysOverrides['Total cal!G12'] ?? (isCurrent ? wbInstance.num('Total cal', 'G12') : 0) ?? 0)
+  const dffuQty = Number(sysOverrides['Total cal!G16'] ?? (isCurrent ? wbInstance.num('Total cal', 'G16') : 0) ?? 0)
+  const dfmudQty = Number(sysOverrides['Total cal!G20'] ?? (isCurrent ? wbInstance.num('Total cal', 'G20') : 0) ?? 0)
 
   const bodies = (dfmuQty * dfmuRows) + (sfmuQty * sfmuRows) + (sffuQty * sffuRows) + (dffuQty * dffuRows) + (dfmudQty * dfmudRows)
+  if (bodies > 0) return bodies
 
-  return bodies > 0 ? bodies : 1
+  if (sys?.summary?.bodies && sys.summary.bodies > 0) {
+    return sys.summary.bodies
+  }
 
+  return 1
 }
 
 
@@ -982,9 +959,9 @@ export function CalculatorPage({
 
       extraAmount,
 
-      summary,
+      summary: undefined,
 
-      breakdown: calcBreakdown,
+      breakdown: null,
 
     }
 
@@ -2699,6 +2676,25 @@ export function CalculatorPage({
         const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
         const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
         const c2cInputs = { ...filterCutToCutOverrides(actInputs), ...mergedC2COv }
+        // Proportional transport & accommodation per body allocation
+        const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
+          ? summary.bodies
+          : computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true)
+        const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
+
+        const projectTransport = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
+        const projectAccommodation = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+
+        const allocatedSysTransport = (totalCombinedBodies > 0 && systems.length > 1)
+          ? Math.round((projectTransport * activeSysTotalBodies) / totalCombinedBodies)
+          : projectTransport
+        const allocatedSysAccommodation = (totalCombinedBodies > 0 && systems.length > 1)
+          ? Math.round((projectAccommodation * activeSysTotalBodies) / totalCombinedBodies)
+          : projectAccommodation
+
+        c2cInputs['Total cal!N24'] = allocatedSysTransport
+        c2cInputs['Total cal!N25'] = allocatedSysAccommodation
+
         wbToExport.setOverrides(c2cInputs)
         wbToExport.setFormulaOverrides({ ...formulaOverrides, ...mergedC2CFO })
 
@@ -2707,20 +2703,34 @@ export function CalculatorPage({
         const fileName = `${qtnTitle}_${activeSysName}_Cut_to_Cut_Analysis.xlsx`
 
         const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
+        const sysC2CProfit = systems.length > 1 ? singleC2CProfit : displayC2CProfit
+        const sysC2CTotal = systems.length > 1 ? singleC2CTotal : displayC2CTotal
+        const sysC2CRatio = systems.length > 1 ? singleC2CRatio : displayC2CRatio
+
+        const modelSummaryText = (summary?.models || [])
+          .filter((m) => m.qty > 0)
+          .map((m) => `${m.qty} ${m.code}`)
+          .join(' + ')
+
         const c2cData = {
-          profit: displayC2CProfit,
-          total: displayC2CTotal,
-          ratio: displayC2CRatio,
+          profit: sysC2CProfit,
+          total: sysC2CTotal,
+          ratio: sysC2CRatio,
           costBase: c2cSummary?.costBase,
           labour: c2cSummary?.labourSubtotal,
           steelWeight: c2cSummary?.totalWeight,
           subtotalBeforeGst: activeSysBeforeGst,
           setsQty: activeSysQty,
+          sysTransport: allocatedSysTransport,
+          sysAccommodation: allocatedSysAccommodation,
         }
 
         exportWorkbookToXLSX(wbToExport, fileName, c2cData, {
           setsQty: activeSysQty,
           subtotalBeforeGst: activeSysBeforeGst,
+          sysTransport: allocatedSysTransport,
+          sysAccommodation: allocatedSysAccommodation,
+          modelSummaryStr: modelSummaryText || undefined,
         })
         toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
       }
