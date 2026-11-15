@@ -34,6 +34,14 @@ import {
 
 } from '../quotation/OfficialQuotationDocument'
 
+import {
+  calculateSystemBodies,
+  calculateProjectCombinedBodies,
+  calculateAllocatedLogistics,
+  calculateC2CAnalysis,
+  generateCentralizedBodyItems,
+} from '../../lib/calculatorCore'
+
 
 
 interface Props {
@@ -287,30 +295,7 @@ function computeSystemTotalBodies(
   isCurrent: boolean,
   currentBodies?: number,
 ): number {
-  if (isCurrent && currentBodies !== undefined && currentBodies > 0) {
-    return currentBodies
-  }
-
-  const dfmuRows = Number(sysOverrides['Total cal!A3'] ?? (isCurrent ? wbInstance.num('Total cal', 'A3') : 4) ?? 4)
-  const sfmuRows = Number(sysOverrides['Total cal!A7'] ?? Math.max(0, Math.round(dfmuRows / 2)))
-  const sffuRows = Number(sysOverrides['Total cal!A11'] ?? Math.max(0, Math.round(dfmuRows / 2)))
-  const dffuRows = Number(sysOverrides['Total cal!A15'] ?? dfmuRows)
-  const dfmudRows = Number(sysOverrides['Total cal!A19'] ?? dfmuRows)
-
-  const dfmuQty = Number(sysOverrides['Total cal!G4'] ?? (isCurrent ? wbInstance.num('Total cal', 'G4') : 0) ?? 0)
-  const sfmuQty = Number(sysOverrides['Total cal!G8'] ?? (isCurrent ? wbInstance.num('Total cal', 'G8') : 0) ?? 0)
-  const sffuQty = Number(sysOverrides['Total cal!G12'] ?? (isCurrent ? wbInstance.num('Total cal', 'G12') : 0) ?? 0)
-  const dffuQty = Number(sysOverrides['Total cal!G16'] ?? (isCurrent ? wbInstance.num('Total cal', 'G16') : 0) ?? 0)
-  const dfmudQty = Number(sysOverrides['Total cal!G20'] ?? (isCurrent ? wbInstance.num('Total cal', 'G20') : 0) ?? 0)
-
-  const bodies = (dfmuQty * dfmuRows) + (sfmuQty * sfmuRows) + (sffuQty * sffuRows) + (dffuQty * dffuRows) + (dfmudQty * dfmudRows)
-  if (bodies > 0) return bodies
-
-  if (sys?.summary?.bodies && sys.summary.bodies > 0) {
-    return sys.summary.bodies
-  }
-
-  return 1
+  return calculateSystemBodies(sys, sysOverrides, wbInstance, isCurrent, currentBodies).singleSetBodies
 }
 
 function KpiCard({
@@ -1645,14 +1630,9 @@ export function CalculatorPage({
   const activeSysQty = Math.max(0, Number(systems[activeSystemIdx]?.quantity) || 0)
 
   // Total Combined Bodies across ALL systems & sets (treats whole project as one job for transportation & accommodation)
-  // Formula: sum over each system of (singleSetBodies * sys.quantity)
-  const totalCombinedBodies = useMemo(() => {
-    return systems.reduce((acc, sys, idx) => {
-      const sysOv = idx === activeSystemIdx ? overrides : (sys.overrides || {})
-      const bodies = computeSystemTotalBodies(sys, sysOv, wb, idx === activeSystemIdx, actualSummary?.bodies)
-      const qty = Math.max(0, Number(sys.quantity) || 0)
-      return acc + (bodies * qty)
-    }, 0) || 1
+  // Single authoritative calculation engine
+  const { totalCombinedBodies, systemBreakdowns } = useMemo(() => {
+    return calculateProjectCombinedBodies(systems, activeSystemIdx, overrides, wb, actualSummary?.bodies)
   }, [systems, activeSystemIdx, overrides, wb, actualSummary?.bodies])
 
   // Recalculate Cut-to-Cut summary live whenever inputs change
@@ -1669,11 +1649,16 @@ export function CalculatorPage({
 
     const projectTrans = overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0)
     const projectAccom = overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0)
-    const sysBodies = computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
-    const shareRatio = totalCombinedBodies > 0 ? (sysBodies / totalCombinedBodies) : 1
-    const qtyForDiv = activeSysQty > 0 ? activeSysQty : 1
-    c2cOv['Total cal!N24'] = projectTrans * shareRatio
-    c2cOv['Total cal!N25'] = projectAccom * shareRatio
+    const activeBreakdown = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
+    const { allocatedTransport: c2cTrans, allocatedAccommodation: c2cAccom } = calculateAllocatedLogistics(
+      projectTrans,
+      projectAccom,
+      activeBreakdown.singleSetBodies,
+      totalCombinedBodies,
+      true,
+    )
+    c2cOv['Total cal!N24'] = c2cTrans
+    c2cOv['Total cal!N25'] = c2cAccom
 
     if (overrides['Total cal!N23'] !== undefined) c2cOv['Total cal!N23'] = overrides['Total cal!N23']
     c2cOv['__extra_amount'] = extraAmount
@@ -1685,7 +1670,7 @@ export function CalculatorPage({
       wb.setOverrides(overrides)
     }
     return res
-  }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, wbVersion, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides, activeSysQty, totalCombinedBodies, actualSummary?.bodies, systems, activeSystemIdx])
+  }, [isAdminOrOwner, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, wb, c2cWb, wbVersion, project.summary?.c2c_overrides, project.summary?.c2c_formula_overrides, activeSysQty, totalCombinedBodies, systemBreakdowns, actualSummary?.bodies, systems, activeSystemIdx])
 
   const [serverCalculating, setServerCalculating] = useState(false)
 
@@ -1730,15 +1715,18 @@ export function CalculatorPage({
 
     const projectTrans = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
     const projectAcc = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
-    const sysBodies = (raw.bodies && raw.bodies > 0) ? raw.bodies : 36
+    const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
+    const sysBodies = (raw.bodies && raw.bodies > 0) ? raw.bodies : activeSysInfo.singleSetBodies
 
     // Proportional shared transport and accommodation per set across total combined bodies
-    const sysTrans = (totalCombinedBodies > 0 && (activeSysQty > 1 || systems.length > 1))
-      ? Math.round(projectTrans * sysBodies / totalCombinedBodies)
-      : (raw.transport ?? projectTrans)
-    const sysAcc = (totalCombinedBodies > 0 && (activeSysQty > 1 || systems.length > 1))
-      ? Math.round(projectAcc * sysBodies / totalCombinedBodies)
-      : (raw.accommodation ?? projectAcc)
+    const isMultiSystemOrSets = activeSysQty > 1 || systems.length > 1
+    const { allocatedTransport: sysTrans, allocatedAccommodation: sysAcc } = calculateAllocatedLogistics(
+      projectTrans,
+      projectAcc,
+      sysBodies,
+      totalCombinedBodies,
+      isMultiSystemOrSets,
+    )
 
     // Re-apply profit margin on Direct Cost Base (costBase = Ex-Works + Transport + Accommodation + Installation + Extra)
     const effectiveCostBase = (raw.subtotal || 0) + (raw.installation || 0) + sysTrans + sysAcc + (raw.extraAmount || 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
@@ -1777,14 +1765,18 @@ export function CalculatorPage({
     const projectTrans = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
     const projectAcc = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
     const labourPerBody = (overrides['Total cal!B49'] !== undefined ? Number(overrides['Total cal!B49']) : (wb.num('Total cal', 'B49') || 300))
-    const sysBodies = computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
-    const shareRatio = totalCombinedBodies > 0 ? (sysBodies / totalCombinedBodies) : 1
-    const qtyForDiv = activeSysQty > 0 ? activeSysQty : 1
-    const rawT = (raw.transport !== undefined && raw.transport > 0) ? raw.transport : (projectTrans * shareRatio)
-    const trans = (activeSysQty > 1 && rawT === projectTrans) ? (rawT / qtyForDiv) : rawT
-    const rawA = (raw.accommodation !== undefined && raw.accommodation > 0) ? raw.accommodation : (projectAcc * shareRatio)
-    const acc = (activeSysQty > 1 && rawA === projectAcc) ? (rawA / qtyForDiv) : rawA
-    const systemBodies = raw.bodies || (raw.models?.reduce((acc: number, m: any) => acc + (m.bodies || 0), 0)) || 51
+    const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, actualSummary?.bodies)
+    const sysBodies = activeSysInfo.singleSetBodies
+    const { allocatedTransport: c2cTrans, allocatedAccommodation: c2cAccom } = calculateAllocatedLogistics(
+      projectTrans,
+      projectAcc,
+      sysBodies,
+      totalCombinedBodies,
+      true,
+    )
+    const trans = (raw.transport !== undefined && raw.transport > 0) ? raw.transport : c2cTrans
+    const acc = (raw.accommodation !== undefined && raw.accommodation > 0) ? raw.accommodation : c2cAccom
+    const systemBodies = raw.bodies || (raw.models?.reduce((acc: number, m: any) => acc + (m.bodies || 0), 0)) || sysBodies
     const inst = includeInstallation ? (systemBodies * labourPerBody) : 0
     const extraTot = (raw.extraAmount ?? extraAmount ?? 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
     const effC2cCostBase = raw.subtotal + inst + trans + acc + extraTot
@@ -1954,15 +1946,17 @@ export function CalculatorPage({
       const sysIncInst = sys.includeInstallation ?? includeInstallation
       const sysQty = Math.max(1, Number(sys.quantity) || 1)
 
-      const sysBodies = computeSystemTotalBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
+      const sysBodiesInfo = systemBreakdowns[idx] || calculateSystemBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
+      const sysBodies = sysBodiesInfo.singleSetBodies
 
       // Proportional shared transport and accommodation per set across total combined bodies
-      const sysTransport = totalCombinedBodies > 0
-        ? Math.round(projectTransport * sysBodies / totalCombinedBodies)
-        : projectTransport
-      const sysAccommodation = totalCombinedBodies > 0
-        ? Math.round(projectAccommodation * sysBodies / totalCombinedBodies)
-        : projectAccommodation
+      const { allocatedTransport: sysTransport, allocatedAccommodation: sysAccommodation } = calculateAllocatedLogistics(
+        projectTransport,
+        projectAccommodation,
+        sysBodies,
+        totalCombinedBodies,
+        true,
+      )
 
       sysOv['Total cal!N24'] = sysTransport
       sysOv['Total cal!N25'] = sysAccommodation
@@ -2876,20 +2870,22 @@ export function CalculatorPage({
         const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
         const c2cInputs = { ...filterCutToCutOverrides(actInputs), ...mergedC2COv }
         // Proportional transport & accommodation per body allocation
+        const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, summary?.bodies)
         const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
           ? summary.bodies
-          : computeSystemTotalBodies(systems[activeSystemIdx], overrides, wb, true)
+          : activeSysInfo.singleSetBodies
         const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
 
         const projectTransport = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
         const projectAccommodation = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
 
-        const allocatedSysTransport = (totalCombinedBodies > 0 && systems.length > 1)
-          ? Math.round((projectTransport * activeSysTotalBodies) / totalCombinedBodies)
-          : projectTransport
-        const allocatedSysAccommodation = (totalCombinedBodies > 0 && systems.length > 1)
-          ? Math.round((projectAccommodation * activeSysTotalBodies) / totalCombinedBodies)
-          : projectAccommodation
+        const { allocatedTransport: allocatedSysTransport, allocatedAccommodation: allocatedSysAccommodation } = calculateAllocatedLogistics(
+          projectTransport,
+          projectAccommodation,
+          activeSysTotalBodies,
+          totalCombinedBodies,
+          systems.length > 1,
+        )
 
         c2cInputs['Total cal!N24'] = allocatedSysTransport
         c2cInputs['Total cal!N25'] = allocatedSysAccommodation
@@ -3162,50 +3158,26 @@ export function CalculatorPage({
 
   // Comprehensive Body Calculations for DFMU, SFMU, SFFU, DFFU, DFMU-D
   const bodiesBreakdown = useMemo(() => {
-    const dfmuRows = Number(overrides['Total cal!A3'] ?? activeWb.num('Total cal', 'A3') ?? 0)
-    const sfmuRows = Number(overrides['Total cal!A7'] ?? Math.max(0, Math.round(dfmuRows / 2)))
-    const sffuRows = Number(overrides['Total cal!A11'] ?? Math.max(0, Math.round(dfmuRows / 2)))
-    const dffuRows = Number(overrides['Total cal!A15'] ?? dfmuRows)
-    const dfmudRows = Number(overrides['Total cal!A19'] ?? dfmuRows)
-
-    const dfmuQty = Number(overrides['Total cal!G4'] ?? activeWb.num('Total cal', 'G4') ?? 0)
-    const sfmuQty = Number(overrides['Total cal!G8'] ?? activeWb.num('Total cal', 'G8') ?? 0)
-    const sffuQty = Number(overrides['Total cal!G12'] ?? activeWb.num('Total cal', 'G12') ?? 0)
-    const dffuQty = Number(overrides['Total cal!G16'] ?? activeWb.num('Total cal', 'G16') ?? 0)
-    const dfmudQty = Number(overrides['Total cal!G20'] ?? activeWb.num('Total cal', 'G20') ?? 0)
-
-    const dfmuBodies = Math.round(dfmuQty * dfmuRows)
-    const sfmuBodies = Math.round(sfmuQty * sfmuRows)
-    const sffuBodies = Math.round(sffuQty * sffuRows)
-    const dffuBodies = Math.round(dffuQty * dffuRows)
-    const dfmudBodies = Math.round(dfmudQty * dfmudRows)
-
-    const singleSetBodies = (dfmuBodies + sfmuBodies + sffuBodies + dffuBodies + dfmudBodies) || (summary?.bodies || 0)
-    const totalBodiesForSets = singleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
-
-    const activeList: { label: string; count: number; desc: string }[] = []
-    if (dfmuQty > 0 || dfmuBodies > 0) activeList.push({ label: 'DFMU', count: dfmuBodies, desc: `${dfmuRows} rows × ${dfmuQty} qty = ${dfmuBodies}` })
-    if (sfmuQty > 0 || sfmuBodies > 0) activeList.push({ label: 'SFMU', count: sfmuBodies, desc: `${sfmuRows} rows × ${sfmuQty} qty = ${sfmuBodies}` })
-    if (sffuQty > 0 || sffuBodies > 0) activeList.push({ label: 'SFFU', count: sffuBodies, desc: `${sffuRows} rows × ${sffuQty} qty = ${sffuBodies}` })
-    if (dffuQty > 0 || dffuBodies > 0) activeList.push({ label: 'DFFU', count: dffuBodies, desc: `${dffuRows} rows × ${dffuQty} qty = ${dffuBodies}` })
-    if (dfmudQty > 0 || dfmudBodies > 0) activeList.push({ label: 'DFMU-D', count: dfmudBodies, desc: `${dfmudRows} rows × ${dfmudQty} qty = ${dfmudBodies}` })
-
-    const summaryText = activeList.length > 0 ? activeList.map((m) => `${m.label}: ${m.count}`).join(' · ') : '0 Bodies'
-    const tooltipText = activeList.map((m) => `${m.label}: ${m.desc}`).join('\n') + `\nTotal: ${singleSetBodies} bodies / set${activeSysQty > 1 ? ` × ${activeSysQty} sets = ${totalBodiesForSets} bodies` : ''}`
-
+    const activeBreakdown = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(
+      activeSys,
+      overrides,
+      activeWb,
+      true,
+      summary?.bodies,
+    )
     return {
-      dfmuBodies,
-      sfmuBodies,
-      sffuBodies,
-      dffuBodies,
-      dfmudBodies,
-      singleSetBodies,
-      totalBodiesForSets,
-      activeList,
-      summaryText,
-      tooltipText,
+      dfmuBodies: activeBreakdown.dfmuBodies,
+      sfmuBodies: activeBreakdown.sfmuBodies,
+      sffuBodies: activeBreakdown.sffuBodies,
+      dffuBodies: activeBreakdown.dffuBodies,
+      dfmudBodies: activeBreakdown.dfmudBodies,
+      singleSetBodies: activeBreakdown.singleSetBodies,
+      totalBodiesForSets: activeBreakdown.totalBodies,
+      activeList: activeBreakdown.models.map((m) => ({ label: m.code, count: m.unitBodies, desc: m.desc })),
+      summaryText: activeBreakdown.summaryText,
+      tooltipText: activeBreakdown.tooltipText,
     }
-  }, [overrides, activeWb, summary?.bodies, activeSysQty])
+  }, [systemBreakdowns, activeSystemIdx, activeSys, overrides, activeWb, summary?.bodies])
 
   const activeSysTotalBodies = bodiesBreakdown.totalBodiesForSets
 
@@ -3384,30 +3356,36 @@ export function CalculatorPage({
   // Line 3: Ratio = Total ÷ Cut-to-Cut Steel Weight
 
   // Single active system C2C metrics
-  const singleC2CProfit = c2cSummary
-    ? (summary.beforeGst * activeSysQty) - (c2cSummary.costBase * activeSysQty)
-    : 0
+  const singleC2CMetrics = useMemo(() => {
+    if (!c2cSummary) return { profit: 0, total: 0, ratio: 0, costBase: 0, labour: 0, steelWeight: 0 }
+    return calculateC2CAnalysis(
+      summary.beforeGst * activeSysQty,
+      c2cSummary.costBase * activeSysQty,
+      c2cSummary.labourSubtotal * activeSysQty,
+      (c2cSummary.totalWeight || 0) * activeSysQty,
+    )
+  }, [c2cSummary, summary.beforeGst, activeSysQty])
 
-  const singleC2CTotal = c2cSummary
-    ? singleC2CProfit + (c2cSummary.labourSubtotal * activeSysQty)
-    : 0
-
-  const singleC2CWeight = (c2cSummary?.totalWeight || 0) * activeSysQty
-
-  const singleC2CRatio = singleC2CWeight > 0 ? singleC2CTotal / singleC2CWeight : 0
+  const singleC2CProfit = singleC2CMetrics.profit
+  const singleC2CTotal = singleC2CMetrics.total
+  const singleC2CWeight = singleC2CMetrics.steelWeight
+  const singleC2CRatio = singleC2CMetrics.ratio
 
   // Combined C2C metrics across all systems and quantities
-  const allC2CProfit = (c2cAllSystemsTotals && allSystemsTotals)
-    ? (allSystemsTotals.beforeGst - c2cAllSystemsTotals.costBase)
-    : singleC2CProfit
+  const allC2CMetrics = useMemo(() => {
+    if (!c2cAllSystemsTotals || !allSystemsTotals) return null
+    return calculateC2CAnalysis(
+      allSystemsTotals.beforeGst,
+      c2cAllSystemsTotals.costBase,
+      c2cAllSystemsTotals.labourSubtotal,
+      c2cAllSystemsTotals.totalWeight,
+    )
+  }, [c2cAllSystemsTotals, allSystemsTotals])
 
-  const allC2CTotal = c2cAllSystemsTotals
-    ? allC2CProfit + c2cAllSystemsTotals.labourSubtotal
-    : singleC2CTotal
-
-  const allC2CWeight = c2cAllSystemsTotals ? c2cAllSystemsTotals.totalWeight : singleC2CWeight
-
-  const allC2CRatio = allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0
+  const allC2CProfit = allC2CMetrics ? allC2CMetrics.profit : singleC2CProfit
+  const allC2CTotal = allC2CMetrics ? allC2CMetrics.total : singleC2CTotal
+  const allC2CWeight = allC2CMetrics ? allC2CMetrics.steelWeight : singleC2CWeight
+  const allC2CRatio = allC2CMetrics ? allC2CMetrics.ratio : singleC2CRatio
 
   const isMultiScope = activeSysQty > 1 || systems.length > 1
   const isMultiSystem = quotationMode === 'set_wise' && systems.length > 1

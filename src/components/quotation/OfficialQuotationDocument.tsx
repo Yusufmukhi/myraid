@@ -22,6 +22,7 @@ import {
   getVisibleFieldValues,
 } from '../../lib/clientDirectory'
 import { Icon, useUI, Spinner } from '../ui'
+import { calculateSystemBodies } from '../../lib/calculatorCore'
 
 export type { QuotationExtraField, ClientContactPerson }
 
@@ -343,23 +344,17 @@ export function computeUnitWiseBreakdown(
   const extraAmount = customExtraAmount !== undefined && !isNaN(customExtraAmount) ? customExtraAmount : 0
 
   const activeModels = (summary?.models || []).filter((m) => m.qty > 0)
-
-  let dfmuRows = 6
-  if (wb) {
-    dfmuRows = wb.num('Total cal', 'A3') || 6
-  }
+  const bodiesInfo = calculateSystemBodies({ summary }, {}, wb, true, summary?.bodies)
 
   const rowDefs = activeModels.map((m) => {
-    let rowsPerUnit = 6
+    const found = bodiesInfo.models.find((bm) => bm.code === m.code)
+    let rowsPerUnit = found ? found.rowsPerUnit : (m.code === 'SFMU' || m.code === 'SFFU' ? Math.max(1, Math.round(bodiesInfo.dfmuRows / 2)) : bodiesInfo.dfmuRows)
     if (wb) {
-      if (m.code === 'DFMU') rowsPerUnit = wb.num('Total cal', 'A3') || 6
-      else if (m.code === 'SFMU') rowsPerUnit = wb.num('Total cal', 'A7') || ((wb.num('Total cal', 'A3') || 6) / 2)
-      else if (m.code === 'SFFU') rowsPerUnit = wb.num('Total cal', 'A11') || ((wb.num('Total cal', 'A3') || 6) / 2)
-      else if (m.code === 'DFFU') rowsPerUnit = wb.num('Total cal', 'A15') || wb.num('Total cal', 'A3') || 6
-      else if (m.code === 'DFMU-D' || m.code === 'DFFU-D') rowsPerUnit = wb.num('Total cal', 'A19') || wb.num('Total cal', 'A3') || 6
-    } else {
-      const isSingle = m.code === 'SFMU' || m.code === 'SFFU'
-      rowsPerUnit = isSingle ? Math.max(1, Math.round(dfmuRows / 2)) : dfmuRows
+      if (m.code === 'DFMU') rowsPerUnit = wb.num('Total cal', 'A3') || rowsPerUnit
+      else if (m.code === 'SFMU') rowsPerUnit = wb.num('Total cal', 'A7') || rowsPerUnit
+      else if (m.code === 'SFFU') rowsPerUnit = wb.num('Total cal', 'A11') || rowsPerUnit
+      else if (m.code === 'DFFU') rowsPerUnit = wb.num('Total cal', 'A15') || rowsPerUnit
+      else if (m.code === 'DFMU-D' || m.code === 'DFFU-D') rowsPerUnit = wb.num('Total cal', 'A19') || rowsPerUnit
     }
     return {
       model: m,
@@ -367,7 +362,7 @@ export function computeUnitWiseBreakdown(
     }
   })
 
-  const calculatedTotalBodies = rowDefs.reduce((acc, r) => acc + (r.model.qty * r.rowsPerUnit), 0)
+  const calculatedTotalBodies = bodiesInfo.singleSetBodies || rowDefs.reduce((acc, r) => acc + (r.model.qty * r.rowsPerUnit), 0)
   const totalBodies = (customTotalBodies && customTotalBodies > 0)
     ? customTotalBodies
     : ((summary.bodies && summary.bodies > 0) ? summary.bodies : (calculatedTotalBodies > 0 ? calculatedTotalBodies : 1))
@@ -529,6 +524,7 @@ export interface QuotationSet {
   items: SetUnitItem[]
   summary?: any
   breakdown?: any
+  overrides?: any
 }
 
 export interface InstallationBodyItem {
@@ -675,15 +671,10 @@ export function generateDefaultBodyItems(
       const sysName = (s.system_title || (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)).trim()
       const sysQty = Math.max(1, Number(s.quantity) || 1)
       const sysSummary = s.summary || summary
-      let dfmuRows = 6
-      if (s.breakdown?.rows?.[0]?.rows_per_unit) {
-        dfmuRows = s.breakdown.rows[0].rows_per_unit
-      } else if (wb) {
-        dfmuRows = wb.num('Total cal', 'A3') || 6
-      } else if (inputs?.['Total cal!A3']) {
-        dfmuRows = Number(inputs['Total cal!A3']) || 6
-      }
-      const bayCount = Math.max(1, Math.round(dfmuRows / 2))
+      const sysOv = s.overrides || inputs || {}
+      const sysBodies = calculateSystemBodies(s, sysOv, wb, false, sysSummary?.bodies)
+      const bayCount = Math.max(1, Math.round(sysBodies.dfmuRows / 2))
+
       // Prioritize items directly from this system so each system's bodies match its commercial rows
       if (s.items && s.items.length > 0) {
         s.items.forEach((it: any) => {
@@ -696,9 +687,8 @@ export function generateDefaultBodyItems(
             it.model_name?.includes('DFFU') ? 'DFFU' : 'DFMU'
           )).trim()
 
-          const isSingle = code === 'SFMU' || code === 'SFFU'
-          let rowsPerUnit = isSingle ? bayCount : (bayCount * 2)
-          if (it.rows_per_unit) rowsPerUnit = it.rows_per_unit
+          const foundModel = sysBodies.models.find((m) => m.code === code)
+          let rowsPerUnit = it.rows_per_unit || (foundModel ? foundModel.rowsPerUnit : (code === 'SFMU' || code === 'SFFU' ? bayCount : bayCount * 2))
           const unitCount = Number(it.unit_qty !== undefined ? it.unit_qty : it.quantity) || 0
           const unitBody = rowsPerUnit * unitCount
           const total_body = unitBody * sysQty
@@ -717,62 +707,55 @@ export function generateDefaultBodyItems(
           })
         })
       } else {
-        const activeModels = (sysSummary?.models || []).filter((m: any) => m.qty > 0)
-        const modelsToUse = activeModels.length > 0 ? activeModels : sysSummary?.models || []
+        const modelsToUse = sysBodies.models.length > 0
+          ? sysBodies.models
+          : (sysSummary?.models || []).filter((m: any) => m.qty > 0)
 
         modelsToUse.forEach((m: any) => {
-        let rowsPerUnit = 6
-        if (m.code === 'DFMU') rowsPerUnit = dfmuRows
-        else if (m.code === 'SFMU' || m.code === 'SFFU') rowsPerUnit = Math.max(1, Math.round(dfmuRows / 2))
-        else rowsPerUnit = dfmuRows
-
-        const unitCount = Number(m.qty) || 0
-        const unitBody = rowsPerUnit * unitCount
-        const total_body = unitBody * sysQty
-        allItems.push({
-          id: `${s.id || sIdx}-${m.code}-${counter++}`,
-          title: `${m.code} ${bayCount} BAY`,
-          sub_label: `BODY IN ${m.code}`,
-          per_bay_qty: rowsPerUnit,
-          qty: unitCount,
-          total_body,
-          system_name: sysName,
-          system_id: s.id || String(sIdx),
-          set_qty: sysQty,
-          unit_body: unitBody,
+          const rowsPerUnit = m.rowsPerUnit || (m.code === 'SFMU' || m.code === 'SFFU' ? bayCount : bayCount * 2)
+          const unitCount = Number(m.qty) || 0
+          const unitBody = m.unitBodies !== undefined ? m.unitBodies : (rowsPerUnit * unitCount)
+          const total_body = unitBody * sysQty
+          allItems.push({
+            id: `${s.id || sIdx}-${m.code}-${counter++}`,
+            title: `${m.code} ${bayCount} BAY`,
+            sub_label: `BODY IN ${m.code}`,
+            per_bay_qty: rowsPerUnit,
+            qty: unitCount,
+            total_body,
+            system_name: sysName,
+            system_id: s.id || String(sIdx),
+            set_qty: sysQty,
+            unit_body: unitBody,
+          })
         })
-      })
       }
     })
     if (allItems.length > 0) return allItems
   }
 
-  let dfmuRows = 6
-  if (wb) {
-    dfmuRows = wb.num('Total cal', 'A3') || 6
-  } else if (inputs?.['Total cal!A3']) {
-    dfmuRows = Number(inputs['Total cal!A3']) || 6
-  }
-  const bayCount = Math.max(1, Math.round(dfmuRows / 2))
+  const sysOv = inputs || {}
+  const sysBodies = calculateSystemBodies({ summary }, sysOv, wb, true, summary?.bodies)
+  const bayCount = Math.max(1, Math.round(sysBodies.dfmuRows / 2))
 
   const activeModels = (summary?.models || []).filter((m) => m.qty > 0)
-  const modelsToUse = activeModels.length > 0 ? activeModels : [
-    { code: 'DFMU', qty: 8 },
-    { code: 'SFMU', qty: 2 },
-    { code: 'SFFU', qty: 2 },
-  ]
+  const modelsToUse = activeModels.length > 0
+    ? activeModels
+    : (sysBodies.models.length > 0 ? sysBodies.models : [
+        { code: 'DFMU', qty: 8 },
+        { code: 'SFMU', qty: 2 },
+        { code: 'SFFU', qty: 2 },
+      ])
 
-  return modelsToUse.map((m, idx) => {
-    let rowsPerUnit = 6
+  return modelsToUse.map((m: any, idx: number) => {
+    const found = sysBodies.models.find((bm) => bm.code === m.code)
+    let rowsPerUnit = found ? found.rowsPerUnit : (m.code === 'SFMU' || m.code === 'SFFU' ? bayCount : bayCount * 2)
     if (wb) {
       if (m.code === 'DFMU') rowsPerUnit = wb.num('Total cal', 'A3') || (bayCount * 2)
       else if (m.code === 'SFMU') rowsPerUnit = wb.num('Total cal', 'A7') || ((wb.num('Total cal', 'A3') || (bayCount * 2)) / 2) || bayCount
       else if (m.code === 'SFFU') rowsPerUnit = wb.num('Total cal', 'A11') || ((wb.num('Total cal', 'A3') || (bayCount * 2)) / 2) || bayCount
       else if (m.code === 'DFFU') rowsPerUnit = wb.num('Total cal', 'A15') || wb.num('Total cal', 'A3') || (bayCount * 2)
       else if (m.code === 'DFMU-D' || m.code === 'DFFU-D') rowsPerUnit = wb.num('Total cal', 'A19') || wb.num('Total cal', 'A3') || (bayCount * 2)
-    } else {
-      const isSingle = m.code === 'SFMU' || m.code === 'SFFU'
-      rowsPerUnit = isSingle ? bayCount : (bayCount * 2)
     }
 
     const codeLabel = m.code
@@ -6772,7 +6755,7 @@ export function OfficialQuotationDocument({
                       className="btn secondary"
                       style={{ fontSize: '11px', padding: '3px 8px' }}
                       onClick={() => {
-                        const fresh = generateDefaultBodyItems(summary, wb, project.inputs)
+                        const fresh = generateDefaultBodyItems(summary, wb, project.inputs, (initialSets && initialSets.length > 0) ? initialSets : undefined)
                         setBodyItems(fresh)
                         toast('Bodies reset')
                       }}
