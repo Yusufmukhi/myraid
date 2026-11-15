@@ -287,7 +287,7 @@ export function CalculationDetails({
     const c2cWeight = c2cWbToUse.num('Total cal', 'J44') || c2cWbToUse.num('Total cal', 'J45') || 1
     const ratio = c2cWeight > 0 ? (total / c2cWeight) : 0
 
-    return { profit, total, ratio, costBase: c2cCostBase, labour: c2cLabour, steelWeight: c2cWeight }
+    return { profit, total, ratio, costBase: c2cCostBase, labour: c2cLabour, steelWeight: c2cWeight, actualBeforeGst }
   }, [serverWb, wb, c2cWb, effectiveSysOverrides, effectiveSysC2COverrides])
 
   const [name, setName] = useState('Total cal')
@@ -625,19 +625,19 @@ export function CalculationDetails({
                     let val = activeWb.value(name, r, c)
                     let raw = activeWb.raw(name, r, c)
 
-                    // Inject 3-line C2C Widget live at E26:G28 on Total cal
+                    // Inject Subtotal Before GST and Cut-to-Cut 3-Line Analysis at R5:S8 on Total cal
                     if (name === 'Total cal') {
-                      if (r === 25 && c === 4) { raw = 'C2C PROFIT'; val = 'C2C PROFIT' }
-                      if (r === 25 && c === 5) { raw = c2cAnalysis.profit; val = c2cAnalysis.profit }
-                      if (r === 25 && c === 6) { raw = 'Actual Before GST - C2C Cost Base'; val = 'Actual Before GST - C2C Cost Base' }
+                      if (r === 4 && c === 17) { raw = 'Subtotal Before GST'; val = 'Subtotal Before GST' }
+                      if (r === 4 && c === 18) { raw = c2cAnalysis.actualBeforeGst || 0; val = c2cAnalysis.actualBeforeGst || 0 }
 
-                      if (r === 26 && c === 4) { raw = 'C2C TOTAL'; val = 'C2C TOTAL' }
-                      if (r === 26 && c === 5) { raw = c2cAnalysis.total; val = c2cAnalysis.total }
-                      if (r === 26 && c === 6) { raw = 'Profit + C2C Labour'; val = 'Profit + C2C Labour' }
+                      if (r === 5 && c === 17) { raw = 'C2C Profit'; val = 'C2C Profit' }
+                      if (r === 5 && c === 18) { raw = Math.round(c2cAnalysis.profit); val = Math.round(c2cAnalysis.profit) }
 
-                      if (r === 27 && c === 4) { raw = 'C2C RATIO'; val = 'C2C RATIO' }
-                      if (r === 27 && c === 5) { raw = Number(c2cAnalysis.ratio.toFixed(2)); val = Number(c2cAnalysis.ratio.toFixed(2)) }
-                      if (r === 27 && c === 6) { raw = 'Total / C2C Weight (₹/kg)'; val = 'Total / C2C Weight (₹/kg)' }
+                      if (r === 6 && c === 17) { raw = 'C2C Total'; val = 'C2C Total' }
+                      if (r === 6 && c === 18) { raw = Math.round(c2cAnalysis.total); val = Math.round(c2cAnalysis.total) }
+
+                      if (r === 7 && c === 17) { raw = 'C2C Ratio'; val = 'C2C Ratio' }
+                      if (r === 7 && c === 18) { raw = Number(c2cAnalysis.ratio.toFixed(2)); val = Number(c2cAnalysis.ratio.toFixed(2)) }
                     }
                     const isCellInput = activeWb.isInput(name, r, c) || EXTRA_EDITABLE.has(key)
                     const isCellChangedInput = key in activeOverrides

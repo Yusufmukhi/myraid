@@ -313,7 +313,206 @@ function computeSystemTotalBodies(
   return 1
 }
 
+function KpiCard({
+  label,
+  singleVal,
+  allVal,
+  format = 'kg',
+  highlight,
+  activeSysName,
+  activeSysQty = 1,
+  activeSysUnit = 'SET',
+  isMultiSystem = false,
+  serverCalculating = false,
+  subLabel,
+  title,
+}: {
+  label: string
+  singleVal: number
+  allVal?: number
+  format?: 'kg' | 'inr' | 'count'
+  highlight?: string
+  activeSysName?: string
+  activeSysQty?: number
+  activeSysUnit?: string
+  isMultiSystem?: boolean
+  serverCalculating?: boolean
+  subLabel?: string
+  title?: string
+}) {
+  const formatVal = (v: number) => {
+    if (format === 'kg') return kg(v)
+    if (format === 'inr') return inr(v)
+    return count(v)
+  }
 
+  const activeTotalVal = singleVal * (activeSysQty || 1)
+
+  return (
+    <div className={`excel-kpi-card ${highlight || ''}`} title={title}>
+      <span className="kpi-label">{label}</span>
+      <strong
+        className="kpi-val"
+        style={{
+          fontSize: '13.5px',
+          color: highlight === 'highlight-mech' ? '#1d4ed8' : '#1e40af',
+          lineHeight: 1.25,
+        }}
+      >
+        {isMultiSystem && activeSysName && (
+          <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
+            {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
+          </span>
+        )}
+        {serverCalculating ? (
+          <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span>
+        ) : (
+          formatVal(activeTotalVal)
+        )}
+      </strong>
+      <span
+        className="kpi-sub"
+        style={isMultiSystem ? { fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' } : undefined}
+      >
+        {isMultiSystem ? (
+          <>
+            <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
+            {serverCalculating ? (
+              <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span>
+            ) : (
+              formatVal(allVal ?? 0)
+            )}
+          </>
+        ) : (
+          <>
+            {subLabel}
+            {activeSysQty > 1 && !subLabel?.includes('Sets') ? ` (${activeSysQty} Sets)` : ''}
+          </>
+        )}
+      </span>
+    </div>
+  )
+}
+
+function C2CAnalysisWidget({
+  profit,
+  total,
+  ratio,
+  systemsCount,
+  serverCalculating,
+}: {
+  profit: number
+  total: number
+  ratio: number
+  systemsCount: number
+  serverCalculating: boolean
+}) {
+  return (
+    <div
+      className="excel-kpi-card highlight-c2c"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        minWidth: '175px',
+        padding: '4px 10px',
+        gap: '2px',
+      }}
+      title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+        <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+          {systemsCount > 1 ? `C2C ANALYSIS (${systemsCount} SYS)` : 'C2C ANALYSIS'}
+        </span>
+        {serverCalculating ? (
+          <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
+          </span>
+        ) : (
+          <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
+        <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
+          {serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(profit))}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
+        <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
+          {serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(total))}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
+        <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>
+          ₹{ratio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function TotalQuotationAmountWidget({
+  activeSysSales,
+  allSystemsSales,
+  activeSysName,
+  activeSysQty = 1,
+  activeSysUnit = 'SET',
+  isMultiSystem = false,
+  serverCalculating = false,
+  summary,
+}: {
+  activeSysSales: number
+  allSystemsSales: number
+  activeSysName: string
+  activeSysQty?: number
+  activeSysUnit?: string
+  isMultiSystem?: boolean
+  serverCalculating?: boolean
+  summary: Summary
+}) {
+  return (
+    <div className="excel-kpi-card highlight">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
+        {serverCalculating ? (
+          <span className="kpi-calculating-watermark">
+            <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
+          </span>
+        ) : (
+          <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
+        )}
+      </div>
+      <strong className="kpi-val sales-val" style={isMultiSystem ? { fontSize: '14.5px', lineHeight: 1.25 } : undefined}>
+        {isMultiSystem && (
+          <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
+            {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
+          </span>
+        )}
+        {serverCalculating ? (
+          <span className={isMultiSystem ? '' : 'live-calc-pulse'} style={{ color: '#2563eb', fontStyle: 'italic', fontSize: isMultiSystem ? '12px' : '18px' }}>—</span>
+        ) : (
+          inr(activeSysSales)
+        )}
+      </strong>
+      <span className="kpi-sub" style={isMultiSystem ? { fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' } : undefined}>
+        {isMultiSystem ? (
+          <>
+            <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
+            {serverCalculating ? <span style={{ color: '#047857', fontStyle: 'italic', fontSize: '11px' }}>calculating…</span> : inr(allSystemsSales)}
+          </>
+        ) : (
+          serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`
+        )}
+      </span>
+    </div>
+  )
+}
 
 export function CalculatorPage({
 
@@ -3211,6 +3410,7 @@ export function CalculatorPage({
   const allC2CRatio = allC2CWeight > 0 ? allC2CTotal / allC2CWeight : 0
 
   const isMultiScope = activeSysQty > 1 || systems.length > 1
+  const isMultiSystem = quotationMode === 'set_wise' && systems.length > 1
   const c2cProfit = isMultiScope && allC2CProfit !== null ? allC2CProfit : singleC2CProfit
   const c2cTotal = isMultiScope && allC2CTotal !== null ? allC2CTotal : singleC2CTotal
   const c2cRatio = isMultiScope && allC2CRatio !== null ? allC2CRatio : singleC2CRatio
@@ -3588,351 +3788,142 @@ export function CalculatorPage({
 
       <div className={`excel-kpi-bar ${!isAdminOrOwner ? 'staff-kpi-bar' : ''} ${serverCalculating ? 'is-calculating' : ''}`}>
 
-        {quotationMode === 'set_wise' && systems.length > 1 ? (
-
-          <>
-
-            {/* Multi-System KPI Cards (SYSTEM A vs All Systems) */}
-
-            <div className="excel-kpi-card" style={{ minWidth: '155px' }} title={bodiesBreakdown.tooltipText}>
-
-              <span className="kpi-label">TOTAL BODIES</span>
-
-              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-
-                  {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-
-                </span>
-
-                {bodiesBreakdown.totalBodiesForSets} Bodies
-                {activeSysQty > 1 && (
-                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', marginLeft: '4px' }}>
-                    ({bodiesBreakdown.singleSetBodies}/set)
-                  </span>
-                )}
-
-              </strong>
-
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {bodiesBreakdown.summaryText}
-                </span>
-
-                <span style={{ fontSize: '10px', color: '#64748b' }}>
-                  All Systems: <strong>{totalCombinedBodies} Bodies</strong>
-                </span>
-
+        {/* TOTAL BODIES WIDGET */}
+        <div className="excel-kpi-card" style={{ minWidth: '155px' }} title={bodiesBreakdown.tooltipText}>
+          <span className="kpi-label">TOTAL BODIES</span>
+          <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
+            {isMultiSystem && (
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
+                {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
               </span>
-
-            </div>
-
-
-
-            {isAdminOrOwner && (
-              <>
-            <div className="excel-kpi-card">
-              <span className="kpi-label">SP TOTAL</span>
-              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                  {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                </span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal * activeSysQty)}
-              </strong>
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
-                <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.spTotal)}
-              </span>
-            </div>
-
-            <div className="excel-kpi-card">
-              <span className="kpi-label">TROLLY STEEL</span>
-              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                  {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                </span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.trolley.total * activeSysQty)}
-              </strong>
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
-                <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.trolleyTotal)}
-              </span>
-            </div>
-
-            <div className="excel-kpi-card">
-              <span className="kpi-label">TOTAL WEIGHT</span>
-              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                  {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                </span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight * activeSysQty)}
-              </strong>
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
-                <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.totalWeight)}
-              </span>
-            </div>
-              </>
             )}
-
-            <div className="excel-kpi-card highlight-mech">
-              <span className="kpi-label">WT WITH MACHINE</span>
-              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1d4ed8', lineHeight: 1.25 }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                  {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                </span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.weightWithMachine * activeSysQty)}
-              </strong>
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
-                <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : kg(displayAllSystemsTotals.weightWithMachine)}
+            {bodiesBreakdown.totalBodiesForSets} Bodies
+            {activeSysQty > 1 && (
+              <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', marginLeft: '4px' }}>
+                ({bodiesBreakdown.singleSetBodies}/set)
               </span>
-            </div>
-
-            {isAdminOrOwner ? (
-              <>
-                <div className="excel-kpi-card">
-                  <span className="kpi-label">LABOUR</span>
-                  <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                      {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                    </span>
-                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.labourSubtotal * activeSysQty)}
-                  </strong>
-                  <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
-                    <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : inr(displayAllSystemsTotals.labourSubtotal)}
-                  </span>
-                </div>
-
-                <div className="excel-kpi-card">
-                  <span className="kpi-label">POWDER COATING</span>
-                  <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                      {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                    </span>
-                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.powderTotal * activeSysQty)}
-                  </strong>
-                  <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11px', marginTop: '2px' }}>
-                    <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                    {serverCalculating ? <span className="live-calc-pulse" style={{ color: '#047857' }}>—</span> : inr(displayAllSystemsTotals.powderTotal)}
-                  </span>
-                </div>
-
-
-
-                {isAdminOrOwner ? (
-                  <div
-                    className="excel-kpi-card highlight-c2c"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      minWidth: '175px',
-                      padding: '4px 10px',
-                      gap: '2px',
-                    }}
-                    title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                      <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
-                        {systems.length > 1 ? `C2C ANALYSIS (${systems.length} SYS)` : 'C2C ANALYSIS'}
-                      </span>
-                      {serverCalculating ? (
-                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
-                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
-                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>
-                        ₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span>
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="excel-kpi-card highlight">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
-                      {serverCalculating ? (
-                        <span className="kpi-calculating-watermark">
-                          <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
-                      )}
-                    </div>
-                    <strong className="kpi-val sales-val" style={{ fontSize: '14.5px', lineHeight: 1.25 }}>
-                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-                        {activeSysName}{activeSysQty > 1 ? ` (${activeSysQty} ${activeSysUnit}S)` : ''}:
-                      </span>
-                      {serverCalculating ? <span style={{ color: '#2563eb', fontStyle: 'italic', fontSize: '12px' }}>calculating…</span> : inr(kpiActiveSysSales)}
-                    </strong>
-                    <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '11.5px', marginTop: '2px' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', marginRight: '4px' }}>All Systems:</span>
-                      {serverCalculating ? <span style={{ color: '#047857', fontStyle: 'italic', fontSize: '11px' }}>calculating…</span> : inr(kpiAllSystemsTotals.sales)}
-                    </span>
-                  </div>
-                )}
-              </>
-            ) : null}
-          </>
-        ) : (
-          <>
-            {/* Pure Single Calculator Mode (when in individual unit-wise or single system) */}
-            <div className="excel-kpi-card" style={{ minWidth: '155px' }} title={bodiesBreakdown.tooltipText}>
-              <span className="kpi-label">TOTAL BODIES</span>
-              <strong className="kpi-val" style={{ fontSize: '13.5px', color: '#1e40af', lineHeight: 1.25 }}>
-                {bodiesBreakdown.totalBodiesForSets} Bodies
-                {activeSysQty > 1 && (
-                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', marginLeft: '4px' }}>
-                    ({bodiesBreakdown.singleSetBodies}/set)
-                  </span>
-                )}
-              </strong>
-              <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {bodiesBreakdown.summaryText}
-                </span>
-                <span style={{ fontSize: '10px', color: '#64748b' }}>
-                  {count(displaySummary.compartments * (activeSysQty || 1))} Compartments{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}
-                </span>
-              </span>
-            </div>
-
-            {isAdminOrOwner && (
-              <>
-            <div className="excel-kpi-card">
-              <span className="kpi-label">SP TOTAL</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.steel.spTotal * activeSysQty)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Steel Weight' : 'Body Steel Weight'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
-            </div>
-
-            <div className="excel-kpi-card">
-              <span className="kpi-label">TROLLY STEEL</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.trolley.total * activeSysQty)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Trolley Weight' : 'Trolley Weight'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
-            </div>
-
-            <div className="excel-kpi-card">
-              <span className="kpi-label">TOTAL WEIGHT</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.totalWeight * activeSysQty)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C SP + Trolley' : 'SP + Trolley Steel'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
-            </div>
-              </>
             )}
+          </strong>
+          <span className="kpi-sub" style={{ fontWeight: 700, color: '#047857', fontSize: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {bodiesBreakdown.summaryText}
+            </span>
+            <span style={{ fontSize: '10px', color: '#64748b' }}>
+              {isMultiSystem ? (
+                <>All Systems: <strong>{totalCombinedBodies} Bodies</strong></>
+              ) : (
+                <>{count(displaySummary.compartments * (activeSysQty || 1))} Compartments{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</>
+              )}
+            </span>
+          </span>
+        </div>
 
-            <div className="excel-kpi-card highlight-mech">
-              <span className="kpi-label">WT WITH MACHINE</span>
-              <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : kg(displaySummary.weightWithMachine * activeSysQty)}</strong>
-              <span className="kpi-sub">{isAdminOrOwner ? 'C2C Total + Mech' : 'Total + Mechanism'}{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
-            </div>
-
-            {isAdminOrOwner ? (
-              <>
-                <div className="excel-kpi-card">
-                  <span className="kpi-label">LABOUR</span>
-                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.labourSubtotal * activeSysQty)}</strong>
-                  <span className="kpi-sub">C2C Total Labour{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
-                </div>
-
-                <div className="excel-kpi-card">
-                  <span className="kpi-label">POWDER COATING</span>
-                  <strong className="kpi-val">{serverCalculating ? <span className="live-calc-pulse" style={{ color: '#2563eb' }}>—</span> : inr(displaySummary.powderTotal * activeSysQty)}</strong>
-                  <span className="kpi-sub">C2C PC Amount{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}</span>
-                </div>
-
-                {isAdminOrOwner ? (
-                  <div
-                    className="excel-kpi-card highlight-c2c"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      minWidth: '175px',
-                      padding: '4px 10px',
-                      gap: '2px',
-                    }}
-                    title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                      <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
-                        C2C ANALYSIS
-                      </span>
-                      {serverCalculating ? (
-                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
-                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CProfit))}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
-                        {serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(displayC2CTotal))}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>
-                        ₹{displayC2CRatio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span>
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="excel-kpi-card highlight">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="kpi-label">TOTAL QUOTATION AMOUNT</span>
-                      {serverCalculating ? (
-                        <span className="kpi-calculating-watermark">
-                          <span className="spinner xs" style={{ width: 10, height: 10 }} /> calculating…
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓ Authoritative</span>
-                      )}
-                    </div>
-                    <strong className="kpi-val sales-val">
-                      {serverCalculating ? <span className="live-calc-pulse" style={{ fontSize: '18px', color: '#2563eb' }}>—</span> : inr(Math.round(displaySummary.sales * activeSysQty))}
-                    </strong>
-                    <span className="kpi-sub">
-                      {serverCalculating ? '—' : `${inr2(summary.beforeGst * activeSysQty)} before GST ${summary.discountPct > 0 ? `(${summary.discountPct}% disc)` : ''}${activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}`}
-                    </span>
-                  </div>
-                )}
-              </>
-            ) : null}
+        {/* STEEL WEIGHT WIDGETS */}
+        {isAdminOrOwner && (
+          <>
+            <KpiCard
+              label="SP TOTAL"
+              singleVal={displaySummary.steel.spTotal}
+              allVal={displayAllSystemsTotals.spTotal}
+              format="kg"
+              activeSysName={activeSysName}
+              activeSysQty={activeSysQty}
+              activeSysUnit={activeSysUnit}
+              isMultiSystem={isMultiSystem}
+              serverCalculating={serverCalculating}
+              subLabel="C2C Steel Weight"
+            />
+            <KpiCard
+              label="TROLLY STEEL"
+              singleVal={displaySummary.trolley.total}
+              allVal={displayAllSystemsTotals.trolleyTotal}
+              format="kg"
+              activeSysName={activeSysName}
+              activeSysQty={activeSysQty}
+              activeSysUnit={activeSysUnit}
+              isMultiSystem={isMultiSystem}
+              serverCalculating={serverCalculating}
+              subLabel="C2C Trolley Weight"
+            />
+            <KpiCard
+              label="TOTAL WEIGHT"
+              singleVal={displaySummary.totalWeight}
+              allVal={displayAllSystemsTotals.totalWeight}
+              format="kg"
+              activeSysName={activeSysName}
+              activeSysQty={activeSysQty}
+              activeSysUnit={activeSysUnit}
+              isMultiSystem={isMultiSystem}
+              serverCalculating={serverCalculating}
+              subLabel="C2C SP + Trolley"
+            />
           </>
+        )}
 
+        {/* WT WITH MACHINE WIDGET */}
+        <KpiCard
+          label="WT WITH MACHINE"
+          singleVal={displaySummary.weightWithMachine}
+          allVal={displayAllSystemsTotals.weightWithMachine}
+          format="kg"
+          highlight="highlight-mech"
+          activeSysName={activeSysName}
+          activeSysQty={activeSysQty}
+          activeSysUnit={activeSysUnit}
+          isMultiSystem={isMultiSystem}
+          serverCalculating={serverCalculating}
+          subLabel={isAdminOrOwner ? "C2C Total + Mech" : "Total + Mechanism"}
+        />
+
+        {/* LABOUR, POWDER COATING & C2C ANALYSIS WIDGETS */}
+        {isAdminOrOwner && (
+          <>
+            <KpiCard
+              label="LABOUR"
+              singleVal={displaySummary.labourSubtotal}
+              allVal={displayAllSystemsTotals.labourSubtotal}
+              format="inr"
+              activeSysName={activeSysName}
+              activeSysQty={activeSysQty}
+              activeSysUnit={activeSysUnit}
+              isMultiSystem={isMultiSystem}
+              serverCalculating={serverCalculating}
+              subLabel="C2C Total Labour"
+            />
+            <KpiCard
+              label="POWDER COATING"
+              singleVal={displaySummary.powderTotal}
+              allVal={displayAllSystemsTotals.powderTotal}
+              format="inr"
+              activeSysName={activeSysName}
+              activeSysQty={activeSysQty}
+              activeSysUnit={activeSysUnit}
+              isMultiSystem={isMultiSystem}
+              serverCalculating={serverCalculating}
+              subLabel="C2C PC Amount"
+            />
+            <C2CAnalysisWidget
+              profit={displayC2CProfit}
+              total={displayC2CTotal}
+              ratio={displayC2CRatio}
+              systemsCount={systems.length}
+              serverCalculating={serverCalculating}
+            />
+          </>
+        )}
+
+        {/* STAFF TOTAL QUOTATION AMOUNT WIDGET */}
+        {!isAdminOrOwner && (
+          <TotalQuotationAmountWidget
+            activeSysSales={kpiActiveSysSales}
+            allSystemsSales={kpiAllSystemsTotals.sales}
+            activeSysName={activeSysName}
+            activeSysQty={activeSysQty}
+            activeSysUnit={activeSysUnit}
+            isMultiSystem={isMultiSystem}
+            serverCalculating={serverCalculating}
+            summary={summary}
+          />
         )}
 
       </div>

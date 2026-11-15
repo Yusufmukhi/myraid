@@ -141,17 +141,17 @@ export default function App() {
     }
   }
 
-  // 30-Minute Inactivity Auto-Lock for factory floor / workstation safety
+  // 2-Hour Inactivity Auto-Lock for factory floor / workstation safety
   useEffect(() => {
     if (!session) return
 
     let timer: any = null
-    const INACTIVITY_MS = 30 * 60 * 1000 // 30 minutes
+    const INACTIVITY_MS = 2 * 60 * 60 * 1000 // 2 hours
 
     const resetTimer = () => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
-        logout('Session locked due to 30 minutes of inactivity to protect sensitive quotation data.')
+        logout('Session locked due to 2 hours of inactivity to protect sensitive quotation data.')
       }, INACTIVITY_MS)
     }
 
