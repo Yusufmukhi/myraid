@@ -590,8 +590,14 @@ export function CalculatorPage({
     setReminder(rem)
     setShowReminderModal(false)
 
+    const liveSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
     const updatedSummary = {
       ...(project.summary || {}),
+      ...summary,
+      systems,
+      quotation_sets: compiledSets,
+      profit_pct: profitPct,
+      discount_pct: discountPct,
       reminder: rem,
     }
 
@@ -601,14 +607,16 @@ export function CalculatorPage({
         project.id,
         name || project.name,
         status || project.status,
-        project.inputs,
-        project.formula_overrides,
-        project.total,
+        cleanOverrides(wb, overrides),
+        formulaOverrides,
+        liveSales,
         updatedSummary,
         'Set follow-up alarm reminder'
       )
       onProjectUpdated({
         ...project,
+        inputs: cleanOverrides(wb, overrides),
+        total: liveSales,
         summary: updatedSummary,
       })
     } catch (e) {
@@ -625,8 +633,14 @@ export function CalculatorPage({
     setReminder(null)
     setShowReminderModal(false)
 
+    const liveSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
     const updatedSummary = {
       ...(project.summary || {}),
+      ...summary,
+      systems,
+      quotation_sets: compiledSets,
+      profit_pct: profitPct,
+      discount_pct: discountPct,
       reminder: null,
     }
 
@@ -636,14 +650,16 @@ export function CalculatorPage({
         project.id,
         name || project.name,
         status || project.status,
-        project.inputs,
-        project.formula_overrides,
-        project.total,
+        cleanOverrides(wb, overrides),
+        formulaOverrides,
+        liveSales,
         updatedSummary,
         'Cleared follow-up reminder'
       )
       onProjectUpdated({
         ...project,
+        inputs: cleanOverrides(wb, overrides),
+        total: liveSales,
         summary: updatedSummary,
       })
     } catch (e) {
@@ -825,15 +841,25 @@ export function CalculatorPage({
       const nextSummary = await api.projectShare(session.token, project.id, updated)
       let finalSummary = nextSummary
       if (!isAdminOrOwner && updated.includes(targetUsername)) {
-        finalSummary = { ...nextSummary, shared_locked: true, locked_after_share: true }
+        const liveSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
+        finalSummary = {
+          ...nextSummary,
+          ...summary,
+          systems,
+          quotation_sets: compiledSets,
+          profit_pct: profitPct,
+          discount_pct: discountPct,
+          shared_locked: true,
+          locked_after_share: true,
+        }
         api.projectUpdate(
           session.token,
           project.id,
           project.name,
           project.status,
-          project.inputs,
-          project.formula_overrides,
-          project.total,
+          cleanOverrides(wb, overrides),
+          formulaOverrides,
+          liveSales,
           finalSummary,
           `Quotation locked after sharing by @${session.username}`
         ).catch(() => {})
@@ -904,7 +930,11 @@ export function CalculatorPage({
       ? Number(overrides['__profit_pct'])
       : (sheetProfit > 0 ? sheetProfit : (clientProfitMargin !== undefined ? clientProfitMargin : (project.summary?.profit_pct !== undefined ? Number(project.summary.profit_pct) : 25))))
 
-  const discountPct = overrides['__discount_pct'] !== undefined ? Number(overrides['__discount_pct']) : 0
+  const discountPct = overrides['__discount_pct'] !== undefined
+    ? Number(overrides['__discount_pct'])
+    : (project.summary?.discount_pct !== undefined
+      ? Number(project.summary.discount_pct)
+      : (project.inputs?.['__discount_pct'] !== undefined ? Number(project.inputs['__discount_pct']) : 0))
 
   const [profitInput, setProfitInput] = useState<string>(() => String(profitPct))
   const [discountInput, setDiscountInput] = useState<string>(() => String(discountPct))
@@ -956,10 +986,10 @@ export function CalculatorPage({
   }
 
   const includeInstallation = overrides['__include_installation'] !== undefined
-
     ? Boolean(Number(overrides['__include_installation']))
-
-    : true
+    : (project.summary?.include_installation !== undefined
+      ? Boolean(project.summary.include_installation)
+      : (project.inputs?.['__include_installation'] !== undefined ? Boolean(Number(project.inputs['__include_installation'])) : true))
 
 
 
@@ -996,6 +1026,7 @@ export function CalculatorPage({
         ...s,
         quantity: (!s.quantity || Number(s.quantity) < 1) ? 1 : Number(s.quantity),
         extraAmount: Number(s.extraAmount ?? (idx === 0 ? (project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0) : 0)),
+        includeInstallation: s.includeInstallation ?? (project.summary?.include_installation !== undefined ? Boolean(project.summary.include_installation) : (project.inputs?.['__include_installation'] !== 0)),
       }))
     }
     return [
@@ -1661,19 +1692,29 @@ export function CalculatorPage({
       return
     }
     if (!isAdminOrOwner && !isSharedLocked) {
-      const nextSummary = { ...project.summary, shared_locked: true, locked_after_share: true }
+      const liveSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
+      const nextSummary = {
+        ...project.summary,
+        ...summary,
+        systems,
+        quotation_sets: compiledSets,
+        profit_pct: profitPct,
+        discount_pct: discountPct,
+        shared_locked: true,
+        locked_after_share: true,
+      }
       api.projectUpdate(
         session.token,
         project.id,
         project.name,
         project.status,
-        project.inputs,
-        project.formula_overrides,
-        project.total,
+        cleanOverrides(wb, overrides),
+        formulaOverrides,
+        liveSales,
         nextSummary,
         `Quotation locked after official quotation opened by @${session.username}`
       ).then(() => {
-        onProjectUpdated({ ...project, summary: nextSummary })
+        onProjectUpdated({ ...project, summary: nextSummary, total: liveSales })
       }).catch(() => {})
     }
     setShowOfficialQuotation(true)
@@ -1710,7 +1751,9 @@ export function CalculatorPage({
     )
 
     // Re-apply profit margin on Direct Cost Base (costBase = Ex-Works + Transport + Accommodation + Installation + Extra)
-    const effectiveCostBase = (raw.subtotal || 0) + (raw.installation || 0) + sysTrans + sysAcc + (raw.extraAmount || 0) * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
+    const currentSysExtra = extraAmount !== undefined && !isNaN(extraAmount) ? extraAmount : Number(raw.extraAmount ?? (raw as any).extra_amount ?? 0)
+    const effectiveInstallation = includeInstallation ? (raw.installation || 0) : 0
+    const effectiveCostBase = (raw.subtotal || 0) + effectiveInstallation + sysTrans + sysAcc + currentSysExtra * (raw.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
     const effectiveProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (raw.profitPct || 25)
     const effectiveDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (raw.discountPct || 0)
 
@@ -2158,22 +2201,17 @@ export function CalculatorPage({
       const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
       const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
 
-      const systemsPayload = systems.map((sys, idx) => ({
-
+      const liveEffSystems = getEffectiveSystems(overrides, formulaOverrides)
+      const systemsPayload = liveEffSystems.map((sys, idx) => ({
         name: sys.name || `SYSTEM ${String.fromCharCode(65 + idx)}`,
-
         quantity: sys.quantity || 1,
-
         unit: sys.unit || 'SET',
-
+        includeInstallation: sys.includeInstallation ?? includeInstallation,
+        extraAmount: sys.extraAmount ?? (idx === activeSystemIdx ? extraAmount : 0),
         overrides: idx === activeSystemIdx ? currentClean : (sys.overrides || {}),
-
         formulaOverrides: idx === activeSystemIdx ? formulaOverrides : (sys.formulaOverrides || {}),
-
         c2c_overrides: idx === activeSystemIdx ? mergedC2COv : (sys.c2c_overrides || {}),
-
         c2c_formula_overrides: idx === activeSystemIdx ? mergedC2CFO : (sys.c2c_formula_overrides || {}),
-
       }))
 
 
@@ -2256,7 +2294,7 @@ export function CalculatorPage({
             gst: g,
             sales: s,
           }
-          serverTotal = allSystemsTotals.sales || (Math.round((serverResult.computed_total ?? s) * 1.18) * activeSysQty)
+          serverTotal = allSystemsTotals.sales || (serverResult.computed_total !== undefined ? Math.round(serverResult.computed_total * 1.18) : (s * activeSysQty))
           serverCleanedOverrides = serverResult.cleaned_overrides ?? cleaned
           serverSystems = serverResult.systems || []
           serverTotalBodies = serverResult.total_combined_bodies || totalCombinedBodies
@@ -2640,40 +2678,6 @@ export function CalculatorPage({
 
 
 
-    const updatedSummary = {
-
-      ...project.summary,
-
-      client_info: clientInfo,
-
-      quotation_items: items,
-
-      body_items: bodyItems,
-
-      quotation_mode: extraSettings?.quotation_mode || quotationMode,
-
-      extra_amount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount,
-
-      ...(sets ? { quotation_sets: sets } : {}),
-
-      ...(extraSettings || {}),
-
-    }
-
-
-
-    const updatedProject: Project = {
-
-      ...project,
-
-      inputs: cleanOverrides(wb, nextOverrides),
-
-      summary: updatedSummary,
-
-    }
-
-    onProjectUpdated(updatedProject)
-
     const finalCleanOverrides = cleanOverrides(wb, nextOverrides)
     const effectiveSets = (sets && Array.isArray(sets)) ? sets : []
     const updatedSystemsList = systems.map((sys, i) => {
@@ -2685,9 +2689,34 @@ export function CalculatorPage({
         quantity: matchSet?.quantity || sys.quantity,
         unit: matchSet?.unit || sys.unit,
         overrides: isCur ? finalCleanOverrides : (sys.overrides || {}),
-        extraAmount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount,
+        extraAmount: isCur
+          ? (extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount)
+          : (sys.extraAmount ?? 0),
       }
     })
+
+    const finalSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
+
+    const updatedSummary = {
+      ...project.summary,
+      client_info: clientInfo,
+      quotation_items: items,
+      body_items: bodyItems,
+      quotation_mode: extraSettings?.quotation_mode || quotationMode,
+      extra_amount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount,
+      systems: updatedSystemsList,
+      ...(sets ? { quotation_sets: sets } : {}),
+      ...(extraSettings || {}),
+    }
+
+    const updatedProject: Project = {
+      ...project,
+      inputs: cleanOverrides(wb, nextOverrides),
+      total: finalSales,
+      summary: updatedSummary,
+    }
+
+    onProjectUpdated(updatedProject)
 
     setBaseline(
       computeProjectSnapshot(
@@ -2705,35 +2734,20 @@ export function CalculatorPage({
     )
 
     api.projectUpdate(
-
       session.token,
-
       project.id,
-
       name,
-
       status,
-
       cleanOverrides(wb, nextOverrides),
-
       formulaOverrides,
-
-      summary.sales,
-
+      finalSales,
       updatedSummary,
-
       'Updated official quotation client details'
-
     ).then(() => {
-
       toast('Quotation client details saved successfully!')
-
     }).catch((err) => {
-
       toast((err as Error).message, 'err')
-
     })
-
   }
 
 

@@ -1656,10 +1656,10 @@ export function OfficialQuotationDocument({
   }, [initialExtraAmount])
 
   const docDiscountPct = useMemo(() => {
-    if (summary && summary.discountPct !== undefined && !isNaN(summary.discountPct)) return summary.discountPct
-    if (project.summary && project.summary.discount_pct !== undefined && !isNaN(Number(project.summary.discount_pct))) return Number(project.summary.discount_pct)
-    if (project.inputs && project.inputs['__discount_pct'] !== undefined && !isNaN(Number(project.inputs['__discount_pct']))) return Number(project.inputs['__discount_pct'])
-    return 0
+    if (summary && summary.discountPct !== undefined && !isNaN(summary.discountPct) && summary.discountPct > 0) return summary.discountPct
+    if (project.summary && project.summary.discount_pct !== undefined && !isNaN(Number(project.summary.discount_pct)) && Number(project.summary.discount_pct) > 0) return Number(project.summary.discount_pct)
+    if (project.inputs && project.inputs['__discount_pct'] !== undefined && !isNaN(Number(project.inputs['__discount_pct'])) && Number(project.inputs['__discount_pct']) > 0) return Number(project.inputs['__discount_pct'])
+    return summary?.discountPct ?? 0
   }, [summary, project])
 
   // Dynamic unit-wise rate breakdown (Transport + Installation + Accommodation distributed by bodies + extra amount + dynamic profit)
