@@ -9,7 +9,7 @@ import { count, inr, inr2, kg } from '../../lib/format'
 import { cleanOverrides, extractTemplateDefaults, summarize, Summary, filterCutToCutOverrides } from '../../lib/model'
 
 import { exportWorkbookToXLSX } from '../../lib/excelExport'
-
+import { cleanCopiedNumber, cleanCopiedText } from '../../lib/cleanText'
 import { detectValueChanges, parseRevision } from '../../lib/revision'
 
 import { fetchClientIp, getCachedClientIp } from '../../lib/clientInfo'
@@ -229,13 +229,18 @@ function CellInput({
         value={displayVal}
 
         step={step}
-
         min={min}
-
+        onPaste={(e) => {
+          const pasted = e.clipboardData?.getData('text')
+          if (pasted) {
+            e.preventDefault()
+            const num = cleanCopiedNumber(pasted)
+            setLocalStr(String(num))
+            onCommit(cellKey, num)
+          }
+        }}
         onFocus={() => {
-
           setLocalStr(isNaN(val) || val === null ? '' : String(val))
-
         }}
 
         onChange={(e) => {
@@ -4092,6 +4097,15 @@ export function CalculatorPage({
                 disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 value={bayInput}
                 title="Bay count (Press / to jump here)"
+                onPaste={(e) => {
+                  const pasted = e.clipboardData?.getData('text')
+                  if (pasted) {
+                    e.preventDefault()
+                    const num = Math.max(1, Math.round(cleanCopiedNumber(pasted)))
+                    setBayInput(String(num))
+                    setInput('Total cal!A3', num * 2)
+                  }
+                }}
 
                 onChange={(e) => {
 
@@ -4317,7 +4331,7 @@ export function CalculatorPage({
                 value={systems[activeSystemIdx]?.name ?? ''}
                 placeholder={`SYSTEM ${String.fromCharCode(65 + activeSystemIdx)}`}
 
-                onChange={(e) => handleUpdateSystemMeta(activeSystemIdx, { name: e.target.value })}
+                onChange={(e) => handleUpdateSystemMeta(activeSystemIdx, { name: cleanCopiedText(e.target.value) })}
 
                 style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', border: '1px solid #cbd5e1', borderRadius: 4, width: 130 }}
 
@@ -4331,6 +4345,14 @@ export function CalculatorPage({
                 min={1}
                 disabled={isApprovedLocked || isStaffRateLocked || !isEditingMode}
                 value={systems[activeSystemIdx]?.quantity ? Math.max(1, Number(systems[activeSystemIdx].quantity)) : 1}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData?.getData('text')
+                  if (pasted) {
+                    e.preventDefault()
+                    const num = Math.max(1, Math.round(cleanCopiedNumber(pasted)))
+                    handleUpdateSystemMeta(activeSystemIdx, { quantity: num })
+                  }
+                }}
 
                 onChange={(e) => {
                   const val = e.target.value

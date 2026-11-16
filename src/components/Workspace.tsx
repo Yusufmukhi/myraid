@@ -19,6 +19,7 @@ import { DEFAULT_NAMED_CONSTANTS, Overrides, SheetData, Workbook } from '../lib/
 import { inr, timeAgo } from '../lib/format'
 import { cleanOverrides, extractTemplateDefaults, summarize, filterCutToCutOverrides } from '../lib/model'
 import { formatInitialProjectName, parseRevision } from '../lib/revision'
+import { cleanCopiedText, fuzzyTextMatch } from '../lib/cleanText'
 import { getSavedClients, fetchClientsFromSupabase, SavedClient } from '../lib/clientDirectory'
 import { Navigation, NavTab } from './Navigation'
 import { ActivityPage } from './pages/ActivityPage'
@@ -198,14 +199,15 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   }, [showCreateModal, org.id, session.token])
 
   const filteredClientsForNewProj = useMemo(() => {
-    const q = clientSearchTermForNewProj.trim().toLowerCase()
+    const q = cleanCopiedText(clientSearchTermForNewProj)
     if (!q) return savedClients || []
     return (savedClients || []).filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.gst || '').toLowerCase().includes(q) ||
-        (c.kind_att || '').toLowerCase().includes(q) ||
-        (c.contact || '').toLowerCase().includes(q)
+        fuzzyTextMatch(c.name, q) ||
+        (c.gst && fuzzyTextMatch(c.gst, q)) ||
+        (c.kind_att && fuzzyTextMatch(c.kind_att, q)) ||
+        (c.contact && fuzzyTextMatch(c.contact, q)) ||
+        (c.address && fuzzyTextMatch(c.address, q))
     )
   }, [savedClients, clientSearchTermForNewProj])
 
@@ -385,7 +387,8 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         'Total cal!G16': 0,
         'Total cal!G20': 0,
       }
-      const targetClientId = selectedClientForNewProj || savedClients.find((c) => c.name.trim().toLowerCase() === clientSearchTermForNewProj.trim().toLowerCase())?.id
+      const cleanedSearchTerm = cleanCopiedText(clientSearchTermForNewProj)
+      const targetClientId = selectedClientForNewProj || (cleanedSearchTerm ? savedClients.find((c) => fuzzyTextMatch(c.name, cleanedSearchTerm))?.id : '')
       if (targetClientId) {
         const cl = savedClients.find((c) => c.id === targetClientId)
         if (cl) {
@@ -406,13 +409,13 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           }
           initialOverrides['__profit_pct'] = clientMargin
         }
-      } else if (clientSearchTermForNewProj.trim()) {
-        const matched = savedClients.find((c) => c.name.trim().toLowerCase() === clientSearchTermForNewProj.trim().toLowerCase())
+      } else if (cleanedSearchTerm) {
+        const matched = savedClients.find((c) => fuzzyTextMatch(c.name, cleanedSearchTerm))
         const clientMargin = matched && matched.profit_margin_pct !== undefined ? matched.profit_margin_pct : 25
         initialSummary = {
           ...(matched ? { client_id: matched.id, profit_pct: clientMargin } : {}),
           client_info: {
-            buyer_name: clientSearchTermForNewProj.trim(),
+            buyer_name: matched ? matched.name : cleanedSearchTerm,
           },
         }
         if (matched && matched.profit_margin_pct !== undefined) {
@@ -1497,9 +1500,10 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                       const val = e.target.value
                       setClientSearchTermForNewProj(val)
                       setClientDropdownOpen(true)
-                      const matched = savedClients.find(
-                        (c) => c.name.trim().toLowerCase() === val.trim().toLowerCase()
-                      )
+                      const cleaned = cleanCopiedText(val)
+                      const matched = cleaned
+                        ? savedClients.find((c) => fuzzyTextMatch(c.name, cleaned))
+                        : undefined
                       setSelectedClientForNewProj(matched ? matched.id : '')
                     }}
                     style={{

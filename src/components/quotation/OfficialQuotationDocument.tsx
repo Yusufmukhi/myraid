@@ -23,6 +23,7 @@ import {
 } from '../../lib/clientDirectory'
 import { Icon, useUI, Spinner } from '../ui'
 import { calculateSystemBodies } from '../../lib/calculatorCore'
+import { cleanCopiedText, fuzzyTextMatch } from '../../lib/cleanText'
 
 export type { QuotationExtraField, ClientContactPerson }
 
@@ -1038,20 +1039,21 @@ export function OfficialQuotationDocument({
   const [selectedClientId, setSelectedClientId] = useState<string>(() => {
     if (initialClientInfo.client_id) return initialClientInfo.client_id
     const matching = getVisibleClientsForUser(getSavedClients(effectiveOrgId), username, role, userId).find(
-      (c) => c.name.trim().toLowerCase() === (initialClientInfo.buyer_name || '').trim().toLowerCase(),
+      (c) => fuzzyTextMatch(c.name, initialClientInfo.buyer_name),
     )
     return matching?.id || ''
   })
   const [clientSearchText, setClientSearchText] = useState('')
   const filteredSavedClients = useMemo(() => {
-    const q = clientSearchText.trim().toLowerCase()
+    const q = cleanCopiedText(clientSearchText)
     if (!q) return visibleSavedClients || []
     return (visibleSavedClients || []).filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.gst || '').toLowerCase().includes(q) ||
-        (c.kind_att || '').toLowerCase().includes(q) ||
-        (c.contact || '').toLowerCase().includes(q)
+        fuzzyTextMatch(c.name, q) ||
+        (c.gst && fuzzyTextMatch(c.gst, q)) ||
+        (c.kind_att && fuzzyTextMatch(c.kind_att, q)) ||
+        (c.contact && fuzzyTextMatch(c.contact, q)) ||
+        (c.address && fuzzyTextMatch(c.address, q))
     )
   }, [visibleSavedClients, clientSearchText])
   const [showAddClientModal, setShowAddClientModal] = useState<boolean>(false)
@@ -1123,7 +1125,7 @@ export function OfficialQuotationDocument({
       // When a client is updated in the directory, sync changes directly into clientInfo so PDF immediately shows them!
       const matching = selectedClientId
         ? freshList.find((c) => c.id === selectedClientId)
-        : freshList.find((c) => c.name.trim().toLowerCase() === (clientInfo.buyer_name || '').trim().toLowerCase())
+        : freshList.find((c) => fuzzyTextMatch(c.name, clientInfo.buyer_name))
 
       if (matching) {
         setClientInfo((prev) => {
@@ -2402,6 +2404,48 @@ export function OfficialQuotationDocument({
           pdf.addPage('a4', 'portrait')
         }
         pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST')
+
+        // Embed invisible selectable text layer to guarantee 100% copy-paste fidelity
+        try {
+          const pageRect = page.getBoundingClientRect()
+          if (pageRect.width > 0 && pageRect.height > 0) {
+            const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT, {
+              acceptNode: (node) => {
+                const parent = node.parentElement
+                if (!parent || parent.closest('.no-print')) return NodeFilter.FILTER_REJECT
+                const text = node.textContent?.trim()
+                if (!text || text.length === 0) return NodeFilter.FILTER_REJECT
+                return NodeFilter.FILTER_ACCEPT
+              },
+            })
+
+            let currNode: Node | null = walker.nextNode()
+            while (currNode) {
+              const parent = currNode.parentElement
+              if (parent) {
+                const range = document.createRange()
+                range.selectNodeContents(currNode)
+                const r = range.getBoundingClientRect()
+                if (r.width > 0 && r.height > 0) {
+                  const relX = ((r.left - pageRect.left) / pageRect.width) * 210
+                  const relY = ((r.top - pageRect.top) / pageRect.height) * 297 + (((r.height / pageRect.height) * 297) * 0.8)
+                  const fontSizeMm = (r.height / pageRect.height) * 297 * 0.8
+                  const fontSizePt = Math.max(5, Math.min(22, fontSizeMm * (72 / 25.4)))
+                  const cleaned = cleanCopiedText(currNode.textContent || '')
+                  if (cleaned) {
+                    pdf.setFontSize(fontSizePt)
+                    try {
+                      pdf.text(cleaned, relX, relY, { renderingMode: 'invisible' })
+                    } catch {}
+                  }
+                }
+              }
+              currNode = walker.nextNode()
+            }
+          }
+        } catch (textLayerErr) {
+          console.warn('Text layer embedding skipped:', textLayerErr)
+        }
       }
       return { pdf, fileName, pagesCount: pages.length }
     } finally {

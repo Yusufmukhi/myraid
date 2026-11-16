@@ -298,7 +298,7 @@ export function exportWorkbookToXLSX(
           fill: { fgColor: { rgb: 'E2EFDA' } }, // Clean soft green
           alignment: { horizontal: 'right', vertical: 'center' },
           border: thinBorder,
-          numFmt: '₹#,##0.00;[Red]-₹#,##0.00;"-"',
+          numFmt: '"₹"#,##0.00;[Red]-"₹"#,##0.00;"-"',
         }
       }
 
@@ -319,7 +319,7 @@ export function exportWorkbookToXLSX(
           fill: { fgColor: { rgb: '92D050' } }, // Classic Excel totals green
           alignment: { horizontal: 'right', vertical: 'center' },
           border: thinBorder,
-          numFmt: '₹#,##0;[Red]-₹#,##0;"-"',
+          numFmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"',
         }
       }
 
@@ -340,7 +340,7 @@ export function exportWorkbookToXLSX(
           fill: { fgColor: { rgb: '92D050' } },
           alignment: { horizontal: 'right', vertical: 'center' },
           border: thinBorder,
-          numFmt: '₹#,##0;[Red]-₹#,##0;"-"',
+          numFmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"',
         }
       }
 
