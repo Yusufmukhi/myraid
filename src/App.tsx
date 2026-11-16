@@ -133,6 +133,7 @@ export default function App() {
     if (session) api.logout(session.token).catch(() => {})
     tokenStore.clear()
     try { localStorage.removeItem(ORGS_CACHE_KEY) } catch {}
+    try { localStorage.removeItem('apollo_last_active') } catch {}
     setSession(null)
     setOrgs(null)
     // Only display an alert if reason is an explicit non-empty string message (not a DOM ClickEvent object)
@@ -142,30 +143,75 @@ export default function App() {
   }
 
   // 2-Hour Inactivity Auto-Lock for factory floor / workstation safety
+  // Strictly tracks real user idle time across all tabs and avoids background throttling issues
   useEffect(() => {
     if (!session) return
 
-    let timer: any = null
     const INACTIVITY_MS = 2 * 60 * 60 * 1000 // 2 hours
+    const STORAGE_KEY = 'apollo_last_active'
 
-    const resetTimer = () => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        logout('Session locked due to 2 hours of inactivity to protect sensitive quotation data.')
-      }, INACTIVITY_MS)
+    // Initialize last active timestamp on login/mount if not present
+    try {
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        localStorage.setItem(STORAGE_KEY, String(Date.now()))
+      }
+    } catch {}
+
+    let lastRecorded = Date.now()
+
+    const recordActivity = () => {
+      const now = Date.now()
+      // Throttle localStorage writes to at most once every 2 seconds
+      if (now - lastRecorded > 2000) {
+        lastRecorded = now
+        try {
+          localStorage.setItem(STORAGE_KEY, String(now))
+        } catch {}
+      }
     }
 
-    resetTimer()
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
-    const handler = () => resetTimer()
+    const checkInactivity = () => {
+      try {
+        const lastActiveStr = localStorage.getItem(STORAGE_KEY)
+        const lastActive = lastActiveStr ? Number(lastActiveStr) : lastRecorded
+        const elapsed = Date.now() - lastActive
+        if (elapsed >= INACTIVITY_MS) {
+          logout('Session locked due to 2 hours of inactivity to protect sensitive quotation data.')
+        }
+      } catch {}
+    }
+
+    // Comprehensive list of user interaction events across the entire window
+    const events = [
+      'mousedown',
+      'mousemove',
+      'keydown',
+      'keypress',
+      'click',
+      'scroll',
+      'wheel',
+      'touchstart',
+      'touchmove',
+      'input',
+      'change',
+      'focus',
+    ]
+
     for (const evt of events) {
-      window.addEventListener(evt, handler, { passive: true })
+      window.addEventListener(evt, recordActivity, { passive: true })
     }
+
+    // Check inactivity periodically and when user returns to tab (wakes up or switches back)
+    const interval = setInterval(checkInactivity, 30000) // check every 30s
+    window.addEventListener('visibilitychange', checkInactivity)
+    window.addEventListener('focus', checkInactivity)
 
     return () => {
-      if (timer) clearTimeout(timer)
+      clearInterval(interval)
+      window.removeEventListener('visibilitychange', checkInactivity)
+      window.removeEventListener('focus', checkInactivity)
       for (const evt of events) {
-        window.removeEventListener(evt, handler)
+        window.removeEventListener(evt, recordActivity)
       }
     }
   }, [session])

@@ -2847,6 +2847,14 @@ export function CalculatorPage({
   }
 
   const handleDownloadC2CExcel = async () => {
+    if (serverCalculating) {
+      toast('Calculating latest rates from server. Please wait a moment before downloading…', 'err')
+      return
+    }
+    if (!summary?.sales || summary.sales <= 0) {
+      toast('Please enter valid system specifications and wait for calculations before downloading.', 'err')
+      return
+    }
     try {
       toast('Generating Cut-to-Cut Excel workbook…', 'ok')
       let targetWb = c2cWb
@@ -2961,11 +2969,27 @@ export function CalculatorPage({
   const isApprovedLocked = status === 'won' || status === 'approved'
   const isSharedLocked = Boolean(project.summary?.shared_locked || project.summary?.locked_after_share || (status as string) === 'shared')
   const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
-  const [isEditingMode, setIsEditingMode] = useState<boolean>(() => Boolean(isAdminOrOwner))
+  const [isEditingMode, setIsEditingMode] = useState<boolean>(() => {
+    try {
+      if (sessionStorage.getItem(`new_proj_${project.id}`) === 'true') {
+        sessionStorage.removeItem(`new_proj_${project.id}`)
+        return true
+      }
+    } catch {}
+    return false
+  })
 
+  // Only enable editing automatically on initial project creation; all subsequent opens default to disabled
   useEffect(() => {
-    setIsEditingMode(Boolean(isAdminOrOwner))
-  }, [isAdminOrOwner])
+    try {
+      if (sessionStorage.getItem(`new_proj_${project.id}`) === 'true') {
+        sessionStorage.removeItem(`new_proj_${project.id}`)
+        setIsEditingMode(true)
+        return
+      }
+    } catch {}
+    setIsEditingMode(false)
+  }, [project.id])
 
   const handleToggleEditing = () => {
     if (isApprovedLocked) {
@@ -5188,6 +5212,7 @@ export function CalculatorPage({
 
             </div>
 
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}>
             <table className="tbl h-tax-tbl">
               <tbody>
                 {systems.length > 1 ? (
@@ -5791,6 +5816,7 @@ export function CalculatorPage({
               </tbody>
 
             </table>
+            </div>
 
           </div>
 
@@ -5808,6 +5834,7 @@ export function CalculatorPage({
 
             </div>
 
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}>
             <table className="tbl h-tax-tbl">
               <tbody>
                 {systems.length > 1 ? (
@@ -6174,6 +6201,7 @@ export function CalculatorPage({
               </tbody>
 
             </table>
+            </div>
 
           </div>
 
@@ -6248,11 +6276,28 @@ export function CalculatorPage({
                 <button
                   type="button"
                   className="btn sm"
-                  style={{ background: '#15803d', borderColor: '#166534', color: '#fff', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+                  disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
+                  style={{
+                    background: serverCalculating || !summary?.sales || summary.sales <= 0 ? '#94a3b8' : '#15803d',
+                    borderColor: serverCalculating || !summary?.sales || summary.sales <= 0 ? '#94a3b8' : '#166534',
+                    color: '#fff',
+                    fontSize: '12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontWeight: 600,
+                    cursor: serverCalculating || !summary?.sales || summary.sales <= 0 ? 'not-allowed' : 'pointer',
+                  }}
                   onClick={handleDownloadC2CExcel}
-                  title="Download Cut-to-Cut Excel spreadsheet with all sheets and C2C calculations at E26:G28"
+                  title={
+                    serverCalculating
+                      ? 'Calculating latest rates from server. Please wait…'
+                      : !summary?.sales || summary.sales <= 0
+                      ? 'Wait for calculations to complete before downloading'
+                      : 'Download Cut-to-Cut Excel spreadsheet with all sheets and C2C calculations at E26:G28'
+                  }
                 >
-                  📥 Download C2C Excel (.xlsx)
+                  {serverCalculating ? '⏳ Calculating...' : '📥 Download C2C Excel (.xlsx)'}
                 </button>
               </div>
 

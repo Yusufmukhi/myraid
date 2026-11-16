@@ -444,6 +444,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         initialSummary,
       )
       toast(`Created quotation “${res.name}”`)
+      try {
+        sessionStorage.setItem(`new_proj_${res.id}`, 'true')
+      } catch {}
       setShowCreateModal(false)
       setNewProjectName('QTN NO ')
       setSelectedTemplateId('')

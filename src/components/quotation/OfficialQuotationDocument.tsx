@@ -2365,6 +2365,7 @@ export function OfficialQuotationDocument({
   }, [clientInfo.qtn_no, clientInfo.buyer_name, project.name])
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const isDocReady = !isGeneratingPdf && typeof grandTotal === 'number' && !isNaN(grandTotal) && grandTotal > 0
 
   const generatePdfInstance = async (): Promise<{ pdf: any; fileName: string; pagesCount: number } | null> => {
     const fileName = getQuotationFileName()
@@ -2409,6 +2410,10 @@ export function OfficialQuotationDocument({
   }
 
   const handleDirectDownload = async () => {
+    if (!grandTotal || grandTotal <= 0 || isNaN(grandTotal)) {
+      toast('Quotation calculations are incomplete or total is 0. Please verify specifications before downloading PDF.', 'err')
+      return
+    }
     setIsGeneratingPdf(true)
     try {
       const generated = await generatePdfInstance()
@@ -2440,6 +2445,10 @@ export function OfficialQuotationDocument({
   }
 
   const handleWhatsAppShare = async () => {
+    if (!grandTotal || grandTotal <= 0 || isNaN(grandTotal)) {
+      toast('Quotation calculations are incomplete or total is 0. Please verify specifications before sharing on WhatsApp.', 'err')
+      return
+    }
     setIsGeneratingPdf(true)
     try {
       const generated = await generatePdfInstance()
@@ -2524,6 +2533,10 @@ export function OfficialQuotationDocument({
   }
 
   const handlePrint = () => {
+    if (!grandTotal || grandTotal <= 0 || isNaN(grandTotal)) {
+      toast('Quotation calculations are incomplete or total is 0. Please verify specifications before printing.', 'err')
+      return
+    }
     const fileName = getQuotationFileName()
     const prevTitle = document.title
     document.title = fileName
@@ -4759,8 +4772,8 @@ export function OfficialQuotationDocument({
               type="button"
               className="icon-btn sm"
               onClick={handleDirectDownload}
-              disabled={isGeneratingPdf}
-              title="Download PDF directly"
+              disabled={!isDocReady}
+              title={!isDocReady ? 'Calculations required before downloading' : 'Download PDF directly'}
             >
               {isGeneratingPdf ? <Spinner size={14} /> : Icon.fileText}
             </button>
@@ -4806,9 +4819,9 @@ export function OfficialQuotationDocument({
                   type="button"
                   className="btn primary sm"
                   onClick={handleDirectDownload}
-                  disabled={isGeneratingPdf}
-                  title="Directly download PDF file to your downloads folder"
-                  style={{ fontSize: '11.5px', padding: '6px 8px', justifyContent: 'center' }}
+                  disabled={!isDocReady}
+                  title={!isDocReady ? "Calculation required before downloading" : "Directly download PDF file to your downloads folder"}
+                  style={{ fontSize: '11.5px', padding: '6px 8px', justifyContent: 'center', opacity: !isDocReady ? 0.6 : 1 }}
                 >
                   {isGeneratingPdf ? <Spinner size={13} /> : Icon.fileText} Download PDF
                 </button>
@@ -4827,13 +4840,13 @@ export function OfficialQuotationDocument({
                   type="button"
                   className="btn sm"
                   onClick={handleWhatsAppShare}
-                  disabled={isGeneratingPdf}
-                  title="Download PDF and share quotation with client on WhatsApp"
+                  disabled={!isDocReady}
+                  title={!isDocReady ? "Calculation required before sharing" : "Download PDF and share quotation with client on WhatsApp"}
                   style={{
                     fontSize: '11.5px',
                     padding: '5px 8px',
                     justifyContent: 'center',
-                    background: '#16a34a',
+                    background: !isDocReady ? '#94a3b8' : '#16a34a',
                     color: '#ffffff',
                     fontWeight: 700,
                     border: 'none',
@@ -4841,7 +4854,8 @@ export function OfficialQuotationDocument({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    cursor: 'pointer',
+                    cursor: !isDocReady ? 'not-allowed' : 'pointer',
+                    opacity: !isDocReady ? 0.6 : 1,
                   }}
                 >
                   <span>💬</span> WhatsApp
@@ -4850,8 +4864,9 @@ export function OfficialQuotationDocument({
                   type="button"
                   className="btn ghost sm"
                   onClick={handlePrint}
-                  title="Open Browser Print Dialog (Physical Printer or Save as PDF)"
-                  style={{ fontSize: '11px', padding: '4px 8px', justifyContent: 'center', color: '#475569' }}
+                  disabled={!isDocReady}
+                  title={!isDocReady ? "Calculation required before printing" : "Open Browser Print Dialog (Physical Printer or Save as PDF)"}
+                  style={{ fontSize: '11px', padding: '4px 8px', justifyContent: 'center', color: '#475569', opacity: !isDocReady ? 0.6 : 1 }}
                 >
                   🖨️ Print / Vector
                 </button>
@@ -7604,8 +7619,8 @@ export function OfficialQuotationDocument({
           type="button"
           className="btn primary sm"
           onClick={handleDirectDownload}
-          disabled={isGeneratingPdf}
-          style={{ background: '#2563eb', flex: 1 }}
+          disabled={!isDocReady}
+          style={{ background: !isDocReady ? '#94a3b8' : '#2563eb', flex: 1 }}
         >
           {isGeneratingPdf ? <Spinner size={14} /> : Icon.fileText} PDF
         </button>
@@ -7613,8 +7628,8 @@ export function OfficialQuotationDocument({
           type="button"
           className="btn sm"
           onClick={handleWhatsAppShare}
-          disabled={isGeneratingPdf}
-          style={{ background: '#16a34a', color: '#fff', fontWeight: 700, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          disabled={!isDocReady}
+          style={{ background: !isDocReady ? '#94a3b8' : '#16a34a', color: '#fff', fontWeight: 700, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
         >
           <span>💬</span> WhatsApp
         </button>
@@ -7622,6 +7637,7 @@ export function OfficialQuotationDocument({
           type="button"
           className="btn secondary sm"
           onClick={handlePrint}
+          disabled={!isDocReady}
           style={{ flex: 1 }}
         >
           🖨️ Print
