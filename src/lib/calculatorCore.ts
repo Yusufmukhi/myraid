@@ -245,6 +245,7 @@ export function calculateProjectCombinedBodies(
 /**
  * Calculates proportional transport and accommodation allocated per body.
  * Strictly avoids arbitrary 50/50 splits when systems have unequal body counts.
+ * Returns both per-set logistics and system total logistics.
  */
 export function calculateAllocatedLogistics(
   projectTransport: number,
@@ -252,13 +253,24 @@ export function calculateAllocatedLogistics(
   systemBodies: number,
   totalCombinedBodies: number,
   isMultiSystemOrSets: boolean = true,
+  setsQty: number = 1,
 ): {
   allocatedTransport: number
   allocatedAccommodation: number
   shareRatio: number
+  ratePerBodyTransport: number
+  ratePerBodyAccommodation: number
+  perSetTransport: number
+  perSetAccommodation: number
+  systemTotalTransport: number
+  systemTotalAccommodation: number
 } {
+  const cleanTotalBodies = totalCombinedBodies > 0 ? totalCombinedBodies : 1
+  const ratePerBodyTransport = projectTransport / cleanTotalBodies
+  const ratePerBodyAccommodation = projectAccommodation / cleanTotalBodies
+
   const shareRatio = (totalCombinedBodies > 0 && isMultiSystemOrSets)
-    ? (systemBodies / totalCombinedBodies)
+    ? (systemBodies / cleanTotalBodies)
     : 1
   const allocatedTransport = (totalCombinedBodies > 0 && isMultiSystemOrSets)
     ? Math.round(projectTransport * shareRatio)
@@ -267,11 +279,48 @@ export function calculateAllocatedLogistics(
     ? Math.round(projectAccommodation * shareRatio)
     : projectAccommodation
 
+  const cleanSets = Math.max(1, Number(setsQty) || 1)
+  const perSetTransport = allocatedTransport
+  const perSetAccommodation = allocatedAccommodation
+  const systemTotalTransport = Math.round(allocatedTransport * cleanSets)
+  const systemTotalAccommodation = Math.round(allocatedAccommodation * cleanSets)
+
   return {
     allocatedTransport,
     allocatedAccommodation,
     shareRatio,
+    ratePerBodyTransport,
+    ratePerBodyAccommodation,
+    perSetTransport,
+    perSetAccommodation,
+    systemTotalTransport,
+    systemTotalAccommodation,
   }
+}
+
+/**
+ * Calculates installation charges individually for a system.
+ * System Installation = Total Bodies for System * Labour Charge Rate
+ * Total Bodies for System = Single Set Bodies * Sets Quantity
+ */
+export function calculateSystemInstallation(
+  singleSetBodies: number,
+  setsQty: number = 1,
+  labourPerBody: number = 250,
+  includeInstallation: boolean = true,
+): {
+  unitInstallation: number
+  totalInstallation: number
+  labourPerBody: number
+} {
+  if (!includeInstallation) {
+    return { unitInstallation: 0, totalInstallation: 0, labourPerBody }
+  }
+  const cleanLabour = labourPerBody > 0 ? labourPerBody : 250
+  const cleanSets = Math.max(1, Number(setsQty) || 1)
+  const unitInstallation = Math.round(singleSetBodies * cleanLabour)
+  const totalInstallation = Math.round(singleSetBodies * cleanSets * cleanLabour)
+  return { unitInstallation, totalInstallation, labourPerBody: cleanLabour }
 }
 
 /**

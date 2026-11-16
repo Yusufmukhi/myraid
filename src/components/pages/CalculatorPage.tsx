@@ -672,12 +672,12 @@ export function CalculatorPage({
           },
         ]
       : (project.summary?.systems && Array.isArray(project.summary.systems) && project.summary.systems.length > 0)
-      ? project.summary.systems.map((s: any) => ({
+      ? project.summary.systems.map((s: any, idx: number) => ({
           ...s,
           overrides: cleanOverrides(wb, sanitizeOverrides(s.overrides || {})),
           formulaOverrides: s.formulaOverrides || {},
           includeInstallation: s.includeInstallation ?? (project.inputs?.['__include_installation'] !== 0),
-          extraAmount: Number(s.extraAmount ?? project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0),
+          extraAmount: Number(s.extraAmount ?? (idx === 0 ? (project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0) : 0)),
         }))
       : [
           {
@@ -992,9 +992,10 @@ export function CalculatorPage({
       ]
     }
     if (project.summary?.systems && Array.isArray(project.summary.systems) && project.summary.systems.length > 0) {
-      return project.summary.systems.map((s: any) => ({
+      return project.summary.systems.map((s: any, idx: number) => ({
         ...s,
         quantity: (!s.quantity || Number(s.quantity) < 1) ? 1 : Number(s.quantity),
+        extraAmount: Number(s.extraAmount ?? (idx === 0 ? (project.inputs?.['__extra_amount'] ?? project.summary?.extra_amount ?? 0) : 0)),
       }))
     }
     return [
@@ -1013,14 +1014,16 @@ export function CalculatorPage({
 
   const [activeSystemIdx, setActiveSystemIdx] = useState<number>(0)
 
-  // Other Extra Amount in Labour & Transportation (default 0)
+  // Other Extra Amount in Labour & Transportation (strictly scoped to active system)
   const extraAmount = overrides['__extra_amount'] !== undefined
     ? Number(overrides['__extra_amount'])
     : (systems[activeSystemIdx]?.extraAmount !== undefined
       ? Number(systems[activeSystemIdx].extraAmount)
-      : (project.inputs?.['__extra_amount'] !== undefined
-        ? Number(project.inputs['__extra_amount'])
-        : (project.summary?.extra_amount !== undefined ? Number(project.summary.extra_amount) : 0)))
+      : (activeSystemIdx === 0
+        ? (project.inputs?.['__extra_amount'] !== undefined
+          ? Number(project.inputs['__extra_amount'])
+          : (project.summary?.extra_amount !== undefined ? Number(project.summary.extra_amount) : 0))
+        : 0))
 
   const setExtraAmount = (val: number) => {
     const cleanVal = isNaN(val) ? 0 : Math.max(0, val)
@@ -1125,70 +1128,48 @@ export function CalculatorPage({
 
     const nextChar = String.fromCharCode(65 + nextIdx)
 
+    // Extra charges apply strictly to the system where added; reset to 0 for newly added systems
+    const cleanOverridesForNewSys = { ...currentFull }
+    delete cleanOverridesForNewSys['__extra_amount']
+
     const newSys = {
-
       id: String(Date.now()),
-
       name: `SYSTEM ${nextChar}`,
-
       quantity: 1,
-
       unit: 'SET',
-
-      overrides: { ...currentFull }, // Clones current matrix settings & shared charges as initial starting point
-
+      overrides: cleanOverridesForNewSys, // Clones current matrix settings & shared charges as initial starting point
       formulaOverrides: { ...formulaOverrides },
-
       includeInstallation,
-
-      extraAmount,
-
+      extraAmount: 0,
       summary: undefined,
-
       breakdown: null,
-
     }
 
     const updated = systems.map((sys, idx) =>
-
       idx === activeSystemIdx
-
         ? { ...sys, overrides: currentFull, formulaOverrides, includeInstallation, extraAmount, summary, breakdown: calcBreakdown }
-
         : sys
-
     )
-
     const nextSystems = [...updated, newSys]
-
     setSystems(nextSystems)
-
     setActiveSystemIdx(nextIdx)
-
     toast(`Created independent Matrix for SYSTEM ${nextChar}!`)
-
   }
 
-
-
   const handleDuplicateSystemMatrix = (idxToDup: number) => {
-
     const currentFull = { ...overrides }
-
     const source = systems[idxToDup]
-
     const nextChar = String.fromCharCode(65 + systems.length)
 
+    const cleanOverridesForDup = idxToDup === activeSystemIdx ? { ...currentFull } : { ...(source.overrides || {}) }
+    delete cleanOverridesForDup['__extra_amount']
+
     const cloned = {
-
       ...source,
-
       id: String(Date.now()),
-
       name: `SYSTEM ${nextChar}`,
-
-      overrides: idxToDup === activeSystemIdx ? { ...currentFull } : { ...(source.overrides || {}) },
-
+      overrides: cleanOverridesForDup,
+      extraAmount: 0,
     }
 
     const updated = systems.map((sys, idx) =>
@@ -1934,16 +1915,18 @@ export function CalculatorPage({
         ? extraAmount
         : (sys.extraAmount !== undefined
           ? Number(sys.extraAmount)
-          : (sys.overrides?.['__extra_amount'] !== undefined ? Number(sys.overrides['__extra_amount']) : 0))
+          : (sys.overrides?.['__extra_amount'] !== undefined
+            ? Number(sys.overrides['__extra_amount'])
+            : (idx === 0 ? (project.inputs?.['__extra_amount'] !== undefined ? Number(project.inputs['__extra_amount']) : 0) : 0)))
+      const sysIncInst = sys.includeInstallation ?? includeInstallation
       sysOv['__extra_amount'] = sysExtra
-      sysOv['__include_installation'] = includeInstallation ? 1 : 0
+      sysOv['__include_installation'] = sysIncInst ? 1 : 0
       delete sysOv['Total cal!B7']
       delete sysOv['Total cal!B11']
       delete sysOv['Total cal!B15']
       delete sysOv['Total cal!B19']
 
       const sysFO = isCurrent ? formulaOverrides : (sys.formulaOverrides || {})
-      const sysIncInst = sys.includeInstallation ?? includeInstallation
       const sysQty = Math.max(1, Number(sys.quantity) || 1)
 
       const sysBodiesInfo = systemBreakdowns[idx] || calculateSystemBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
@@ -2018,6 +2001,8 @@ export function CalculatorPage({
           final_unit_rate: r.final_unit_rate,
           final_amount: r.final_amount,
         })),
+        includeInstallation: sysIncInst,
+        extraAmount: sysExtra,
       }
     })
   }, [systems, activeSystemIdx, summary, calcBreakdown, overrides, formulaOverrides, profitPct, discountPct, includeInstallation, extraAmount, totalCombinedBodies, wb, serverQuote])
@@ -5199,6 +5184,9 @@ export function CalculatorPage({
                       const sUnitBaseCost = s.breakdown?.totalCostBase || sSum.costBase || 0
                       const sTotalBaseCost = sUnitBaseCost * sQty
                       const isExpanded = !!expandedPerSetBreakdown[idx]
+                      const sIncInst = (s as any).includeInstallation ?? includeInstallation
+                      const sExtraAmount = Number((s as any).extraAmount ?? sSum.extraAmount ?? 0)
+                      const sExtraTotal = sExtraAmount * (sSum.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)
 
                       return (
                         <Fragment key={s.id || idx}>
@@ -5251,8 +5239,14 @@ export function CalculatorPage({
                                     </tr>
                                     <tr>
                                       <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Installation (N23)</td>
-                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{includeInstallation ? inr2(sSum.installation) : '₹0.00'}</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>{sIncInst ? inr2(sSum.installation) : '₹0.00'}</td>
                                     </tr>
+                                    {sExtraTotal > 0 && (
+                                      <tr>
+                                        <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Other Extra Charges</td>
+                                        <td className="r font-mono" style={{ padding: '2px 0' }}>{inr2(sExtraTotal)}</td>
+                                      </tr>
+                                    )}
                                     <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 600 }}>
                                       <td style={{ padding: '3px 0', color: '#334155' }}>1-Set Direct Cost Base</td>
                                       <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(sUnitBaseCost)}</td>
@@ -5457,6 +5451,14 @@ export function CalculatorPage({
                                     <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Installation (N23)</td>
                                     <td className="r font-mono" style={{ padding: '2px 0' }}>{includeInstallation ? inr2(summary.installation) : '₹0.00'}</td>
                                   </tr>
+                                  {((extraAmount || 0) * (summary?.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)) > 0 && (
+                                    <tr>
+                                      <td style={{ color: '#64748b', padding: '2px 0' }}>1-Set Other Extra Charges</td>
+                                      <td className="r font-mono" style={{ padding: '2px 0' }}>
+                                        {inr2((extraAmount || 0) * (summary?.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))}
+                                      </td>
+                                    </tr>
+                                  )}
                                   <tr style={{ borderTop: '1px dashed #cbd5e1', fontWeight: 600 }}>
                                     <td style={{ padding: '3px 0', color: '#334155' }}>1-Set Direct Cost Base</td>
                                     <td className="r font-mono" style={{ padding: '3px 0' }}>{inr2(summary.costBase)}</td>
@@ -5560,6 +5562,17 @@ export function CalculatorPage({
                   </td>
 
                 </tr>
+
+                {((extraAmount || 0) * (summary?.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1)) > 0 && (
+                  <tr>
+                    <td>
+                      Other Extra Charges{activeSysQty > 1 ? ` (${activeSysQty} Sets)` : ''}
+                    </td>
+                    <td className="r font-mono">
+                      {inr2((extraAmount || 0) * (summary?.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1) * activeSysQty)}
+                    </td>
+                  </tr>
+                )}
 
                 <tr className="subtotal-row">
 
