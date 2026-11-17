@@ -2976,8 +2976,8 @@ export function CalculatorPage({
   const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
   const [isEditingMode, setIsEditingMode] = useState<boolean>(() => {
     try {
-      if (sessionStorage.getItem(`new_proj_${project.id}`) === 'true') {
-        sessionStorage.removeItem(`new_proj_${project.id}`)
+      const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
+      if (createdId && createdId === project.id) {
         return true
       }
     } catch {}
@@ -2987,13 +2987,24 @@ export function CalculatorPage({
   // Only enable editing automatically on initial project creation; all subsequent opens default to disabled
   useEffect(() => {
     try {
-      if (sessionStorage.getItem(`new_proj_${project.id}`) === 'true') {
-        sessionStorage.removeItem(`new_proj_${project.id}`)
+      const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
+      if (createdId && createdId === project.id) {
         setIsEditingMode(true)
         return
       }
     } catch {}
     setIsEditingMode(false)
+  }, [project.id])
+
+  // Clear creation flag on cleanup so subsequent visits to this project default to disabled
+  useEffect(() => {
+    return () => {
+      try {
+        if (sessionStorage.getItem('apollo_just_created_proj_id') === project.id) {
+          sessionStorage.removeItem('apollo_just_created_proj_id')
+        }
+      } catch {}
+    }
   }, [project.id])
 
   const handleToggleEditing = () => {

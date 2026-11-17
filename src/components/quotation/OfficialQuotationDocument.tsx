@@ -1210,6 +1210,10 @@ export function OfficialQuotationDocument({
       setProfitPct(cl.profit_margin_pct)
     }
 
+    if (cl.include_full_proposal !== undefined) {
+      setIncludeFullProposal(Boolean(cl.include_full_proposal))
+    }
+
     toast(`Loaded details for ${cl.name}`)
   }
 
@@ -1238,6 +1242,7 @@ export function OfficialQuotationDocument({
           subject: clientInfo.subject || '',
           contacts: clientInfo.contacts || [],
           extra_fields: clientInfo.extra_fields || [],
+          include_full_proposal: includeFullProposal,
         },
         effectiveOrgId,
         username || 'staff',
@@ -1272,6 +1277,7 @@ export function OfficialQuotationDocument({
           subject: clientInfo.subject || '',
           contacts: clientInfo.contacts || [],
           extra_fields: clientInfo.extra_fields || [],
+          include_full_proposal: includeFullProposal,
         },
         effectiveOrgId,
         username || 'staff',
@@ -1332,6 +1338,7 @@ export function OfficialQuotationDocument({
           id: targetId,
           ...newClientData,
           contacts: initialContactList,
+          include_full_proposal: includeFullProposal,
         },
         effectiveOrgId,
         username || 'staff',
@@ -1952,11 +1959,49 @@ export function OfficialQuotationDocument({
 
   // Full 5-Page Proposal toggle (Page 1: Commercial; Page 2: Terms; Page 3: Compactor Specs [merged p3+p4]; Page 4: Powder Coating [merged p5+p6]; Page 5: QC [merged p7+p8])
   const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(() => {
+    // 1. Check if active client has a saved client-wise preference
+    try {
+      const freshClients = getSavedClients(effectiveOrgId)
+      const activeClient = initialClientInfo.client_id
+        ? freshClients.find((c) => c.id === initialClientInfo.client_id)
+        : freshClients.find((c) => fuzzyTextMatch(c.name, initialClientInfo.buyer_name))
+      if (activeClient && activeClient.include_full_proposal !== undefined) {
+        return Boolean(activeClient.include_full_proposal)
+      }
+    } catch {}
+    // 2. Check project summary
     if (project.summary?.include_full_proposal !== undefined) {
       return Boolean(project.summary.include_full_proposal)
     }
     return true
   })
+
+  const handleToggleIncludeFullProposal = (checked: boolean) => {
+    setIncludeFullProposal(checked)
+    // Persist per-client preference immediately for future quotations
+    const clientId = selectedClientId || initialClientInfo.client_id
+    const clientName = clientInfo.buyer_name || initialClientInfo.buyer_name
+    const freshList = getSavedClients(effectiveOrgId)
+    const targetClient = clientId
+      ? freshList.find((c) => c.id === clientId)
+      : clientName
+      ? freshList.find((c) => fuzzyTextMatch(c.name, clientName))
+      : undefined
+
+    if (targetClient) {
+      try {
+        saveClientToDirectory({
+          ...targetClient,
+          include_full_proposal: checked,
+        }, effectiveOrgId, username, role)
+        saveClientToDirectoryAsync({
+          ...targetClient,
+          include_full_proposal: checked,
+        }, effectiveOrgId, tokenStore.get() || undefined).catch(() => {})
+        toast(checked ? `Full 5-page proposal enabled for ${targetClient.name}` : `5-page technical proposal excluded for ${targetClient.name}`, 'ok')
+      } catch {}
+    }
+  }
 
   // Table size, scaling, density and multi-system layout controls
   const [tableScale, setTableScale] = useState<number>(100)
@@ -2373,8 +2418,32 @@ export function OfficialQuotationDocument({
     const fileName = getQuotationFileName()
     const element = document.getElementById('official-quotation-pages')
     if (!element) return null
+
+    // Fix for mobile: if user clicked PDF download from the Edit & Options tab, the document container has .mobile-hidden (display: none !important)
+    const wasMobileHidden = element.classList.contains('mobile-hidden')
+    if (wasMobileHidden) {
+      element.classList.remove('mobile-hidden')
+      element.style.position = 'absolute'
+      element.style.left = '-9999px'
+      element.style.top = '0'
+      element.style.display = 'block'
+      element.style.visibility = 'visible'
+      element.style.width = '210mm'
+    }
+
     const pages = Array.from(element.querySelectorAll<HTMLElement>('.official-pdf-page'))
-    if (!pages || pages.length === 0) return null
+    if (!pages || pages.length === 0) {
+      if (wasMobileHidden) {
+        element.classList.add('mobile-hidden')
+        element.style.position = ''
+        element.style.left = ''
+        element.style.top = ''
+        element.style.display = ''
+        element.style.visibility = ''
+        element.style.width = ''
+      }
+      return null
+    }
 
     // jsPDF and html2canvas are statically imported upfront to prevent dynamic chunk 404s
 
@@ -2396,6 +2465,8 @@ export function OfficialQuotationDocument({
           backgroundColor: '#ffffff',
           imageTimeout: 15000,
           scrollY: 0,
+          scrollX: 0,
+          windowWidth: 1200,
           ignoreElements: (el: Element) => el.classList?.contains('no-print'),
         })
 
@@ -2449,6 +2520,15 @@ export function OfficialQuotationDocument({
       }
       return { pdf, fileName, pagesCount: pages.length }
     } finally {
+      if (wasMobileHidden) {
+        element.classList.add('mobile-hidden')
+        element.style.position = ''
+        element.style.left = ''
+        element.style.top = ''
+        element.style.display = ''
+        element.style.visibility = ''
+        element.style.width = ''
+      }
       element.scrollTop = prevScrollTop
     }
   }
@@ -2465,8 +2545,55 @@ export function OfficialQuotationDocument({
         handlePrint()
         return
       }
-      generated.pdf.save(`${generated.fileName}.pdf`)
-      toast(`Downloaded "${generated.fileName}.pdf" (${generated.pagesCount} pages) directly!`)
+
+      const { pdf, fileName } = generated
+      const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent || '')
+
+      if (isMobileDevice) {
+        const blob = pdf.output('blob')
+        const pdfFile = new File([blob], `${fileName}.pdf`, { type: 'application/pdf' })
+
+        // 1. Mobile Web Share API: Opens native sheet on iOS / Android with "Save to Files" option
+        if (typeof navigator !== 'undefined' && typeof navigator.canShare === 'function') {
+          try {
+            if (navigator.canShare({ files: [pdfFile] })) {
+              await navigator.share({
+                files: [pdfFile],
+                title: `${fileName}.pdf`,
+              })
+              toast(`Quotation "${fileName}.pdf" ready!`, 'ok')
+              return
+            }
+          } catch (shareErr: any) {
+            if (shareErr?.name === 'AbortError') {
+              return
+            }
+          }
+        }
+
+        // 2. Direct mobile blob download / view fallback
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = `${fileName}.pdf`
+        a.target = '_blank'
+        document.body.appendChild(a)
+        a.click()
+
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '')
+        if (isIOS) {
+          window.open(blobUrl, '_blank')
+        }
+
+        setTimeout(() => {
+          document.body.removeChild(a)
+          URL.revokeObjectURL(blobUrl)
+        }, 30000)
+        toast(`Downloaded "${fileName}.pdf" directly!`, 'ok')
+      } else {
+        generated.pdf.save(`${generated.fileName}.pdf`)
+        toast(`Downloaded "${generated.fileName}.pdf" (${generated.pagesCount} pages) directly!`)
+      }
 
       // Record in Activity Log
       const token = tokenStore.get()
@@ -5299,7 +5426,7 @@ export function OfficialQuotationDocument({
                         type="checkbox"
                         checked={includeFullProposal}
                         onChange={(e) => {
-                          setIncludeFullProposal(e.target.checked)
+                          handleToggleIncludeFullProposal(e.target.checked)
                         }}
                       />
                       <span style={{ fontSize: '12px' }}>Include Full 5-Page Technical Proposal</span>

@@ -54,6 +54,7 @@ export interface SavedClient {
   contacts?: ClientContactPerson[]
   extra_fields?: QuotationExtraField[]
   profit_margin_pct?: number // Custom profit margin % set by Owner/Admin (hidden from staff)
+  include_full_proposal?: boolean // Client-wise preference for 5-page technical proposal
   shared_with?: string[] // Staff usernames or ['all'] that owner has shared client with
   created_by?: string
   created_by_role?: string

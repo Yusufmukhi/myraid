@@ -300,6 +300,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   // Open an existing project and switch to calculator
   const handleOpenProject = async (projectId: string) => {
     try {
+      try {
+        sessionStorage.removeItem('apollo_just_created_proj_id')
+      } catch {}
       const p = await api.projectGet(session.token, projectId)
       setCurrentProject(p)
       setTab('calculator')
@@ -396,6 +399,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           initialSummary = {
             client_id: cl.id,
             profit_pct: clientMargin,
+            include_full_proposal: cl.include_full_proposal !== undefined ? cl.include_full_proposal : true,
             client_info: {
               buyer_name: cl.name,
               buyer_address: cl.address,
@@ -413,7 +417,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         const matched = savedClients.find((c) => fuzzyTextMatch(c.name, cleanedSearchTerm))
         const clientMargin = matched && matched.profit_margin_pct !== undefined ? matched.profit_margin_pct : 25
         initialSummary = {
-          ...(matched ? { client_id: matched.id, profit_pct: clientMargin } : {}),
+          ...(matched ? { client_id: matched.id, profit_pct: clientMargin, include_full_proposal: matched.include_full_proposal !== undefined ? matched.include_full_proposal : true } : {}),
           client_info: {
             buyer_name: matched ? matched.name : cleanedSearchTerm,
           },
@@ -448,7 +452,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       )
       toast(`Created quotation “${res.name}”`)
       try {
-        sessionStorage.setItem(`new_proj_${res.id}`, 'true')
+        sessionStorage.setItem('apollo_just_created_proj_id', res.id)
       } catch {}
       setShowCreateModal(false)
       setNewProjectName('QTN NO ')
