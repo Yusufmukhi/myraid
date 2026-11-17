@@ -22,7 +22,7 @@ import {
   getVisibleFieldValues,
 } from '../../lib/clientDirectory'
 import { Icon, useUI, Spinner } from '../ui'
-import { calculateSystemBodies } from '../../lib/calculatorCore'
+import { calculateSystemBodies, detectSystemBayCount } from '../../lib/calculatorCore'
 import { cleanCopiedText, fuzzyTextMatch } from '../../lib/cleanText'
 
 export type { QuotationExtraField, ClientContactPerson }
@@ -347,10 +347,11 @@ export function computeUnitWiseBreakdown(
   const activeModels = (summary?.models || []).filter((m) => m.qty > 0)
   const bodiesInfo = calculateSystemBodies({ summary }, {}, wb, true, summary?.bodies)
 
+  const detectedBay = detectSystemBayCount({ summary })
   const rowDefs = activeModels.map((m) => {
     const found = bodiesInfo.models.find((bm) => bm.code === m.code)
     let rowsPerUnit = found ? found.rowsPerUnit : (m.code === 'SFMU' || m.code === 'SFFU' ? Math.max(1, Math.round(bodiesInfo.dfmuRows / 2)) : bodiesInfo.dfmuRows)
-    if (wb) {
+    if (!detectedBay && wb) {
       if (m.code === 'DFMU') rowsPerUnit = wb.num('Total cal', 'A3') || rowsPerUnit
       else if (m.code === 'SFMU') rowsPerUnit = wb.num('Total cal', 'A7') || rowsPerUnit
       else if (m.code === 'SFFU') rowsPerUnit = wb.num('Total cal', 'A11') || rowsPerUnit
@@ -508,8 +509,11 @@ export interface SetUnitItem {
   dimensions: string
   unit_qty: number
   model_code?: string
+  rows_per_unit?: number
   rate?: number
   amount?: number
+  final_unit_rate?: number
+  final_amount?: number
 }
 
 export interface QuotationSet {
@@ -673,8 +677,9 @@ export function generateDefaultBodyItems(
       const sysQty = Math.max(1, Number(s.quantity) || 1)
       const sysSummary = s.summary || summary
       const sysOv = s.overrides || inputs || {}
+      const detectedBay = detectSystemBayCount(s, sysOv)
       const sysBodies = calculateSystemBodies(s, sysOv, wb, false, sysSummary?.bodies)
-      const bayCount = Math.max(1, Math.round(sysBodies.dfmuRows / 2))
+      const bayCount = detectedBay || Math.max(1, Math.round(sysBodies.dfmuRows / 2))
 
       // Prioritize items directly from this system so each system's bodies match its commercial rows
       if (s.items && s.items.length > 0) {
@@ -689,7 +694,17 @@ export function generateDefaultBodyItems(
           )).trim()
 
           const foundModel = sysBodies.models.find((m) => m.code === code)
-          let rowsPerUnit = it.rows_per_unit || (foundModel ? foundModel.rowsPerUnit : (code === 'SFMU' || code === 'SFFU' ? bayCount : bayCount * 2))
+          const expectedRows = (code === 'SFMU' || code === 'SFFU') ? bayCount : (bayCount * 2)
+
+          let rowsPerUnit = expectedRows
+          if (detectedBay) {
+            rowsPerUnit = expectedRows
+          } else if (it.rows_per_unit && it.rows_per_unit > 0) {
+            rowsPerUnit = it.rows_per_unit
+          } else if (foundModel && foundModel.rowsPerUnit > 0) {
+            rowsPerUnit = foundModel.rowsPerUnit
+          }
+
           const unitCount = Number(it.unit_qty !== undefined ? it.unit_qty : it.quantity) || 0
           const unitBody = rowsPerUnit * unitCount
           const total_body = unitBody * sysQty
@@ -713,9 +728,10 @@ export function generateDefaultBodyItems(
           : (sysSummary?.models || []).filter((m: any) => m.qty > 0)
 
         modelsToUse.forEach((m: any) => {
-          const rowsPerUnit = m.rowsPerUnit || (m.code === 'SFMU' || m.code === 'SFFU' ? bayCount : bayCount * 2)
+          const expectedRows = (m.code === 'SFMU' || m.code === 'SFFU') ? bayCount : (bayCount * 2)
+          const rowsPerUnit = detectedBay ? expectedRows : (m.rowsPerUnit || expectedRows)
           const unitCount = Number(m.qty) || 0
-          const unitBody = m.unitBodies !== undefined ? m.unitBodies : (rowsPerUnit * unitCount)
+          const unitBody = m.unitBodies !== undefined && !detectedBay ? m.unitBodies : (rowsPerUnit * unitCount)
           const total_body = unitBody * sysQty
           allItems.push({
             id: `${s.id || sIdx}-${m.code}-${counter++}`,
@@ -736,8 +752,9 @@ export function generateDefaultBodyItems(
   }
 
   const sysOv = inputs || {}
+  const detectedBay = detectSystemBayCount({ summary }, sysOv)
   const sysBodies = calculateSystemBodies({ summary }, sysOv, wb, true, summary?.bodies)
-  const bayCount = Math.max(1, Math.round(sysBodies.dfmuRows / 2))
+  const bayCount = detectedBay || Math.max(1, Math.round(sysBodies.dfmuRows / 2))
 
   const activeModels = (summary?.models || []).filter((m) => m.qty > 0)
   const modelsToUse = activeModels.length > 0
@@ -749,9 +766,10 @@ export function generateDefaultBodyItems(
       ])
 
   return modelsToUse.map((m: any, idx: number) => {
+    const expectedRows = (m.code === 'SFMU' || m.code === 'SFFU') ? bayCount : (bayCount * 2)
     const found = sysBodies.models.find((bm) => bm.code === m.code)
-    let rowsPerUnit = found ? found.rowsPerUnit : (m.code === 'SFMU' || m.code === 'SFFU' ? bayCount : bayCount * 2)
-    if (wb) {
+    let rowsPerUnit = detectedBay ? expectedRows : (found ? found.rowsPerUnit : expectedRows)
+    if (!detectedBay && wb) {
       if (m.code === 'DFMU') rowsPerUnit = wb.num('Total cal', 'A3') || (bayCount * 2)
       else if (m.code === 'SFMU') rowsPerUnit = wb.num('Total cal', 'A7') || ((wb.num('Total cal', 'A3') || (bayCount * 2)) / 2) || bayCount
       else if (m.code === 'SFFU') rowsPerUnit = wb.num('Total cal', 'A11') || ((wb.num('Total cal', 'A3') || (bayCount * 2)) / 2) || bayCount
@@ -2885,10 +2903,34 @@ export function OfficialQuotationDocument({
       }
 
       const grp = groupMap.get(sysId)!
-      grp.items.push(b)
-      const itemUnitBody = b.unit_body !== undefined ? b.unit_body : (b.per_bay_qty * b.qty)
+
+      // Auto-heal title and per_bay_qty if bay count was mismatched
+      let item = b
+      if (matchingSet) {
+        const detectedBay = detectSystemBayCount(matchingSet, matchingSet.overrides)
+        if (detectedBay && detectedBay > 0) {
+          const isSingleFace = (item.title || '').toUpperCase().includes('SFMU') || (item.title || '').toUpperCase().includes('SFFU')
+          const expectedPerBay = isSingleFace ? detectedBay : (detectedBay * 2)
+          const expectedTitleBay = `${detectedBay} BAY`
+
+          let title = item.title
+          if (title && !title.includes(expectedTitleBay) && /\b\d+\s*BAY\b/i.test(title)) {
+            title = title.replace(/\b\d+\s*BAY\b/i, expectedTitleBay)
+          }
+
+          if (title !== item.title || (item.per_bay_qty !== expectedPerBay && (item.per_bay_qty === 6 || item.per_bay_qty === 3 || item.per_bay_qty === 4 || item.per_bay_qty === 2))) {
+            const per_bay_qty = expectedPerBay
+            const unit_body = per_bay_qty * item.qty
+            const total_body = unit_body * grp.set_qty
+            item = { ...item, title, per_bay_qty, unit_body, total_body }
+          }
+        }
+      }
+
+      grp.items.push(item)
+      const itemUnitBody = item.unit_body !== undefined ? item.unit_body : (item.per_bay_qty * item.qty)
       grp.unitTotal += itemUnitBody
-      grp.systemTotal += (b.total_body || (itemUnitBody * grp.set_qty))
+      grp.systemTotal += (item.total_body || (itemUnitBody * grp.set_qty))
     })
 
     return groups

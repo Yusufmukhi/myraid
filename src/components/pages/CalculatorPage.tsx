@@ -2044,6 +2044,7 @@ export function CalculatorPage({
           model_name: r.model_name,
           dimensions: r.dimensions,
           unit_qty: r.qty,
+          rows_per_unit: r.rows_per_unit,
           rate: r.unit_rate_with_profit,
           amount: r.total_price_with_profit,
           final_unit_rate: r.final_unit_rate,

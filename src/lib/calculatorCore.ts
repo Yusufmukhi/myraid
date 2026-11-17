@@ -48,6 +48,120 @@ export interface SystemBodiesResult {
 }
 
 /**
+ * Detects the system's compactor bay count (e.g. 1, 2, 3, 4, 5 BAY) from:
+ * 1. Explicit bay field (sys.bay, sys.bay_count, sys.breakdown?.bay_count)
+ * 2. System title, label, or name (e.g. "2 BAY", "SYSTEM A - 2 BAY", "2 BAY (1 SET)", "2-BAY")
+ * 3. Item titles, models, or descriptions (e.g. "DFMU 2 BAY", "1830 (W)" -> 1830/915 = 2 bays)
+ * 4. Overrides width 'Total cal!B3' or 'Total cal!A3' (DFMU rows / 2)
+ */
+export function detectSystemBayCount(sys: any, overrides: Overrides = {}): number | null {
+  if (!sys && !overrides) return null
+
+  // 1. Explicit bay field
+  if (typeof sys?.bay === 'number' && sys.bay > 0) return sys.bay
+  if (typeof sys?.bay_count === 'number' && sys.bay_count > 0) return sys.bay_count
+  if (typeof sys?.breakdown?.bay_count === 'number' && sys.breakdown.bay_count > 0) return sys.breakdown.bay_count
+
+  // Helper regex to extract bay from text string
+  const extractBayRegex = (text?: string): number | null => {
+    if (!text) return null
+    // Matches "2 BAY", "2-BAY", "2BAY", "2 BAYS", "BAY 2", "BAY-2"
+    const m = text.match(/(?:^|[^0-9])([1-9]\d?)\s*[-_]?\s*BAYS?(?:$|[^a-zA-Z0-9])/i) ||
+              text.match(/\bBAYS?\s*[-_:]?\s*([1-9]\d?)\b/i)
+    if (m && m[1]) {
+      const val = parseInt(m[1], 10)
+      if (val >= 1 && val <= 20) return val
+    }
+    return null
+  }
+
+  // Helper to extract bay from dimension width (standard compactor module width is 915mm per bay)
+  const extractBayFromDim = (dim?: string): number | null => {
+    if (!dim) return null
+    const wMatch = dim.match(/(\d{3,4})\s*(?:mm)?\s*\([Ww]\)/i) ||
+                   dim.match(/[Xx]\s*(\d{3,4})\s*(?:mm)?\s*[Xx]/i) ||
+                   dim.match(/(\d{3,4})\s*WIDTH/i)
+    if (wMatch && wMatch[1]) {
+      const w = parseInt(wMatch[1], 10)
+      if (w >= 800 && w <= 1100) return 1      // 915 mm
+      if (w >= 1600 && w <= 2000) return 2    // 1830 mm
+      if (w >= 2500 && w <= 2950) return 3    // 2745 mm
+      if (w >= 3400 && w <= 3850) return 4    // 3660 mm
+      if (w >= 4300 && w <= 4750) return 5    // 4575 mm
+      const approx = Math.round(w / 915)
+      if (approx >= 1 && approx <= 20) return approx
+    }
+    return null
+  }
+
+  // 2. Scan system title, set_label, name, label
+  const titleBay = extractBayRegex(sys?.system_title) ||
+                   extractBayRegex(sys?.set_label) ||
+                   extractBayRegex(sys?.name) ||
+                   extractBayRegex(sys?.label)
+  if (titleBay) return titleBay
+
+  // 3. Scan items if present
+  if (Array.isArray(sys?.items)) {
+    for (const it of sys.items) {
+      const itBay = extractBayRegex(it.title) ||
+                    extractBayRegex(it.model_name) ||
+                    extractBayRegex(it.model_code) ||
+                    extractBayRegex(it.description)
+      if (itBay) return itBay
+    }
+    for (const it of sys.items) {
+      const dimBay = extractBayFromDim(it.dimensions) || extractBayFromDim(it.description)
+      if (dimBay) return dimBay
+    }
+    for (const it of sys.items) {
+      const c = (it.model_code || it.model_name || '').toUpperCase()
+      if (c.includes('DFMU') && typeof it.rows_per_unit === 'number' && it.rows_per_unit > 0) {
+        return Math.max(1, Math.round(it.rows_per_unit / 2))
+      }
+      if ((c.includes('SFMU') || c.includes('SFFU')) && typeof it.rows_per_unit === 'number' && it.rows_per_unit > 0) {
+        return Math.max(1, it.rows_per_unit)
+      }
+    }
+  }
+
+  // 4. Check breakdown rows
+  if (Array.isArray(sys?.breakdown?.rows)) {
+    for (const r of sys.breakdown.rows) {
+      const c = (r.model_code || r.model_name || '').toUpperCase()
+      if (c.includes('DFMU') && typeof r.rows_per_unit === 'number' && r.rows_per_unit > 0) {
+        return Math.max(1, Math.round(r.rows_per_unit / 2))
+      }
+      if ((c.includes('SFMU') || c.includes('SFFU')) && typeof r.rows_per_unit === 'number' && r.rows_per_unit > 0) {
+        return Math.max(1, r.rows_per_unit)
+      }
+      const dimBay = extractBayFromDim(r.dimensions)
+      if (dimBay) return dimBay
+    }
+  }
+
+  // 5. Check overrides width 'Total cal!B3' or 'Total cal!D3'
+  const b3 = Number(overrides?.['Total cal!B3'] ?? overrides?.['Total cal!D3'])
+  if (b3 && !isNaN(b3) && b3 > 0) {
+    if (b3 >= 800 && b3 <= 1100) return 1
+    if (b3 >= 1600 && b3 <= 2000) return 2
+    if (b3 >= 2500 && b3 <= 2950) return 3
+    if (b3 >= 3400 && b3 <= 3850) return 4
+    if (b3 >= 4300 && b3 <= 4750) return 5
+    const approx = Math.round(b3 / 915)
+    if (approx >= 1 && approx <= 20) return approx
+  }
+
+  // 6. Check overrides Total cal!A3 if it's explicitly present in sys.overrides
+  if (sys?.overrides?.['Total cal!A3'] !== undefined && sys.overrides['Total cal!A3'] !== null) {
+    const a3 = Number(sys.overrides['Total cal!A3'])
+    if (a3 > 0) return Math.max(1, Math.round(a3 / 2))
+  }
+
+  return null
+}
+
+/**
  * Calculates the exact per-model body rows, quantities, bodies count, and breakdown for any system.
  * Authoritative single formula for Total Bodies.
  */
@@ -61,24 +175,39 @@ export function calculateSystemBodies(
   const overrides = sysOverrides || sys?.overrides || {}
   const setsQty = Math.max(1, Number(sys?.quantity) || 1)
 
-  // 1. Determine dfmuRows (Master Bay / Row count from Total cal!A3, or saved breakdown)
-  const breakdownRows = sys?.breakdown?.rows
-  const breakdownA3 = breakdownRows?.find((r: any) => r.model_code === 'DFMU')?.rows_per_unit || breakdownRows?.[0]?.rows_per_unit
-  const rawA3 = overrides['Total cal!A3'] ?? (isCurrent && wbInstance ? wbInstance.num('Total cal', 'A3') : undefined)
-  const dfmuRows = Number(rawA3 !== undefined ? rawA3 : (breakdownA3 || (wbInstance ? (wbInstance.num('Total cal', 'A3') || 6) : 6))) || 6
+  // 1. Detect bay count
+  const detectedBay = detectSystemBayCount(sys, overrides)
+
+  // Determine dfmuRows (Master Bay / Row count from Total cal!A3, or saved breakdown, or detected bay)
+  let dfmuRows: number
+  if (detectedBay && detectedBay > 0) {
+    // If the system explicitly defines a bay count (e.g. 2 BAY or width 1830 mm),
+    // DFMU rows is strictly 2 rows per bay! (2 BAY -> 4 rows, 3 BAY -> 6 rows, etc.)
+    dfmuRows = detectedBay * 2
+  } else {
+    const breakdownRows = sys?.breakdown?.rows
+    const breakdownA3 = breakdownRows?.find((r: any) => r.model_code === 'DFMU')?.rows_per_unit || breakdownRows?.[0]?.rows_per_unit
+    const rawA3 = overrides['Total cal!A3'] ?? (isCurrent && wbInstance ? wbInstance.num('Total cal', 'A3') : undefined)
+    dfmuRows = Number(rawA3 !== undefined ? rawA3 : (breakdownA3 || (wbInstance ? (wbInstance.num('Total cal', 'A3') || 6) : 6))) || 6
+  }
 
   // Derived row counts (SFMU & SFFU are 1/2 of DFMU; DFFU & DFMU-D match DFMU)
   const getRowsForModel = (code: string, defaultRows: number) => {
+    if (detectedBay && detectedBay > 0) {
+      return (code === 'SFMU' || code === 'SFFU') ? detectedBay : detectedBay * 2
+    }
+    const breakdownRows = sys?.breakdown?.rows
     const fromBreakdown = breakdownRows?.find((r: any) => r.model_code === code)?.rows_per_unit
     return fromBreakdown || defaultRows
   }
 
-  const sfmuRows = Number(overrides['Total cal!A7'] ?? getRowsForModel('SFMU', Math.max(1, Math.round(dfmuRows / 2))))
-  const sffuRows = Number(overrides['Total cal!A11'] ?? getRowsForModel('SFFU', Math.max(1, Math.round(dfmuRows / 2))))
+  const defaultSingleRows = detectedBay ? detectedBay : Math.max(1, Math.round(dfmuRows / 2))
+  const sfmuRows = Number(overrides['Total cal!A7'] ?? getRowsForModel('SFMU', defaultSingleRows))
+  const sffuRows = Number(overrides['Total cal!A11'] ?? getRowsForModel('SFFU', defaultSingleRows))
   const dffuRows = Number(overrides['Total cal!A15'] ?? getRowsForModel('DFFU', dfmuRows))
   const dfmudRows = Number(overrides['Total cal!A19'] ?? getRowsForModel('DFMU-D', dfmuRows))
 
-  // 2. Model unit quantities from overrides, active workbook, or summary models
+  // 2. Model unit quantities from overrides, active workbook, summary models, or sys.items
   const getQ = (cell: string, code: string) => {
     if (overrides[cell] !== undefined && overrides[cell] !== null) return Number(overrides[cell]) || 0
     if (isCurrent && wbInstance) {
@@ -87,6 +216,16 @@ export function calculateSystemBodies(
     }
     const found = sys?.summary?.models?.find((m: any) => m.code === code) || sys?.models?.find((m: any) => m.code === code)
     if (found && found.qty !== undefined) return Number(found.qty) || 0
+    if (Array.isArray(sys?.items)) {
+      const item = sys.items.find((it: any) => {
+        const c = (it.model_code || it.model_name || '').trim().toUpperCase()
+        return c === code || c.startsWith(`${code} `) || c.includes(`(${code})`)
+      })
+      if (item) {
+        const q = item.unit_qty !== undefined ? item.unit_qty : item.quantity
+        if (q !== undefined && q !== null) return Number(q) || 0
+      }
+    }
     return 0
   }
 
