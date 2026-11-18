@@ -76,11 +76,17 @@ export function exportWorkbookToXLSX(
 
     const rows = sheetData.rows
     const cols = sheetData.cols
+    // Ensure Total cal has at least 23 columns (Cols A to W)
+    const targetCols = sheetName === 'Total cal' ? Math.max(cols, 23) : cols
     const aoa: (string | number | boolean | null)[][] = []
 
     for (let r = 0; r < rows; r++) {
       const rowArr: (string | number | boolean | null)[] = []
-      for (let c = 0; c < cols; c++) {
+      for (let c = 0; c < targetCols; c++) {
+        if (c >= cols) {
+          rowArr.push(null)
+          continue
+        }
         // Total cal sheet customizations
         if (sheetName === 'Total cal') {
           // Model quantities: multiply unit quantity by setsQty when exporting
@@ -245,16 +251,17 @@ export function exportWorkbookToXLSX(
       ws['!cols'] = fallbackCols
     }
 
-    // Ensure Total cal columns include O, P, R, S with clean readable widths
+    // Ensure Total cal columns: minimum 23 columns, and minimum column width 23 for clean readable layout
     if (sheetName === 'Total cal') {
       const currentCols = ws['!cols'] || []
-      while (currentCols.length < 19) {
-        currentCols.push({ wch: 12 })
+      while (currentCols.length < 23) {
+        currentCols.push({ wch: 23 })
       }
-      currentCols[14] = { wch: 9 }   // Col O: "SET"
-      currentCols[15] = { wch: 9 }   // Col P: Sets count
-      currentCols[17] = { wch: 22 }  // Col R: Labels
-      currentCols[18] = { wch: 18 }  // Col S: Values
+      for (let i = 0; i < currentCols.length; i++) {
+        currentCols[i] = { wch: Math.max(currentCols[i]?.wch || 0, 23) }
+      }
+      currentCols[17] = { wch: Math.max(currentCols[17]?.wch || 0, 24) }  // Col R: Labels
+      currentCols[18] = { wch: Math.max(currentCols[18]?.wch || 0, 23) }  // Col S: Values
       ws['!cols'] = currentCols
     }
 
@@ -413,6 +420,112 @@ export function exportWorkbookToXLSX(
           },
         }
       }
+    }
+
+    // Universal table formatting & border styling across all sheets
+    const thinTableBorder = {
+      top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      right: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    }
+
+    // Format all active table rows with contiguous borders and clean typography
+    for (let r = 0; r < rows; r++) {
+      let minC = -1
+      let maxC = -1
+      let isSep = false
+
+      for (let c = 0; c < targetCols; c++) {
+        const cellRef = addr(r, c)
+        const cell = ws[cellRef]
+        const val = cell?.v
+        if (typeof val === 'string' && val.trim().startsWith('---')) {
+          isSep = true
+          break
+        }
+        if (cell && (cell.v !== null && cell.v !== undefined && cell.v !== '' || cell.f)) {
+          if (minC === -1) minC = c
+          maxC = c
+        }
+      }
+
+      if (isSep || minC === -1) continue
+
+      for (let c = minC; c <= maxC; c++) {
+        const cellRef = addr(r, c)
+        if (!ws[cellRef]) {
+          ws[cellRef] = { t: 's', v: '' }
+        }
+        const cell = ws[cellRef]
+        const existingS = cell.s || {}
+        const existingBorder = existingS.border || {}
+
+        const strVal = String(cell.v ?? '').trim()
+        const isHeaderLike = (r <= 1 && strVal.length > 0) ||
+          (['ROW', 'CLOUM', 'HT', 'W', 'D', 'RATE', 'QTY', 'AMOUNT', 'TOTAL', 'SET', 'PART NAME', 'PACKING LIST', 'ORDER NO'].includes(strVal.toUpperCase()))
+
+        cell.s = {
+          ...existingS,
+          font: {
+            name: 'Calibri',
+            sz: existingS.font?.sz || 10,
+            bold: existingS.font?.bold !== undefined ? existingS.font.bold : isHeaderLike,
+            color: existingS.font?.color || { rgb: isHeaderLike ? '0F172A' : '334155' },
+          },
+          border: {
+            top: existingBorder.top || thinTableBorder.top,
+            bottom: existingBorder.bottom || thinTableBorder.bottom,
+            left: existingBorder.left || thinTableBorder.left,
+            right: existingBorder.right || thinTableBorder.right,
+          },
+          alignment: existingS.alignment || {
+            horizontal: typeof cell.v === 'number' ? 'right' : (isHeaderLike || strVal.length <= 4) ? 'center' : 'left',
+            vertical: 'center',
+          },
+        }
+
+        // Clean subtle fill for header rows if not already filled
+        if (isHeaderLike && !existingS.fill) {
+          cell.s.fill = { fgColor: { rgb: 'F1F5F9' } }
+        }
+      }
+    }
+
+    // Ensure any individual cell outside row spans that has content also has borders
+    for (const cellRef of Object.keys(ws)) {
+      if (cellRef.startsWith('!')) continue
+      const cell = ws[cellRef]
+      if (cell && (cell.v !== null && cell.v !== undefined && cell.v !== '' || cell.f)) {
+        const existingS = cell.s || {}
+        const existingBorder = existingS.border || {}
+        cell.s = {
+          ...existingS,
+          border: {
+            top: existingBorder.top || thinTableBorder.top,
+            bottom: existingBorder.bottom || thinTableBorder.bottom,
+            left: existingBorder.left || thinTableBorder.left,
+            right: existingBorder.right || thinTableBorder.right,
+          },
+        }
+      }
+    }
+
+    // Standard A4 paper size (paperSize: 9), fit-to-width, and clean print margins for all sheets
+    ws['!pageSetup'] = {
+      paperSize: 9,              // A4 (210 x 297 mm)
+      orientation: 'portrait',   // Standard A4 portrait
+      scale: 100,
+      fitToWidth: 1,             // Fit table width onto 1 A4 page width
+      fitToHeight: 0,            // Natural vertical pagination
+    }
+    ws['!margins'] = {
+      left: 0.5,
+      right: 0.5,
+      top: 0.5,
+      bottom: 0.5,
+      header: 0.3,
+      footer: 0.3,
     }
 
     // Enable native Excel grid lines across all sheets so exported tables display clearly
