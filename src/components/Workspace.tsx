@@ -87,12 +87,36 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     }
   }, [session.token, org.id, isAdminOrOwner])
 
+  const [justCreatedProjectId, setJustCreatedProjectId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('apollo_just_created_proj_id') || null
+    } catch {
+      return null
+    }
+  })
+
+  // State for rescheduling/extending reminders with custom date & time
+  const [reschedulingProjectId, setReschedulingProjectId] = useState<string | null>(null)
+  const [rescheduleDateTimeInput, setRescheduleDateTimeInput] = useState<string>('')
+  const [rescheduleNoteInput, setRescheduleNoteInput] = useState<string>('')
+
+  const formatDateTimeForInput = (d: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
   const handleTabSwitch = useCallback((newTab: NavTab) => {
     if (tab === 'calculator' && calculatorDirty && newTab !== 'calculator') {
       toast('Please save your changes first', 'err')
       setPendingTab(newTab)
       setShowWorkspaceUnsavedModal(true)
       return
+    }
+    if (newTab !== 'calculator' && newTab !== 'details') {
+      setJustCreatedProjectId(null)
+      try {
+        sessionStorage.removeItem('apollo_just_created_proj_id')
+      } catch {}
     }
     setTab(newTab)
     setNavOpen(false)
@@ -300,6 +324,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   // Open an existing project and switch to calculator
   const handleOpenProject = async (projectId: string) => {
     try {
+      setJustCreatedProjectId(null)
       try {
         sessionStorage.removeItem('apollo_just_created_proj_id')
       } catch {}
@@ -312,13 +337,17 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     }
   }
 
-  const handleSnoozeReminder = async (p: Project, days = 1) => {
+  const handleRescheduleReminder = async (p: Project, targetDate: string | Date, customNote?: string) => {
     try {
-      const nextDate = new Date()
-      nextDate.setDate(nextDate.getDate() + days)
+      const dateObj = typeof targetDate === 'string' ? new Date(targetDate) : targetDate
+      if (isNaN(dateObj.getTime())) {
+        toast('Please enter a valid date and time', 'err')
+        return
+      }
       const updatedReminder = {
         ...(p.summary?.reminder || { note: 'Follow up' }),
-        date: nextDate.toISOString(),
+        date: dateObj.toISOString(),
+        note: customNote !== undefined ? customNote.trim() : (p.summary?.reminder?.note || 'Follow up with client'),
         dismissed: false,
       }
       const updatedSummary = {
@@ -334,11 +363,33 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         p.formula_overrides,
         p.total,
         updatedSummary,
-        'Snooze reminder',
+        'Reschedule reminder',
       )
-      setDueReminders((prev) => prev.filter((item) => item.id !== p.id))
+      const endOfToday = new Date()
+      endOfToday.setHours(23, 59, 59, 999)
+      if (dateObj.getTime() > endOfToday.getTime()) {
+        setDueReminders((prev) => prev.filter((item) => item.id !== p.id))
+      } else {
+        setDueReminders((prev) => prev.map((item) => item.id === p.id ? { ...item, summary: updatedSummary } : item))
+      }
       setProjects((prev) => prev.map((item) => item.id === p.id ? { ...item, summary: updatedSummary } : item))
-      toast(`Snoozed for ${days} day(s)`, 'ok')
+      if (currentProject && currentProject.id === p.id) {
+        setCurrentProject((prev) => prev ? { ...prev, summary: updatedSummary } : prev)
+      }
+      setReschedulingProjectId(null)
+      const dateFormatted = dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
+      const timeFormatted = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      toast(`⏰ Reminder set for ${dateFormatted} at ${timeFormatted}`, 'ok')
+    } catch (e: any) {
+      toast(e.message, 'err')
+    }
+  }
+
+  const handleSnoozeReminder = async (p: Project, days = 1) => {
+    try {
+      const nextDate = new Date()
+      nextDate.setDate(nextDate.getDate() + days)
+      await handleRescheduleReminder(p, nextDate, p.summary?.reminder?.note)
     } catch (e: any) {
       toast(e.message, 'err')
     }
@@ -451,6 +502,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         initialSummary,
       )
       toast(`Created quotation “${res.name}”`)
+      setJustCreatedProjectId(res.id)
       try {
         sessionStorage.setItem('apollo_just_created_proj_id', res.id)
       } catch {}
@@ -1315,6 +1367,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 project={currentProject}
                 wb={baseWb}
                 c2cWb={c2cWb}
+                isNewlyCreated={justCreatedProjectId === currentProject.id}
                 onProjectUpdated={(p) => {
                   setCurrentProject(p)
                   loadProjects()
@@ -1828,37 +1881,175 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        style={{ fontSize: '11px', padding: '3px 8px' }}
-                        onClick={() => handleSnoozeReminder(p, 1)}
-                        title="Remind me again tomorrow"
-                      >
-                        ⏰ Snooze (+1d)
-                      </button>
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        style={{ fontSize: '11px', padding: '3px 8px', color: '#64748b' }}
-                        onClick={() => handleDismissReminder(p)}
-                        title="Mark reminder as completed/dismissed"
-                      >
-                        Dismiss
-                      </button>
-                      <button
-                        type="button"
-                        className="btn primary sm"
-                        style={{ fontSize: '11px', padding: '3px 10px' }}
-                        onClick={() => {
-                          setShowDueReminderModal(false)
-                          handleOpenProject(p.id)
+                    {reschedulingProjectId === p.id ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: '10px 12px',
+                          background: '#ffffff',
+                          border: '1.5px solid #f59e0b',
+                          borderRadius: 6,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8,
+                          boxShadow: '0 2px 6px rgba(245, 158, 11, 0.12)',
                         }}
                       >
-                        Open Quotation →
-                      </button>
-                    </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#92400e' }}>
+                            📅 Set Custom Date &amp; Time for Alarm:
+                          </span>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {[
+                            { label: 'Tomorrow 10 AM', days: 1, hour: 10, min: 0 },
+                            { label: 'Tomorrow 3 PM', days: 1, hour: 15, min: 0 },
+                            { label: 'In 2 Days', days: 2, hour: 10, min: 0 },
+                            { label: 'Next Week', days: 7, hour: 10, min: 0 },
+                            { label: 'In 3 Hours', hoursOffset: 3 },
+                          ].map((preset) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              className="btn ghost xs"
+                              style={{ fontSize: '10px', padding: '2px 6px', fontWeight: 600, borderColor: '#cbd5e1' }}
+                              onClick={() => {
+                                const d = new Date()
+                                if (preset.hoursOffset) {
+                                  d.setHours(d.getHours() + preset.hoursOffset)
+                                } else {
+                                  d.setDate(d.getDate() + (preset.days || 1))
+                                  d.setHours(preset.hour ?? 10, preset.min ?? 0, 0, 0)
+                                }
+                                setRescheduleDateTimeInput(formatDateTimeForInput(d))
+                              }}
+                            >
+                              ⏰ {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Exact Date & Time Picker */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+                          <div>
+                            <label className="tiny text-muted font-bold" style={{ display: 'block', marginBottom: 2 }}>
+                              Date &amp; Time (Alarm)
+                            </label>
+                            <input
+                              type="datetime-local"
+                              value={rescheduleDateTimeInput}
+                              onChange={(e) => setRescheduleDateTimeInput(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '6px 8px',
+                                fontSize: '12px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 4,
+                                fontWeight: 700,
+                                color: '#0f172a',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="tiny text-muted font-bold" style={{ display: 'block', marginBottom: 2 }}>
+                              Note / Action Item
+                            </label>
+                            <input
+                              type="text"
+                              value={rescheduleNoteInput}
+                              onChange={(e) => setRescheduleNoteInput(e.target.value)}
+                              placeholder="e.g. Call client regarding quotation PO"
+                              style={{
+                                width: '100%',
+                                padding: '6px 8px',
+                                fontSize: '11.5px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 4,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 2 }}>
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            style={{ fontSize: '11px', padding: '3px 8px' }}
+                            onClick={() => setReschedulingProjectId(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="btn primary sm"
+                            style={{ fontSize: '11px', padding: '3px 12px', fontWeight: 700 }}
+                            onClick={() => handleRescheduleReminder(p, rescheduleDateTimeInput, rescheduleNoteInput)}
+                          >
+                            ✓ Save &amp; Extend Alarm
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            style={{
+                              fontSize: '11px',
+                              padding: '3px 8px',
+                              color: '#92400e',
+                              borderColor: '#fcd34d',
+                              background: '#fffbeb',
+                              fontWeight: 700,
+                            }}
+                            onClick={() => {
+                              setReschedulingProjectId(p.id)
+                              const curr = p.summary?.reminder?.date ? new Date(p.summary.reminder.date) : new Date()
+                              const initial = curr.getTime() < Date.now() ? new Date(Date.now() + 86400000) : curr
+                              setRescheduleDateTimeInput(formatDateTimeForInput(initial))
+                              setRescheduleNoteInput(p.summary?.reminder?.note || '')
+                            }}
+                            title="Extend with custom date and time as you wish"
+                          >
+                            📅 Extend Date &amp; Time
+                          </button>
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            style={{ fontSize: '11px', padding: '3px 8px' }}
+                            onClick={() => handleSnoozeReminder(p, 1)}
+                            title="Quick snooze 1 day"
+                          >
+                            +1d
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            style={{ fontSize: '11px', padding: '3px 8px', color: '#64748b' }}
+                            onClick={() => handleDismissReminder(p)}
+                            title="Mark reminder as completed/dismissed"
+                          >
+                            Dismiss
+                          </button>
+                          <button
+                            type="button"
+                            className="btn primary sm"
+                            style={{ fontSize: '11px', padding: '3px 10px' }}
+                            onClick={() => {
+                              setShowDueReminderModal(false)
+                              handleOpenProject(p.id)
+                            }}
+                          >
+                            Open Quotation →
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}

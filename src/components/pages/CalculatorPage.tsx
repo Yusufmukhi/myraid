@@ -54,6 +54,7 @@ interface Props {
 
   wb: Workbook
   c2cWb?: Workbook
+  isNewlyCreated?: boolean
 
     onProjectUpdated: (p: Project) => void
 
@@ -514,8 +515,7 @@ export function CalculatorPage({
 
   wb,
   c2cWb,
-
-  
+  isNewlyCreated = false,
 
   onProjectUpdated,
 
@@ -2976,37 +2976,46 @@ export function CalculatorPage({
   const isSharedLocked = Boolean(project.summary?.shared_locked || project.summary?.locked_after_share || (status as string) === 'shared')
   const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
   const [isEditingMode, setIsEditingMode] = useState<boolean>(() => {
-    try {
-      const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
-      if (createdId && createdId === project.id) {
-        return true
-      }
-    } catch {}
+    if (isNewlyCreated && isAdminOrOwner) return true
+    if (isAdminOrOwner) {
+      try {
+        const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
+        if (createdId && createdId === project.id) {
+          return true
+        }
+      } catch {}
+    }
     return false
   })
 
-  // Only enable editing automatically on initial project creation; all subsequent opens default to disabled
+  // Only enable editing automatically on initial project creation for Admin/Owner; all subsequent opens default to disabled
   useEffect(() => {
-    try {
-      const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
-      if (createdId && createdId === project.id) {
-        setIsEditingMode(true)
-        return
-      }
-    } catch {}
+    if (isNewlyCreated && isAdminOrOwner) {
+      setIsEditingMode(true)
+      return
+    }
+    if (isAdminOrOwner) {
+      try {
+        const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
+        if (createdId && createdId === project.id) {
+          setIsEditingMode(true)
+          return
+        }
+      } catch {}
+    }
     setIsEditingMode(false)
-  }, [project.id])
+  }, [project.id, isNewlyCreated, isAdminOrOwner])
 
   // Clear creation flag on cleanup so subsequent visits to this project default to disabled
   useEffect(() => {
     return () => {
       try {
-        if (sessionStorage.getItem('apollo_just_created_proj_id') === project.id) {
+        if (!isNewlyCreated && sessionStorage.getItem('apollo_just_created_proj_id') === project.id) {
           sessionStorage.removeItem('apollo_just_created_proj_id')
         }
       } catch {}
     }
-  }, [project.id])
+  }, [project.id, isNewlyCreated])
 
   const handleToggleEditing = () => {
     if (isApprovedLocked) {
@@ -3787,8 +3796,24 @@ export function CalculatorPage({
               className="btn xs ghost"
               onClick={() => setShowReminderModal(true)}
               style={{ color: '#92400e', borderColor: '#fcd34d', fontWeight: 700, fontSize: '11px', background: '#fff' }}
+              title="Reschedule with custom date and time"
             >
-              ✏️ Edit Alarm
+              📅 Extend Date &amp; Time
+            </button>
+            <button
+              type="button"
+              className="btn xs ghost"
+              onClick={() => {
+                const nextDate = new Date()
+                nextDate.setDate(nextDate.getDate() + 1)
+                const pad = (n: number) => String(n).padStart(2, '0')
+                const formatted = `${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}T${pad(nextDate.getHours())}:${pad(nextDate.getMinutes())}`
+                handleSaveReminder(formatted, reminder.note)
+              }}
+              style={{ color: '#92400e', borderColor: '#fcd34d', fontWeight: 700, fontSize: '11px', background: '#fff' }}
+              title="Quick extend 1 day"
+            >
+              +1 Day
             </button>
             <button
               type="button"
