@@ -17,12 +17,43 @@ export interface CellStyle {
 
 export interface SheetLayoutMeta {
   cols?: Array<{ wch: number }>
+  rows?: Array<{ hpt?: number; hpx?: number } | null>
   merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>
   styles?: Record<string, CellStyle>
 }
 
 const RAW_META: Record<string, SheetLayoutMeta> = {
   "Total cal": {
+    "rows": [
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 24 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 18 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 18 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 18 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 18 },
+      null,
+      null,
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 },
+      { "hpt": 21 }
+    ],
     "cols": [
       {
         "wch": 13
@@ -17002,6 +17033,7 @@ const RAW_META: Record<string, SheetLayoutMeta> = {
     }
   },
   "Sheet1": {
+    "rows": [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"hpt":10.9},null,null,null,null,null,null,null,null,null,null,null,null,{"hpt":11.4},{"hpt":12.6},{"hpt":10.9},{"hpt":12},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"hpt":11.4},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"hpt":12.6}],
     "cols": [
       {
         "wch": 14
@@ -17033,6 +17065,7 @@ const RAW_META: Record<string, SheetLayoutMeta> = {
     ]
   },
   "__KEY_SH_SZ__": {
+    "rows": [null,null,{"hpt":15},null,null,{"hpt":15},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"hpt":18.6},{"hpt":18.6}],
     "cols": [
       {
         "wch": 14
@@ -17093,6 +17126,7 @@ const RAW_META: Record<string, SheetLayoutMeta> = {
     ]
   },
   "__KEY_HL__": {
+    "rows": [{"hpt":19.8},{"hpt":19.8}],
     "cols": [
       {
         "wch": 12
@@ -17632,6 +17666,7 @@ const RAW_META: Record<string, SheetLayoutMeta> = {
     ]
   },
   "hardware": {
+    "rows": [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"hpt":15.6},{"hpt":15.6},{"hpt":15.6},null,null,null,null,{"hpt":15.6},null,{"hpt":15.6},{"hpt":15.6},{"hpt":15.6},null,{"hpt":15.6},{"hpt":15.6},{"hpt":15.6},null,{"hpt":15.6},{"hpt":15.6},{"hpt":15.6}],
     "cols": [
       {
         "wch": 23

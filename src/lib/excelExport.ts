@@ -251,18 +251,20 @@ export function exportWorkbookToXLSX(
       ws['!cols'] = fallbackCols
     }
 
-    // Ensure Total cal columns: minimum 23 columns, and minimum column width 23 for clean readable layout
+    // Ensure Total cal columns: 23 columns (Cols A to W) with authentic widths from exam.xlsx
     if (sheetName === 'Total cal') {
       const currentCols = ws['!cols'] || []
       while (currentCols.length < 23) {
-        currentCols.push({ wch: 23 })
+        currentCols.push({ wch: 10 })
       }
-      for (let i = 0; i < currentCols.length; i++) {
-        currentCols[i] = { wch: Math.max(currentCols[i]?.wch || 0, 23) }
-      }
-      currentCols[17] = { wch: Math.max(currentCols[17]?.wch || 0, 24) }  // Col R: Labels
-      currentCols[18] = { wch: Math.max(currentCols[18]?.wch || 0, 23) }  // Col S: Values
+      currentCols[17] = { wch: 20 }  // Col R: Labels ("Subtotal Before GST", "C2C Profit", etc.)
+      currentCols[18] = { wch: 15 }  // Col S: Values (currency numbers)
       ws['!cols'] = currentCols
+    }
+
+    // Apply exact row heights from authentic exam.xlsx template
+    if (meta?.rows && meta.rows.length > 0) {
+      ws['!rows'] = meta.rows.map((r: any) => (r ? { ...r } : null))
     }
 
     // Apply merged cells if present
@@ -422,110 +424,29 @@ export function exportWorkbookToXLSX(
       }
     }
 
-    // Universal table formatting & border styling across all sheets
-    const thinTableBorder = {
-      top: { style: 'thin', color: { rgb: 'CBD5E1' } },
-      bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
-      left: { style: 'thin', color: { rgb: 'CBD5E1' } },
-      right: { style: 'thin', color: { rgb: 'CBD5E1' } },
-    }
-
-    // Format all active table rows with contiguous borders and clean typography
-    for (let r = 0; r < rows; r++) {
-      let minC = -1
-      let maxC = -1
-      let isSep = false
-
-      for (let c = 0; c < targetCols; c++) {
-        const cellRef = addr(r, c)
-        const cell = ws[cellRef]
-        const val = cell?.v
-        if (typeof val === 'string' && val.trim().startsWith('---')) {
-          isSep = true
-          break
-        }
-        if (cell && (cell.v !== null && cell.v !== undefined && cell.v !== '' || cell.f)) {
-          if (minC === -1) minC = c
-          maxC = c
-        }
+    // Page setup and print margins matching original exam.xlsx template
+    if (isShearing) {
+      ws['!pageSetup'] = {
+        paperSize: 9,              // A4 (210 x 297 mm)
+        orientation: 'portrait',   // Standard A4 portrait
       }
-
-      if (isSep || minC === -1) continue
-
-      for (let c = minC; c <= maxC; c++) {
-        const cellRef = addr(r, c)
-        if (!ws[cellRef]) {
-          ws[cellRef] = { t: 's', v: '' }
-        }
-        const cell = ws[cellRef]
-        const existingS = cell.s || {}
-        const existingBorder = existingS.border || {}
-
-        const strVal = String(cell.v ?? '').trim()
-        const isHeaderLike = (r <= 1 && strVal.length > 0) ||
-          (['ROW', 'CLOUM', 'HT', 'W', 'D', 'RATE', 'QTY', 'AMOUNT', 'TOTAL', 'SET', 'PART NAME', 'PACKING LIST', 'ORDER NO'].includes(strVal.toUpperCase()))
-
-        cell.s = {
-          ...existingS,
-          font: {
-            name: 'Calibri',
-            sz: existingS.font?.sz || 10,
-            bold: existingS.font?.bold !== undefined ? existingS.font.bold : isHeaderLike,
-            color: existingS.font?.color || { rgb: isHeaderLike ? '0F172A' : '334155' },
-          },
-          border: {
-            top: existingBorder.top || thinTableBorder.top,
-            bottom: existingBorder.bottom || thinTableBorder.bottom,
-            left: existingBorder.left || thinTableBorder.left,
-            right: existingBorder.right || thinTableBorder.right,
-          },
-          alignment: existingS.alignment || {
-            horizontal: typeof cell.v === 'number' ? 'right' : (isHeaderLike || strVal.length <= 4) ? 'center' : 'left',
-            vertical: 'center',
-          },
-        }
-
-        // Clean subtle fill for header rows if not already filled
-        if (isHeaderLike && !existingS.fill) {
-          cell.s.fill = { fgColor: { rgb: 'F1F5F9' } }
-        }
+      ws['!margins'] = {
+        left: 0.7,
+        right: 0.7,
+        top: 0.2,
+        bottom: 0.2,
+        header: 0.3,
+        footer: 0.3,
       }
-    }
-
-    // Ensure any individual cell outside row spans that has content also has borders
-    for (const cellRef of Object.keys(ws)) {
-      if (cellRef.startsWith('!')) continue
-      const cell = ws[cellRef]
-      if (cell && (cell.v !== null && cell.v !== undefined && cell.v !== '' || cell.f)) {
-        const existingS = cell.s || {}
-        const existingBorder = existingS.border || {}
-        cell.s = {
-          ...existingS,
-          border: {
-            top: existingBorder.top || thinTableBorder.top,
-            bottom: existingBorder.bottom || thinTableBorder.bottom,
-            left: existingBorder.left || thinTableBorder.left,
-            right: existingBorder.right || thinTableBorder.right,
-          },
-        }
+    } else {
+      ws['!margins'] = {
+        left: 0.7,
+        right: 0.7,
+        top: 0.75,
+        bottom: 0.75,
+        header: 0.3,
+        footer: 0.3,
       }
-    }
-
-    // Standard A4 paper size (paperSize: 9), fit-to-width, and clean print margins for all sheets
-    ws['!pageSetup'] = {
-      paperSize: 9,              // A4 (210 x 297 mm)
-      orientation: 'portrait',   // Standard A4 portrait
-      scale: 100,
-      fitToWidth: 1,             // Fit table width onto 1 A4 page width
-      fitToHeight: 0,            // Natural vertical pagination
-    }
-    ws['!margins'] = {
-      left: 0.5,
-      right: 0.5,
-      top: 0.5,
-      bottom: 0.5,
-      header: 0.3,
-      footer: 0.3,
     }
 
     // Enable native Excel grid lines across all sheets so exported tables display clearly

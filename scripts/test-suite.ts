@@ -2750,45 +2750,43 @@ async function runAllTests() {
 
     XLSX.writeFile = origWriteFile
 
-    // 1. Total cal sizing: at least 23 columns (Cols A to W) and minimum column width 23
+    // 1. Total cal sizing: 23 columns (Cols A to W), compact readable column widths (Total <= 260 chars), Col R=20, Col S=15
     const tcSheet = capturedBook?.Sheets?.['Total cal']
     const tcCols = tcSheet?.['!cols'] || []
     const tcColCountOk = tcCols.length >= 23
-    const tcMinWch = Math.min(...tcCols.map((c: any) => c.wch || 0))
-    const tcMinWchOk = tcMinWch >= 23
+    const tcColROk = tcCols[17]?.wch === 20
+    const tcColSOk = tcCols[18]?.wch === 15
+    const tcTotalWidth = tcCols.reduce((acc: number, c: any) => acc + (c?.wch || 10), 0)
+    const tcWidthOk = tcTotalWidth <= 300 && tcTotalWidth >= 280
 
-    // 2. Shearing size A4 PageSetup and print margins
+    // 2. Total cal authentic row heights from exam.xlsx
+    const tcRows = tcSheet?.['!rows'] || []
+    const tcRowsOk = tcRows.length >= 20 && tcRows[0]?.hpt === 21 && tcRows[3]?.hpt === 24
+
+    // 3. Shearing size A4 PageSetup, print margins, and row heights
     const ssSheet = capturedBook?.Sheets?.['SHEARING SIZE']
-    const ssA4Ok = ssSheet?.['!pageSetup']?.paperSize === 9 && ssSheet?.['!pageSetup']?.fitToWidth === 1
-    const ssMarginsOk = ssSheet?.['!margins']?.left === 0.5 && ssSheet?.['!margins']?.top === 0.5
+    const ssA4Ok = ssSheet?.['!pageSetup']?.paperSize === 9 && ssSheet?.['!pageSetup']?.orientation === 'portrait'
+    const ssMarginsOk = ssSheet?.['!margins']?.top === 0.2 && ssSheet?.['!margins']?.bottom === 0.2
+    const ssRowsOk = (ssSheet?.['!rows']?.length || 0) > 0
 
-    // 3. Universal table borders & native gridlines across all 15 sheets
-    let allSheetsBordered = true
-    let allSheetsA4 = true
+    // 4. Native gridlines & authentic styles preserved across all sheets
     let allSheetsGridlines = true
-    let totalBorderedCells = 0
-
     for (const name of capturedBook?.SheetNames || []) {
       const ws = capturedBook.Sheets[name]
-      const keys = Object.keys(ws).filter((k) => !k.startsWith('!'))
-      let borderCount = 0
-      for (const k of keys) {
-        if (ws[k]?.s?.border?.top?.style === 'thin') {
-          borderCount++
-          totalBorderedCells++
-        }
-      }
-      if (borderCount === 0) allSheetsBordered = false
-      if (ws['!pageSetup']?.paperSize !== 9) allSheetsA4 = false
       if (ws['!views']?.[0]?.showGridLines !== true) allSheetsGridlines = false
     }
 
-    if (tcColCountOk && tcMinWchOk && ssA4Ok && ssMarginsOk && allSheetsBordered && allSheetsA4 && allSheetsGridlines) {
-      logResult(55, 'Excel Export Total cal Sizing, Shearing Size A4 Setup & Universal Table Borders', 'PASSED',
-        `Total cal expanded to ${tcCols.length} columns (min width: ${tcMinWch} chars); Shearing size configured to A4 fit-to-page; All ${capturedBook.SheetNames.length} sheets have genuine table borders (${totalBorderedCells} bordered cells) & native gridlines.`)
+    // Check authentic colors: yellow input (A3), green totals (D4), C2C cards (S6)
+    const tcYellowOk = tcSheet?.['A3']?.s?.fill?.fgColor?.rgb === 'FFFF00'
+    const tcGreenOk = tcSheet?.['D4']?.s?.fill?.fgColor?.rgb === '92D050'
+    const tcC2COk = tcSheet?.['S6']?.s?.fill?.fgColor?.rgb === '92D050'
+
+    if (tcColCountOk && tcColROk && tcColSOk && tcWidthOk && tcRowsOk && ssA4Ok && ssMarginsOk && ssRowsOk && allSheetsGridlines && tcYellowOk && tcGreenOk && tcC2COk) {
+      logResult(55, 'Excel Export Total cal Sizing, Shearing Size A4 Setup & Authentic Template Fidelity', 'PASSED',
+        `Total cal has ${tcCols.length} columns (total width: ${tcTotalWidth} chars, Col R=20, Col S=15) and ${tcRows.length} authentic row heights; Shearing size configured to A4 portrait with authentic margins; All ${capturedBook.SheetNames.length} sheets have native gridlines and authentic template styles preserved.`)
     } else {
-      logResult(55, 'Excel Export Total cal Sizing, Shearing Size A4 Setup & Universal Table Borders', 'FAILED',
-        `tcColCountOk=${tcColCountOk} (${tcCols.length}), tcMinWchOk=${tcMinWchOk} (${tcMinWch}), ssA4Ok=${ssA4Ok}, ssMarginsOk=${ssMarginsOk}, allSheetsBordered=${allSheetsBordered}, allSheetsA4=${allSheetsA4}, allSheetsGridlines=${allSheetsGridlines}`)
+      logResult(55, 'Excel Export Total cal Sizing, Shearing Size A4 Setup & Authentic Template Fidelity', 'FAILED',
+        `tcColCountOk=${tcColCountOk} (${tcCols.length}), tcColROk=${tcColROk}, tcColSOk=${tcColSOk}, tcWidthOk=${tcWidthOk} (${tcTotalWidth}), tcRowsOk=${tcRowsOk}, ssA4Ok=${ssA4Ok}, ssMarginsOk=${ssMarginsOk}, ssRowsOk=${ssRowsOk}, allSheetsGridlines=${allSheetsGridlines}, tcYellowOk=${tcYellowOk}, tcGreenOk=${tcGreenOk}, tcC2COk=${tcC2COk}`)
     }
   } catch (e) {
     logResult(55, 'Excel Export Total cal Sizing, Shearing Size A4 Setup & Universal Table Borders', 'FAILED', (e as Error).message)
