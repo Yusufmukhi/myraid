@@ -1628,11 +1628,19 @@ export function OfficialQuotationDocument({
 
   // 1c. Installation Body Items (per bay qty = model rows, bay = dfmuRows / 2)
   const defaultBodyItems = useMemo<InstallationBodyItem[]>(() => {
+    const currentBay = detectSystemBayCount({ summary: project.summary }, project.inputs) ||
+      (project.inputs?.['Total cal!A3'] ? Math.max(1, Math.round(Number(project.inputs['Total cal!A3']) / 2)) : null) ||
+      (wb ? Math.max(1, Math.round((wb.num('Total cal', 'A3') || 6) / 2)) : null)
+
     if (!isMultiSystem && project.summary?.body_items && Array.isArray(project.summary.body_items) && project.summary.body_items.length > 0) {
       const saved = project.summary.body_items
       const hasSystemPrefix = saved.some((it: any) => it.title?.includes('SYSTEM'))
-      const isOldHardcodedDummy = saved.some((it: any) => it.total_body === 90 && it.title?.includes('5 BAY'))
-      if (!hasSystemPrefix && !isOldHardcodedDummy) {
+      const isOldHardcodedDummy = saved.some((it: any) => it.title?.includes('5 BAY') && (it.total_body === 90 || (currentBay && currentBay !== 5)))
+      const hasBayMismatch = currentBay && currentBay > 0 && saved.some((it: any) => {
+        const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
+        return m && Number(m[1]) !== currentBay
+      })
+      if (!hasSystemPrefix && !isOldHardcodedDummy && !hasBayMismatch) {
         return saved
       }
     }
@@ -1745,6 +1753,7 @@ export function OfficialQuotationDocument({
           amount: Number(baseAmount.toFixed(2)),
           pre_discount_rate: preDiscRate,
           pre_discount_amount: Number(preDiscAmount.toFixed(2)),
+          overrides: { ...(project.inputs || {}), ...(initialSets?.[0]?.overrides || {}) },
           items: items.length > 0 ? items : [
             {
               id: '1',
@@ -1866,7 +1875,7 @@ export function OfficialQuotationDocument({
     if (initialSets && initialSets.length > 0) {
       setBodyItems(generateDefaultBodyItems(summary, wb, project.inputs, initialSets))
     }
-  }, [initialSets, summary, wb])
+  }, [initialSets, summary, wb, project.inputs])
 
   // Live update for single-system mode (fallback when initialSets is not present)
   useEffect(() => {
@@ -2906,24 +2915,27 @@ export function OfficialQuotationDocument({
 
       // Auto-heal title and per_bay_qty if bay count was mismatched
       let item = b
-      if (matchingSet) {
-        const detectedBay = detectSystemBayCount(matchingSet, matchingSet.overrides)
-        if (detectedBay && detectedBay > 0) {
-          const isSingleFace = (item.title || '').toUpperCase().includes('SFMU') || (item.title || '').toUpperCase().includes('SFFU')
-          const expectedPerBay = isSingleFace ? detectedBay : (detectedBay * 2)
-          const expectedTitleBay = `${detectedBay} BAY`
+      const sysMatchingSet = matchingSet || (sets.length === 1 ? sets[0] : undefined)
+      const effectiveSetOverrides = { ...(project.inputs || {}), ...(sysMatchingSet?.overrides || {}) }
+      const detectedBay = detectSystemBayCount(sysMatchingSet || { summary }, effectiveSetOverrides) ||
+                          (effectiveSetOverrides['Total cal!A3'] ? Math.max(1, Math.round(Number(effectiveSetOverrides['Total cal!A3']) / 2)) : null) ||
+                          (wb ? Math.max(1, Math.round((wb.num('Total cal', 'A3') || 6) / 2)) : null)
 
-          let title = item.title
-          if (title && !title.includes(expectedTitleBay) && /\b\d+\s*BAY\b/i.test(title)) {
-            title = title.replace(/\b\d+\s*BAY\b/i, expectedTitleBay)
-          }
+      if (detectedBay && detectedBay > 0) {
+        const isSingleFace = (item.title || '').toUpperCase().includes('SFMU') || (item.title || '').toUpperCase().includes('SFFU')
+        const expectedPerBay = isSingleFace ? detectedBay : (detectedBay * 2)
+        const expectedTitleBay = `${detectedBay} BAY`
 
-          if (title !== item.title || (item.per_bay_qty !== expectedPerBay && (item.per_bay_qty === 6 || item.per_bay_qty === 3 || item.per_bay_qty === 4 || item.per_bay_qty === 2))) {
-            const per_bay_qty = expectedPerBay
-            const unit_body = per_bay_qty * item.qty
-            const total_body = unit_body * grp.set_qty
-            item = { ...item, title, per_bay_qty, unit_body, total_body }
-          }
+        let title = item.title
+        if (title && !title.includes(expectedTitleBay) && /\b\d+\s*BAY\b/i.test(title)) {
+          title = title.replace(/\b\d+\s*BAY\b/i, expectedTitleBay)
+        }
+
+        if (title !== item.title || item.per_bay_qty !== expectedPerBay) {
+          const per_bay_qty = expectedPerBay
+          const unit_body = per_bay_qty * item.qty
+          const total_body = unit_body * grp.set_qty
+          item = { ...item, title, per_bay_qty, unit_body, total_body }
         }
       }
 
@@ -2934,7 +2946,7 @@ export function OfficialQuotationDocument({
     })
 
     return groups
-  }, [bodyItems, sets])
+  }, [bodyItems, sets, project.inputs, summary, wb])
 
   const totalSetsCount = useMemo(() => {
     if (systemBodyGroups.length > 0) {

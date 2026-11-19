@@ -49,18 +49,19 @@ export interface SystemBodiesResult {
 
 /**
  * Detects the system's compactor bay count (e.g. 1, 2, 3, 4, 5 BAY) from:
- * 1. Explicit bay field (sys.bay, sys.bay_count, sys.breakdown?.bay_count)
- * 2. System title, label, or name (e.g. "2 BAY", "SYSTEM A - 2 BAY", "2 BAY (1 SET)", "2-BAY")
- * 3. Item titles, models, or descriptions (e.g. "DFMU 2 BAY", "1830 (W)" -> 1830/915 = 2 bays)
- * 4. Overrides width 'Total cal!B3' or 'Total cal!A3' (DFMU rows / 2)
+ * 1. Explicit bay field (sys.bay, sys.bay_count, sys.breakdown?.bay_count, overrides.bayInput)
+ * 2. System title, label, or name (e.g. "2 BAY", "SYSTEM A - 4 BAY", "4 BAY (1 SET)", "4-BAY")
+ * 3. Live overrides Total cal!A3 (DFMU rows / 2: 2 rows -> 1 bay, 4 -> 2, 6 -> 3, 8 -> 4, 10 -> 5)
+ * 4. Live overrides width Total cal!D3 (915 mm -> 1 bay, 1830 -> 2, 2745 -> 3, 3660 -> 4, 4575 -> 5)
+ * 5. Breakdown or items dimension width (e.g. "3660 (W)")
+ * 6. Items or breakdown rows per unit / descriptions
  */
 export function detectSystemBayCount(sys: any, overrides: Overrides = {}): number | null {
   if (!sys && !overrides) return null
 
   // 1. Explicit bay field
-  if (typeof sys?.bay === 'number' && sys.bay > 0) return sys.bay
-  if (typeof sys?.bay_count === 'number' && sys.bay_count > 0) return sys.bay_count
-  if (typeof sys?.breakdown?.bay_count === 'number' && sys.breakdown.bay_count > 0) return sys.breakdown.bay_count
+  const explicitBay = Number(sys?.bay ?? sys?.bay_count ?? sys?.breakdown?.bay_count ?? overrides?.bayInput ?? overrides?.bay ?? overrides?.bay_count ?? sys?.bayInput)
+  if (!isNaN(explicitBay) && explicitBay > 0 && explicitBay <= 20) return explicitBay
 
   // Helper regex to extract bay from text string
   const extractBayRegex = (text?: string): number | null => {
@@ -101,7 +102,25 @@ export function detectSystemBayCount(sys: any, overrides: Overrides = {}): numbe
                    extractBayRegex(sys?.label)
   if (titleBay) return titleBay
 
-  // 3. Scan items if present
+  // 3. Check live overrides Total cal!A3 (DFMU rows / 2: 2 rows -> 1 bay, 4 -> 2, 6 -> 3, 8 -> 4, 10 -> 5)
+  const a3 = Number(overrides?.['Total cal!A3'] ?? sys?.overrides?.['Total cal!A3'])
+  if (a3 && !isNaN(a3) && a3 > 0) {
+    return Math.max(1, Math.round(a3 / 2))
+  }
+
+  // 4. Check overrides width Total cal!D3 (standard 915 mm per bay: 1830 -> 2, 2745 -> 3, 3660 -> 4, 4575 -> 5)
+  const d3 = Number(overrides?.['Total cal!D3'] ?? sys?.overrides?.['Total cal!D3'])
+  if (d3 && !isNaN(d3) && d3 > 0) {
+    if (d3 >= 800 && d3 <= 1100) return 1      // 915 mm
+    if (d3 >= 1600 && d3 <= 2000) return 2    // 1830 mm
+    if (d3 >= 2500 && d3 <= 2950) return 3    // 2745 mm
+    if (d3 >= 3400 && d3 <= 3850) return 4    // 3660 mm
+    if (d3 >= 4300 && d3 <= 4750) return 5    // 4575 mm
+    const approx = Math.round(d3 / 915)
+    if (approx >= 1 && approx <= 20) return approx
+  }
+
+  // 5. Scan items if present
   if (Array.isArray(sys?.items)) {
     for (const it of sys.items) {
       const itBay = extractBayRegex(it.title) ||
@@ -125,7 +144,7 @@ export function detectSystemBayCount(sys: any, overrides: Overrides = {}): numbe
     }
   }
 
-  // 4. Check breakdown rows
+  // 6. Check breakdown rows
   if (Array.isArray(sys?.breakdown?.rows)) {
     for (const r of sys.breakdown.rows) {
       const c = (r.model_code || r.model_name || '').toUpperCase()
@@ -138,24 +157,6 @@ export function detectSystemBayCount(sys: any, overrides: Overrides = {}): numbe
       const dimBay = extractBayFromDim(r.dimensions)
       if (dimBay) return dimBay
     }
-  }
-
-  // 5. Check overrides width 'Total cal!B3' or 'Total cal!D3'
-  const b3 = Number(overrides?.['Total cal!B3'] ?? overrides?.['Total cal!D3'])
-  if (b3 && !isNaN(b3) && b3 > 0) {
-    if (b3 >= 800 && b3 <= 1100) return 1
-    if (b3 >= 1600 && b3 <= 2000) return 2
-    if (b3 >= 2500 && b3 <= 2950) return 3
-    if (b3 >= 3400 && b3 <= 3850) return 4
-    if (b3 >= 4300 && b3 <= 4750) return 5
-    const approx = Math.round(b3 / 915)
-    if (approx >= 1 && approx <= 20) return approx
-  }
-
-  // 6. Check overrides Total cal!A3 if it's explicitly present in sys.overrides
-  if (sys?.overrides?.['Total cal!A3'] !== undefined && sys.overrides['Total cal!A3'] !== null) {
-    const a3 = Number(sys.overrides['Total cal!A3'])
-    if (a3 > 0) return Math.max(1, Math.round(a3 / 2))
   }
 
   return null
