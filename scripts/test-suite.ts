@@ -1785,23 +1785,23 @@ async function runAllTests() {
       (pdfDocContent.includes('const isAccommodationZero = isNaN(currentAccommodationVal) || currentAccommodationVal <= 0') ||
        pdfDocContent.includes('const isAccommodationZero = isNaN(accommodationVal) || accommodationVal <= 0'))
 
-    // 2. Verify default terms use 'At your scope.' when 0, and Clause 10 defaults to 'At your scope.'
+    // 2. Verify default terms use 'At your scope.' when 0, and Clause 10 defaults to 'At our scope.'
     const hasDefaultAtYourScope =
       pdfDocContent.includes("const defaultFreightTerms = isTransportZero ? 'At your scope.' : 'Including.'") &&
-      pdfDocContent.includes("const defaultLodgingTerms = 'At your scope.'")
+      pdfDocContent.includes("const defaultLodgingTerms = 'At our scope.'")
 
-    // 3. Verify terms list maps to 'At your scope.' when transport is 0 and Clause 10 defaults to 'At your scope.'
+    // 3. Verify terms list maps to 'At your scope.' when transport is 0 and Clause 10 defaults to 'At our scope.'
     const hasTermsListAutoSwitch =
       pdfDocContent.includes("if (t.id === '8' || t.title.toLowerCase().includes('freight') || t.title.toLowerCase().includes('transport'))") &&
       pdfDocContent.includes("if (isTransportZero)") &&
       pdfDocContent.includes("if (t.id === '10' || t.title.toLowerCase().includes('lodging') || t.title.toLowerCase().includes('loadging')") &&
-      pdfDocContent.includes("text: 'At your scope.'")
+      pdfDocContent.includes("text: 'At our scope.'")
 
     if (hasZeroCheck && hasDefaultAtYourScope && hasTermsListAutoSwitch) {
-      logResult(37, 'Zero Transport & Accommodation Auto Default to "At your scope."', 'PASSED',
-        'When Transport is ₹0 -> Freight clause defaults to "At your scope.". When Accommodation is ₹0 -> Lodging clause defaults to "At your scope.". When >0 -> defaults to "Including.". Eliminates manual toggling.')
+      logResult(37, 'Zero Transport Auto "At your scope." & Lodging Clause 10 "At our scope."', 'PASSED',
+        'When Transport is ₹0 -> Freight clause defaults to "At your scope.". Clause 10 Lodging & boarding strictly defaults to "At our scope." per business policy.')
     } else {
-      logResult(37, 'Zero Transport & Accommodation Auto Default to "At your scope."', 'FAILED',
+      logResult(37, 'Zero Transport Auto "At your scope." & Lodging Clause 10 "At our scope."', 'FAILED',
         `hasZeroCheck=${hasZeroCheck}, hasDefaultAtYourScope=${hasDefaultAtYourScope}, hasTermsListAutoSwitch=${hasTermsListAutoSwitch}`)
     }
   } catch (e) {

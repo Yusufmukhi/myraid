@@ -40,6 +40,7 @@ import {
   calculateAllocatedLogistics,
   calculateC2CAnalysis,
   generateCentralizedBodyItems,
+  detectSystemBayCount,
 } from '../../lib/calculatorCore'
 
 
@@ -1979,6 +1980,11 @@ export function CalculatorPage({
 
       const sysBodiesInfo = systemBreakdowns[idx] || calculateSystemBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
       const sysBodies = sysBodiesInfo.singleSetBodies
+      const sysA3 = Number(sysOv['Total cal!A3'] ?? (isCurrent ? overrides['Total cal!A3'] : undefined))
+      const sysD3 = Number(sysOv['Total cal!D3'] ?? (isCurrent ? overrides['Total cal!D3'] : undefined))
+      const sysBay = (sysA3 && sysA3 > 0)
+        ? Math.max(1, Math.round(sysA3 / 2))
+        : (sys.bay ?? detectSystemBayCount(sys, sysOv) ?? (sysD3 && sysD3 > 0 ? Math.max(1, Math.round(sysD3 / 915)) : 4))
 
       // Proportional shared transport and accommodation per set across total combined bodies
       const { allocatedTransport: sysTransport, allocatedAccommodation: sysAccommodation } = calculateAllocatedLogistics(
@@ -2036,6 +2042,9 @@ export function CalculatorPage({
         amount,
         pre_discount_rate: preDiscRate,
         pre_discount_amount: preDiscAmount,
+        bay: sysBay,
+        bay_count: sysBay,
+        overrides: sysOv,
         summary: sysSummary,
         breakdown: sysBreakdown,
         items: activeRows.map((r: any, rIdx: number) => ({
@@ -2614,75 +2623,42 @@ export function CalculatorPage({
 
 
 
-  const handleSaveClientQuotationData = (
-
+  const handleSaveClientQuotationData = async (
     clientInfo: QuotationClientInfo,
-
     items: QuotationLineItem[],
-
     bodyItems: InstallationBodyItem[],
-
     sets?: any[],
-
     extraSettings?: Record<string, any>
-
   ) => {
-
     const nextOverrides = { ...overrides }
-
     if (extraSettings?.__profit_pct !== undefined) {
-
       nextOverrides['__profit_pct'] = extraSettings.__profit_pct
-
     }
-
     if (extraSettings?.include_installation !== undefined) {
-
       nextOverrides['__include_installation'] = extraSettings.include_installation ? 1 : 0
-
     }
-
     if (extraSettings?.extra_amount !== undefined) {
-
       nextOverrides['__extra_amount'] = extraSettings.extra_amount
-
     }
-
     setOverrides(nextOverrides)
 
     if (sets && Array.isArray(sets)) {
-
       setSystems((prev) =>
-
         prev.map((sys, i) => {
-
           const matchSet = sets[i]
-
           if (matchSet) {
-
             return {
-
               ...sys,
-
               name: matchSet.system_title || sys.name,
-
               quantity: matchSet.quantity || sys.quantity,
-
               unit: matchSet.unit || sys.unit,
-
+              bay: matchSet.bay || matchSet.bay_count || sys.bay,
             }
-
           }
-
           return sys
-
         })
-
       )
-
     }
-
-
 
     const finalCleanOverrides = cleanOverrides(wb, nextOverrides)
     const effectiveSets = (sets && Array.isArray(sets)) ? sets : []
@@ -2694,6 +2670,7 @@ export function CalculatorPage({
         name: matchSet?.system_title || sys.name,
         quantity: matchSet?.quantity || sys.quantity,
         unit: matchSet?.unit || sys.unit,
+        bay: matchSet?.bay || matchSet?.bay_count || sys.bay,
         overrides: isCur ? finalCleanOverrides : (sys.overrides || {}),
         extraAmount: isCur
           ? (extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount)
@@ -2701,7 +2678,7 @@ export function CalculatorPage({
       }
     })
 
-    const finalSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
+    const finalSales = Math.round(Number(allSystemsTotals.sales || (summary.sales * activeSysQty)) || 0)
 
     const updatedSummary = {
       ...project.summary,
@@ -2722,8 +2699,6 @@ export function CalculatorPage({
       summary: updatedSummary,
     }
 
-    onProjectUpdated(updatedProject)
-
     setBaseline(
       computeProjectSnapshot(
         name,
@@ -2739,21 +2714,27 @@ export function CalculatorPage({
       ),
     )
 
-    api.projectUpdate(
-      session.token,
-      project.id,
-      name,
-      status,
-      cleanOverrides(wb, nextOverrides),
-      formulaOverrides,
-      finalSales,
-      updatedSummary,
-      'Updated official quotation client details'
-    ).then(() => {
-      toast('Quotation client details saved successfully!')
-    }).catch((err) => {
+    // Save directly to Supabase server FIRST to guarantee persistence across reopen
+    try {
+      await api.projectUpdate(
+        session.token,
+        project.id,
+        name,
+        status,
+        cleanOverrides(wb, nextOverrides),
+        formulaOverrides,
+        finalSales,
+        updatedSummary,
+        'Updated official quotation client details'
+      )
+      toast('Quotation changes saved successfully!')
+      if (onProjectUpdated) {
+        onProjectUpdated(updatedProject)
+      }
+    } catch (err) {
       toast((err as Error).message, 'err')
-    })
+      throw err
+    }
   }
 
 

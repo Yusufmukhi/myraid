@@ -1339,9 +1339,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 wb={baseWb}
                 c2cWb={c2cWb}
                 isNewlyCreated={justCreatedProjectId === currentProject.id}
-                onProjectUpdated={(p) => {
+                onProjectUpdated={async (p) => {
                   setCurrentProject(p)
-                  loadProjects()
+                  await loadProjects(p.id)
                 }}
                 onSaveAsCopy={handleSaveAsCopy}
                 onNavigateToSheets={(sysIdx) => {

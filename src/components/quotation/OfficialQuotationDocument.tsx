@@ -526,6 +526,8 @@ export interface QuotationSet {
   amount: number
   pre_discount_rate?: number
   pre_discount_amount?: number
+  bay?: number
+  bay_count?: number
   items: SetUnitItem[]
   summary?: any
   breakdown?: any
@@ -677,9 +679,14 @@ export function generateDefaultBodyItems(
       const sysQty = Math.max(1, Number(s.quantity) || 1)
       const sysSummary = s.summary || summary
       const sysOv = s.overrides || inputs || {}
-      const detectedBay = detectSystemBayCount(s, sysOv)
+      const sysA3 = Number(sysOv['Total cal!A3'] ?? (sIdx === 0 ? inputs?.['Total cal!A3'] : undefined))
+      const sysD3 = Number(sysOv['Total cal!D3'] ?? (sIdx === 0 ? inputs?.['Total cal!D3'] : undefined))
+      const bayFromA3 = (sysA3 && sysA3 > 0) ? Math.max(1, Math.round(sysA3 / 2)) : null
+      const bayFromD3 = (sysD3 && sysD3 > 0) ? Math.max(1, Math.round(sysD3 / 915)) : null
+      const explicitBay = Number(s.bay ?? s.bay_count) || null
       const sysBodies = calculateSystemBodies(s, sysOv, wb, false, sysSummary?.bodies)
-      const bayCount = detectedBay || Math.max(1, Math.round(sysBodies.dfmuRows / 2))
+      const detectedBay = explicitBay || bayFromA3 || detectSystemBayCount(s, sysOv) || bayFromD3 || (sysBodies.dfmuRows > 0 ? Math.max(1, Math.round(sysBodies.dfmuRows / 2)) : 4)
+      const bayCount = detectedBay
 
       // Prioritize items directly from this system so each system's bodies match its commercial rows
       if (s.items && s.items.length > 0) {
@@ -693,18 +700,8 @@ export function generateDefaultBodyItems(
             it.model_name?.includes('DFFU') ? 'DFFU' : 'DFMU'
           )).trim()
 
-          const foundModel = sysBodies.models.find((m) => m.code === code)
           const expectedRows = (code === 'SFMU' || code === 'SFFU') ? bayCount : (bayCount * 2)
-
-          let rowsPerUnit = expectedRows
-          if (detectedBay) {
-            rowsPerUnit = expectedRows
-          } else if (it.rows_per_unit && it.rows_per_unit > 0) {
-            rowsPerUnit = it.rows_per_unit
-          } else if (foundModel && foundModel.rowsPerUnit > 0) {
-            rowsPerUnit = foundModel.rowsPerUnit
-          }
-
+          const rowsPerUnit = expectedRows
           const unitCount = Number(it.unit_qty !== undefined ? it.unit_qty : it.quantity) || 0
           const unitBody = rowsPerUnit * unitCount
           const total_body = unitBody * sysQty
@@ -729,9 +726,9 @@ export function generateDefaultBodyItems(
 
         modelsToUse.forEach((m: any) => {
           const expectedRows = (m.code === 'SFMU' || m.code === 'SFFU') ? bayCount : (bayCount * 2)
-          const rowsPerUnit = detectedBay ? expectedRows : (m.rowsPerUnit || expectedRows)
+          const rowsPerUnit = expectedRows
           const unitCount = Number(m.qty) || 0
-          const unitBody = m.unitBodies !== undefined && !detectedBay ? m.unitBodies : (rowsPerUnit * unitCount)
+          const unitBody = rowsPerUnit * unitCount
           const total_body = unitBody * sysQty
           allItems.push({
             id: `${s.id || sIdx}-${m.code}-${counter++}`,
@@ -752,9 +749,13 @@ export function generateDefaultBodyItems(
   }
 
   const sysOv = inputs || {}
-  const detectedBay = detectSystemBayCount({ summary }, sysOv)
+  const a3 = Number(sysOv['Total cal!A3'])
+  const d3 = Number(sysOv['Total cal!D3'])
+  const bayFromA3 = (a3 && a3 > 0) ? Math.max(1, Math.round(a3 / 2)) : null
+  const bayFromD3 = (d3 && d3 > 0) ? Math.max(1, Math.round(d3 / 915)) : null
   const sysBodies = calculateSystemBodies({ summary }, sysOv, wb, true, summary?.bodies)
-  const bayCount = detectedBay || Math.max(1, Math.round(sysBodies.dfmuRows / 2))
+  const detectedBay = bayFromA3 || detectSystemBayCount({ summary }, sysOv) || bayFromD3 || (sysBodies.dfmuRows > 0 ? Math.max(1, Math.round(sysBodies.dfmuRows / 2)) : 4)
+  const bayCount = detectedBay
 
   const activeModels = (summary?.models || []).filter((m) => m.qty > 0)
   const modelsToUse = activeModels.length > 0
@@ -767,16 +768,7 @@ export function generateDefaultBodyItems(
 
   return modelsToUse.map((m: any, idx: number) => {
     const expectedRows = (m.code === 'SFMU' || m.code === 'SFFU') ? bayCount : (bayCount * 2)
-    const found = sysBodies.models.find((bm) => bm.code === m.code)
-    let rowsPerUnit = detectedBay ? expectedRows : (found ? found.rowsPerUnit : expectedRows)
-    if (!detectedBay && wb) {
-      if (m.code === 'DFMU') rowsPerUnit = wb.num('Total cal', 'A3') || (bayCount * 2)
-      else if (m.code === 'SFMU') rowsPerUnit = wb.num('Total cal', 'A7') || ((wb.num('Total cal', 'A3') || (bayCount * 2)) / 2) || bayCount
-      else if (m.code === 'SFFU') rowsPerUnit = wb.num('Total cal', 'A11') || ((wb.num('Total cal', 'A3') || (bayCount * 2)) / 2) || bayCount
-      else if (m.code === 'DFFU') rowsPerUnit = wb.num('Total cal', 'A15') || wb.num('Total cal', 'A3') || (bayCount * 2)
-      else if (m.code === 'DFMU-D' || m.code === 'DFFU-D') rowsPerUnit = wb.num('Total cal', 'A19') || wb.num('Total cal', 'A3') || (bayCount * 2)
-    }
-
+    const rowsPerUnit = expectedRows
     const codeLabel = m.code
     const title = `${codeLabel} ${bayCount} BAY`
     const sub_label = `BODY IN ${codeLabel}`
@@ -819,7 +811,7 @@ interface Props {
     bodyItems: InstallationBodyItem[],
     sets?: QuotationSet[],
     extraSettings?: Record<string, any>
-  ) => void
+  ) => void | Promise<void>
 }
 
 export function numberToIndianWords(num: number): string {
@@ -888,13 +880,13 @@ export function OfficialQuotationDocument({
   const initialClientInfo = useMemo<QuotationClientInfo>(() => {
     const saved = project.summary?.client_info || {}
     const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
-    let dfmuRows = 6
-    if (wb) {
-      dfmuRows = wb.num('Total cal', 'A3') || 6
-    } else if (project.inputs?.['Total cal!A3']) {
-      dfmuRows = Number(project.inputs['Total cal!A3']) || 6
-    }
-    const bayCount = Math.max(1, Math.round(dfmuRows / 2))
+    const currentA3 = Number(project.inputs?.['Total cal!A3'] ?? (wb ? wb.num('Total cal', 'A3') : undefined))
+    const currentD3 = Number(project.inputs?.['Total cal!D3'] ?? (wb ? wb.num('Total cal', 'D3') : undefined))
+    const bayCount = (initialSets && initialSets[0]?.bay) ||
+      (currentA3 > 0 ? Math.max(1, Math.round(currentA3 / 2)) : null) ||
+      (currentD3 > 0 ? Math.max(1, Math.round(currentD3 / 915)) : null) ||
+      detectSystemBayCount({ summary: project.summary }, project.inputs) ||
+      4
     const defaultSubject = `QUOTATION FOR SUPPLY ${bayCount} BAY MECHANICAL MOBILE COMPACTOR`
 
     // Generate standard official QTN NO based on project name and fiscal year:
@@ -956,7 +948,7 @@ export function OfficialQuotationDocument({
             : (wb ? (wb.num('Total cal', 'N25') || 0) : 0))))
     const isAccommodationZero = isNaN(accommodationVal) || accommodationVal <= 0
     const defaultFreightTerms = isTransportZero ? 'At your scope.' : 'Including.'
-    const defaultLodgingTerms = 'At your scope.'
+    const defaultLodgingTerms = 'At our scope.'
 
     return {
       client_id: saved.client_id || dirMatch?.id || '',
@@ -969,7 +961,7 @@ export function OfficialQuotationDocument({
       buyer_email: resolvedEmail,
       buyer_contact: resolvedContact,
       kind_att: resolvedKindAtt,
-      subject: (!saved.subject || saved.subject.includes('5 BAY')) ? defaultSubject : saved.subject,
+      subject: (!saved.subject || (saved.subject.includes('5 BAY') && bayCount !== 5)) ? defaultSubject : saved.subject,
       contacts: resolvedContacts,
       selected_contact_id: saved.selected_contact_id || '',
       show_buyer_name: saved.show_buyer_name !== false,
@@ -1000,7 +992,7 @@ export function OfficialQuotationDocument({
       color_terms: saved.color_terms || 'RAL 7032 STR, RAL 7035 STR, LIGHT GREY STR, D.A.GREY STR or AVAILABLE SHADES.',
       validity_terms: saved.validity_terms || 'Quotation Validity 15 days.',
       tax_terms: saved.tax_terms || 'Within Maharashtra 9% CGST+9% SGST/outside Maharashtra 18% IGST Extra to your Account.',
-      lodging_terms: (saved.lodging_terms && saved.lodging_terms !== 'Including.') ? saved.lodging_terms : 'At your scope.',
+      lodging_terms: (saved.lodging_terms && saved.lodging_terms !== 'At your scope.' && saved.lodging_terms !== 'Including.') ? saved.lodging_terms : 'At our scope.',
       warranty_terms: saved.warranty_terms || '12 months Warrenty Manufacturing defect.',
       amc_terms: saved.amc_terms || `Annual Monthly Contract from " ${getBusinessProfile(effectiveOrgId).company_name || 'MYRIAD'}" will be starting after completion of 1 years Warranty. Till 1 years any kind of servicing will be done Free to Client`,
     }
@@ -1462,7 +1454,7 @@ export function OfficialQuotationDocument({
   const isAccommodationZero = isNaN(currentAccommodationVal) || currentAccommodationVal <= 0
 
   const defaultFreightTerms = isTransportZero ? 'At your scope.' : 'Including.'
-  const defaultLodgingTerms = 'At your scope.'
+  const defaultLodgingTerms = 'At our scope.'
 
   // 1b. Terms & Conditions Initial List (all clauses fully editable, with add/delete row support)
   const initialTermsList = useMemo<QuotationTermItem[]>(() => {
@@ -1476,10 +1468,10 @@ export function OfficialQuotationDocument({
             return { ...t, text: 'Including.' }
           }
         }
-        // Clause 10 default is 'At your scope.'
+        // Clause 10 default is 'At our scope.'
         if (t.id === '10' || t.title.toLowerCase().includes('lodging') || t.title.toLowerCase().includes('loadging') || t.title.toLowerCase().includes('bording') || t.title.toLowerCase().includes('boarding')) {
-          if (!t.text || t.text === 'Including.' || isAccommodationZero) {
-            return { ...t, text: 'At your scope.' }
+          if (!t.text || t.text === 'At your scope.' || t.text === 'Including.') {
+            return { ...t, text: 'At our scope.' }
           }
         }
         return t
@@ -1496,7 +1488,7 @@ export function OfficialQuotationDocument({
       { id: '7', title: 'Taxes:-', text: c.tax_terms || 'Within Maharashtra 9% CGST+9% SGST/outside Maharashtra 18% IGST Extra to your Account.' },
       { id: '8', title: 'Freight Chrg :-', text: isTransportZero ? 'At your scope.' : (c.freight_terms?.trim() || defaultFreightTerms) },
       { id: '9', title: 'Installation Chrg :', text: c.installation_terms_text?.trim() || (defaultIncludeInstallation ? 'Including.' : 'At your scope.') },
-      { id: '10', title: 'Loadging and bording:', text: c.lodging_terms?.trim() || 'At your scope.' },
+      { id: '10', title: 'Lodging and boarding:', text: (c.lodging_terms && c.lodging_terms !== 'At your scope.') ? c.lodging_terms.trim() : 'At our scope.' },
       { id: '11', title: 'Warranty :', text: c.warranty_terms || '12 months Warrenty Manufacturing defect.' },
       { id: '12', title: 'AMC :', text: c.amc_terms || `Annual Monthly Contract from " ${businessProfile.company_name || 'MYRIAD'}" will be starting after completion of 1 years Warranty. Till 1 years any kind of servicing will be done Free to Client` },
     ]
@@ -1569,7 +1561,7 @@ export function OfficialQuotationDocument({
           }
         }
         if (item.id === '10' || item.title.toLowerCase().includes('loadging') || item.title.toLowerCase().includes('lodging') || item.title.toLowerCase().includes('bording') || item.title.toLowerCase().includes('boarding')) {
-          const target = clientInfo.lodging_terms || 'At your scope.'
+          const target = (clientInfo.lodging_terms && clientInfo.lodging_terms !== 'At your scope.') ? clientInfo.lodging_terms : 'At our scope.'
           if (item.text !== target) {
             changed = true
             return { ...item, text: target }
@@ -1628,19 +1620,22 @@ export function OfficialQuotationDocument({
 
   // 1c. Installation Body Items (per bay qty = model rows, bay = dfmuRows / 2)
   const defaultBodyItems = useMemo<InstallationBodyItem[]>(() => {
-    const currentBay = detectSystemBayCount({ summary: project.summary }, project.inputs) ||
-      (project.inputs?.['Total cal!A3'] ? Math.max(1, Math.round(Number(project.inputs['Total cal!A3']) / 2)) : null) ||
-      (wb ? Math.max(1, Math.round((wb.num('Total cal', 'A3') || 6) / 2)) : null)
+    const a3 = Number(project.inputs?.['Total cal!A3'] ?? (wb ? wb.num('Total cal', 'A3') : undefined))
+    const d3 = Number(project.inputs?.['Total cal!D3'] ?? (wb ? wb.num('Total cal', 'D3') : undefined))
+    const currentBay = (initialSets && initialSets[0]?.bay) ||
+      (a3 > 0 ? Math.max(1, Math.round(a3 / 2)) : null) ||
+      (d3 > 0 ? Math.max(1, Math.round(d3 / 915)) : null) ||
+      detectSystemBayCount({ summary: project.summary }, project.inputs) ||
+      4
 
-    if (!isMultiSystem && project.summary?.body_items && Array.isArray(project.summary.body_items) && project.summary.body_items.length > 0) {
+    if (project.summary?.body_items && Array.isArray(project.summary.body_items) && project.summary.body_items.length > 0) {
       const saved = project.summary.body_items
-      const hasSystemPrefix = saved.some((it: any) => it.title?.includes('SYSTEM'))
       const isOldHardcodedDummy = saved.some((it: any) => it.title?.includes('5 BAY') && (it.total_body === 90 || (currentBay && currentBay !== 5)))
       const hasBayMismatch = currentBay && currentBay > 0 && saved.some((it: any) => {
         const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
         return m && Number(m[1]) !== currentBay
       })
-      if (!hasSystemPrefix && !isOldHardcodedDummy && !hasBayMismatch) {
+      if (!isOldHardcodedDummy && !hasBayMismatch) {
         return saved
       }
     }
@@ -1870,12 +1865,18 @@ export function OfficialQuotationDocument({
     }
   }, [initialSets, breakdownResult])
 
-  // Live update bodyItems from initialSets
+  // Keep local state in sync when project/defaults update from server or parent
   useEffect(() => {
-    if (initialSets && initialSets.length > 0) {
-      setBodyItems(generateDefaultBodyItems(summary, wb, project.inputs, initialSets))
-    }
-  }, [initialSets, summary, wb, project.inputs])
+    setBodyItems(defaultBodyItems)
+  }, [defaultBodyItems])
+
+  useEffect(() => {
+    setClientInfo(initialClientInfo)
+  }, [initialClientInfo])
+
+  useEffect(() => {
+    setTermsList(initialTermsList)
+  }, [initialTermsList])
 
   // Live update for single-system mode (fallback when initialSets is not present)
   useEffect(() => {
@@ -2403,6 +2404,10 @@ export function OfficialQuotationDocument({
 
   const [redSpecs, setRedSpecs] = useState<string[]>(defaultRedSpecs)
 
+  useEffect(() => {
+    setRedSpecs(defaultRedSpecs)
+  }, [defaultRedSpecs])
+
   // Quotation download file name builder (sanitized for Windows/Mac/Linux OS file save dialogs)
   const getQuotationFileName = () => {
     const qtnNo = clientInfo.qtn_no?.trim()
@@ -2759,37 +2764,41 @@ export function OfficialQuotationDocument({
     }, 2000)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (onSaveClientInfo) {
       const cleanTerms = termsList.map((t) => {
         if (t.id === '8' || t.title.toLowerCase().includes('freight') || t.title.toLowerCase().includes('transport')) {
           return { ...t, text: isTransportZero ? 'At your scope.' : t.text }
         }
         if (t.id === '10' || t.title.toLowerCase().includes('lodging') || t.title.toLowerCase().includes('loadging') || t.title.toLowerCase().includes('bording') || t.title.toLowerCase().includes('boarding')) {
-          return { ...t, text: isAccommodationZero ? 'At your scope.' : t.text }
+          return { ...t, text: t.text === 'At your scope.' ? 'At our scope.' : (t.text || 'At our scope.') }
         }
         return t
       })
       const cleanClientInfo = {
         ...clientInfo,
         freight_terms: isTransportZero ? 'At your scope.' : clientInfo.freight_terms,
-        lodging_terms: isAccommodationZero ? 'At your scope.' : clientInfo.lodging_terms,
+        lodging_terms: (clientInfo.lodging_terms && clientInfo.lodging_terms !== 'At your scope.') ? clientInfo.lodging_terms : 'At our scope.',
       }
       setJustSaved(true)
-      toast('Quotation changes saved successfully!')
-      onSaveClientInfo(cleanClientInfo, lineItems, bodyItems, sets, {
-        quotation_mode: effectiveQuotationMode,
-        body_table_on_page_1: placeBodyOnPage1,
-        body_placement: bodyPlacement,
-        show_bodies_table: showBodiesTable,
-        include_full_proposal: includeFullProposal,
-        include_installation: includeInstallation,
-        terms_list: cleanTerms,
-        red_specs: redSpecs,
-        proposal_specs: proposalSpecs,
-        extra_amount: extraAmount,
-        __profit_pct: profitPct,
-      })
+      try {
+        await onSaveClientInfo(cleanClientInfo, lineItems, bodyItems, sets, {
+          quotation_mode: effectiveQuotationMode,
+          body_table_on_page_1: placeBodyOnPage1,
+          body_placement: bodyPlacement,
+          show_bodies_table: showBodiesTable,
+          include_full_proposal: includeFullProposal,
+          include_installation: includeInstallation,
+          terms_list: cleanTerms,
+          red_specs: redSpecs,
+          proposal_specs: proposalSpecs,
+          extra_amount: extraAmount,
+          __profit_pct: profitPct,
+        })
+        toast('Quotation changes saved successfully!')
+      } catch (err) {
+        toast((err as Error).message, 'err')
+      }
 
       // Record in Activity Log
       const token = tokenStore.get()
@@ -3974,7 +3983,7 @@ export function OfficialQuotationDocument({
                   const isFreight = t.id === '8' || t.title.toLowerCase().includes('freight') || t.title.toLowerCase().includes('transport')
                   const isLodging = t.id === '10' || t.title.toLowerCase().includes('lodging') || t.title.toLowerCase().includes('loadging') || t.title.toLowerCase().includes('bording') || t.title.toLowerCase().includes('boarding')
                   const effectiveText = isLodging
-                    ? (t.text || 'At your scope.')
+                    ? (t.text && t.text !== 'At your scope.' ? t.text : 'At our scope.')
                     : (isFreight && isTransportZero)
                       ? 'At your scope.'
                       : (t.text || t.title)
@@ -5829,27 +5838,29 @@ export function OfficialQuotationDocument({
                     <div className="option-pill-group">
                       <button
                         type="button"
-                        className={`option-pill ${(clientInfo.lodging_terms === 'At your scope.' || !clientInfo.lodging_terms || isAccommodationZero) ? 'active' : ''}`}
-                        onClick={() => setClientInfo({ ...clientInfo, lodging_terms: 'At your scope.' })}
+                        className={`option-pill ${(clientInfo.lodging_terms === 'At our scope.' || !clientInfo.lodging_terms) ? 'active' : ''}`}
+                        onClick={() => setClientInfo({ ...clientInfo, lodging_terms: 'At our scope.' })}
                       >
-                        At Your Scope (Default)
+                        At Our Scope (Default)
                       </button>
                       <button
                         type="button"
-                        disabled={isAccommodationZero}
-                        className={`option-pill ${(!isAccommodationZero && clientInfo.lodging_terms === 'Including.') ? 'active' : ''}`}
+                        className={`option-pill ${(clientInfo.lodging_terms === 'At your scope.') ? 'active' : ''}`}
+                        onClick={() => setClientInfo({ ...clientInfo, lodging_terms: 'At your scope.' })}
+                      >
+                        At Your Scope
+                      </button>
+                      <button
+                        type="button"
+                        className={`option-pill ${(clientInfo.lodging_terms === 'Including.') ? 'active' : ''}`}
                         onClick={() => setClientInfo({ ...clientInfo, lodging_terms: 'Including.' })}
-                        title={isAccommodationZero ? 'Accommodation cost is ₹0 in calculator' : ''}
-                        style={isAccommodationZero ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                       >
                         Including
                       </button>
                       <button
                         type="button"
-                        disabled={isAccommodationZero}
-                        className={`option-pill ${(!isAccommodationZero && clientInfo.lodging_terms === 'Not applicable.') ? 'active' : ''}`}
+                        className={`option-pill ${(clientInfo.lodging_terms === 'Not applicable.') ? 'active' : ''}`}
                         onClick={() => setClientInfo({ ...clientInfo, lodging_terms: 'Not applicable.' })}
-                        style={isAccommodationZero ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                       >
                         Not Applicable
                       </button>
@@ -5861,18 +5872,10 @@ export function OfficialQuotationDocument({
                       <input
                         type="text"
                         className="option-input-field"
-                        placeholder="At your scope."
-                        value={clientInfo.lodging_terms || 'At your scope.'}
-                        disabled={isAccommodationZero}
-                        readOnly={isAccommodationZero}
-                        style={isAccommodationZero ? { backgroundColor: 'var(--bg-muted, #f1f5f9)', cursor: 'not-allowed' } : {}}
+                        placeholder="At our scope."
+                        value={clientInfo.lodging_terms || 'At our scope.'}
                         onChange={(e) => setClientInfo({ ...clientInfo, lodging_terms: e.target.value })}
                       />
-                      {isAccommodationZero && (
-                        <span className="tiny text-muted" style={{ fontSize: '11px', display: 'block', marginTop: '3px' }}>
-                          Accommodation is ₹0 in calculator — Clause 10 is automatically set to &quot;At your scope.&quot;
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -6930,8 +6933,7 @@ export function OfficialQuotationDocument({
                       </div>
                       {(() => {
                         const isFreight = t.id === '8' || t.title.toLowerCase().includes('freight') || t.title.toLowerCase().includes('transport')
-                        const isLodging = t.id === '10' || t.title.toLowerCase().includes('lodging') || t.title.toLowerCase().includes('loadging') || t.title.toLowerCase().includes('bording') || t.title.toLowerCase().includes('boarding')
-                        const isLockedScope = (isLodging && isAccommodationZero) || (isFreight && isTransportZero)
+                        const isLockedScope = isFreight && isTransportZero
                         return (
                           <>
                             <textarea
@@ -6949,11 +6951,6 @@ export function OfficialQuotationDocument({
                                 )
                               }}
                             />
-                            {isLodging && isAccommodationZero && (
-                              <span className="tiny text-muted" style={{ fontSize: '10.5px', marginTop: '2px', display: 'block' }}>
-                                Accommodation is ₹0 in calculator — Clause 10 is automatically &quot;At your scope.&quot;
-                              </span>
-                            )}
                             {isFreight && isTransportZero && (
                               <span className="tiny text-muted" style={{ fontSize: '10.5px', marginTop: '2px', display: 'block' }}>
                                 Transportation is ₹0 in calculator — Clause 8 is automatically &quot;At your scope.&quot;
