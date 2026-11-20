@@ -709,26 +709,10 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   return (
     <div className="org-settings-page">
       <div className="page-header">
-        <h2>Organisation Settings &amp; Template Architecture</h2>
+        <h2>Template Versioning &amp; Calculation Standards</h2>
         <p className="muted">
-          Manage your organisation profile, immutable template versions, and calculation standards across all 15 workbook sheets.
+          Manage calculation standards, steel rates, and immutable template versions across all 15 workbook sheets.
         </p>
-      </div>
-
-      {/* Organisation Profile Card */}
-      <div className="card settings-card mb-4">
-        <header className="card-head">
-          <h3>Organisation Profile</h3>
-          <span className="chip primary">{org.role.toUpperCase()}</span>
-        </header>
-        <div className="settings-body">
-          <div className="two-col">
-            <div className="profile-item">
-              <span className="tiny font-bold uppercase muted">Organisation Name</span>
-              <strong className="text-lg">{org.name}</strong>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Top 2 Simple Template Cards: 1. Actual vs 2. Cut-to-Cut */}

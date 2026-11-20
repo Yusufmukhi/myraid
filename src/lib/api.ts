@@ -645,12 +645,4 @@ export const api = {
     rpc<any>('business_profile_get', { p_token: token, p_org: org }),
   businessProfileSave: (token: string, org: string, profile: any): Promise<any> =>
     rpc<any>('business_profile_save', { p_token: token, p_org: org, p_profile: profile }),
-
-  // ---- Legacy Compatibility
-  calcList: (token: string, org: string) => rpc<Project[]>('calc_list', { p_token: token, p_org: org }),
-  calcSave: (token: string, org: string, name: string, inputs: Overrides, total: number) =>
-    rpc<{ id: string }>('calc_save', { p_token: token, p_org: org, p_name: name, p_inputs: inputs, p_total: total }),
-  calcUpdate: (token: string, id: string, name: string, inputs: Overrides, total: number) =>
-    rpc<void>('calc_update', { p_token: token, p_id: id, p_name: name, p_inputs: inputs, p_total: total }),
-  calcDelete: (token: string, id: string) => rpc<void>('calc_delete', { p_token: token, p_id: id }),
 }

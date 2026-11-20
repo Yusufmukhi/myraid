@@ -1209,35 +1209,6 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
               <div className="menu-backdrop" onClick={() => setOrgMenu(false)} />
               <div className="menu card">
                 <div className="menu-sec">
-                  <span className="label">Switch Organisation</span>
-                  {orgs.map((o) => (
-                    <button
-                      key={o.id}
-                      className={`menu-item ${o.id === org.id ? 'font-bold text-blue' : ''}`}
-                      onClick={() => {
-                        onSwitchOrg(o)
-                        setOrgMenu(false)
-                      }}
-                    >
-                      {Icon.building}
-                      <span className="grow">{o.name}</span>
-                      {o.id === org.id && <span className="chip ok sm">Active</span>}
-                    </button>
-                  ))}
-                  {isAdminOrOwner && (
-                    <button
-                      className="menu-item"
-                      onClick={() => {
-                        onAddOrg()
-                        setOrgMenu(false)
-                      }}
-                    >
-                      {Icon.plus} Create another organisation…
-                    </button>
-                  )}
-                </div>
-
-                <div className="menu-sec">
                   <span className="label">Account</span>
                   <button
                     className="menu-item"

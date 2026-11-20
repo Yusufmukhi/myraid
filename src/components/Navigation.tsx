@@ -35,8 +35,7 @@ export function Navigation({
   return (
     <nav className="nav-sidebar">
       <div className="nav-org-pill">
-        <span className="tiny font-bold uppercase text-muted">Active Org</span>
-        <strong className="nav-org-name">{org?.name || 'Organisation'}</strong>
+        <strong className="nav-org-name">{org?.name || 'Apollo Storage Systems'}</strong>
         <span className="nav-org-role">{displayRole}</span>
       </div>
 
@@ -129,7 +128,7 @@ export function Navigation({
 
       {isAdminOrOwner && (
         <div className="nav-group">
-          <span className="nav-heading">Organisation &amp; Governance</span>
+          <span className="nav-heading">Company &amp; Governance</span>
           <button
             className={`nav-item ${currentTab === 'business' ? 'active' : ''}`}
             onClick={() => onSelectTab('business')}
