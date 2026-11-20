@@ -162,6 +162,9 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const [selectedClientForNewProj, setSelectedClientForNewProj] = useState<string>('')
   const [clientSearchTermForNewProj, setClientSearchTermForNewProj] = useState<string>('')
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false)
+  const [showAllClients, setShowAllClients] = useState(false)
+  const [highlightedClientIndex, setHighlightedClientIndex] = useState(-1)
+  const clientDropdownListRef = useRef<HTMLDivElement>(null)
   const [creating, setCreating] = useState(false)
   const [savedClients, setSavedClients] = useState<SavedClient[]>(() => getSavedClients(org.id))
 
@@ -223,6 +226,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   }, [showCreateModal, org.id, session.token])
 
   const filteredClientsForNewProj = useMemo(() => {
+    if (showAllClients) return savedClients || []
     const q = cleanCopiedText(clientSearchTermForNewProj)
     if (!q) return savedClients || []
     return (savedClients || []).filter(
@@ -233,7 +237,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         (c.contact && fuzzyTextMatch(c.contact, q)) ||
         (c.address && fuzzyTextMatch(c.address, q))
     )
-  }, [savedClients, clientSearchTermForNewProj])
+  }, [savedClients, clientSearchTermForNewProj, showAllClients])
 
   // Protect restricted tabs from non-admins
   useEffect(() => {
@@ -249,6 +253,8 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     setSelectedClientForNewProj('')
     setClientSearchTermForNewProj('')
     setClientDropdownOpen(false)
+    setShowAllClients(false)
+    setHighlightedClientIndex(-1)
     try {
       const list = await api.templateList(session.token, org.id)
       setAvailableTemplates(list)
@@ -520,6 +526,85 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       setCreating(false)
     }
   }
+
+  const handleSelectClient = useCallback((c: SavedClient | null) => {
+    if (!c) {
+      setSelectedClientForNewProj('')
+      setClientSearchTermForNewProj('')
+      setClientDropdownOpen(false)
+      setShowAllClients(false)
+      setHighlightedClientIndex(-1)
+      return
+    }
+    setSelectedClientForNewProj(c.id)
+    setClientSearchTermForNewProj(c.name)
+    setClientDropdownOpen(false)
+    setShowAllClients(false)
+    setHighlightedClientIndex(-1)
+  }, [])
+
+  const handleToggleClientDropdown = useCallback(() => {
+    setClientDropdownOpen((prev) => {
+      const next = !prev
+      if (next) {
+        setShowAllClients(true)
+        setHighlightedClientIndex(0)
+      } else {
+        setShowAllClients(false)
+        setHighlightedClientIndex(-1)
+      }
+      return next
+    })
+  }, [])
+
+  const handleClientInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!clientDropdownOpen) {
+        setShowAllClients(true)
+        setClientDropdownOpen(true)
+        setHighlightedClientIndex(0)
+        return
+      }
+      setHighlightedClientIndex((prev) => {
+        const next = prev + 1 >= filteredClientsForNewProj.length ? 0 : prev + 1
+        return next
+      })
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (!clientDropdownOpen) {
+        setShowAllClients(true)
+        setClientDropdownOpen(true)
+        setHighlightedClientIndex(Math.max(0, filteredClientsForNewProj.length - 1))
+        return
+      }
+      setHighlightedClientIndex((prev) => {
+        const next = prev - 1 < 0 ? Math.max(0, filteredClientsForNewProj.length - 1) : prev - 1
+        return next
+      })
+    } else if (e.key === 'Enter') {
+      if (clientDropdownOpen && highlightedClientIndex >= 0 && highlightedClientIndex < filteredClientsForNewProj.length) {
+        e.preventDefault()
+        e.stopPropagation()
+        handleSelectClient(filteredClientsForNewProj[highlightedClientIndex])
+      } else if (!clientDropdownOpen && newProjectName.trim()) {
+        handleCreateProject()
+      }
+    } else if (e.key === 'Escape') {
+      setClientDropdownOpen(false)
+      setShowAllClients(false)
+      setHighlightedClientIndex(-1)
+    }
+  }, [clientDropdownOpen, filteredClientsForNewProj, highlightedClientIndex, handleSelectClient, newProjectName, handleCreateProject])
+
+  useEffect(() => {
+    if (clientDropdownOpen && highlightedClientIndex >= 0 && clientDropdownListRef.current) {
+      const el = clientDropdownListRef.current.children[highlightedClientIndex + 1] as HTMLElement | undefined
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'nearest' })
+      }
+    }
+  }, [highlightedClientIndex, clientDropdownOpen])
 
   // Synchronize template defaults to baseWb whenever currentProject changes
   useEffect(() => {
@@ -1521,13 +1606,29 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <input
                     type="text"
-                    placeholder="Type to search or choose client..."
+                    placeholder="Click or press ↓ to choose client..."
                     value={clientSearchTermForNewProj}
-                    onFocus={() => setClientDropdownOpen(true)}
+                    onClick={() => {
+                      if (!clientDropdownOpen) {
+                        setShowAllClients(true)
+                        setClientDropdownOpen(true)
+                        setHighlightedClientIndex(0)
+                      }
+                    }}
+                    onFocus={() => {
+                      if (!clientDropdownOpen) {
+                        setShowAllClients(true)
+                        setClientDropdownOpen(true)
+                        setHighlightedClientIndex(0)
+                      }
+                    }}
+                    onKeyDown={handleClientInputKeyDown}
                     onChange={(e) => {
                       const val = e.target.value
                       setClientSearchTermForNewProj(val)
+                      setShowAllClients(false)
                       setClientDropdownOpen(true)
+                      setHighlightedClientIndex(0)
                       const cleaned = cleanCopiedText(val)
                       const matched = cleaned
                         ? savedClients.find((c) => fuzzyTextMatch(c.name, cleaned))
@@ -1537,7 +1638,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                     style={{
                       width: '100%',
                       height: '38px',
-                      padding: '0 36px 0 10px',
+                      padding: clientSearchTermForNewProj ? '0 54px 0 10px' : '0 36px 0 10px',
                       border: '1px solid #cbd5e1',
                       borderRadius: '6px',
                       background: '#ffffff',
@@ -1545,10 +1646,37 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                       fontWeight: 500,
                     }}
                   />
+                  {clientSearchTermForNewProj && (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSelectClient(null)
+                      }}
+                      style={{
+                        position: 'absolute',
+                        right: '30px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px 6px',
+                        color: '#94a3b8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                      }}
+                      title="Clear client selection"
+                    >
+                      ✕
+                    </button>
+                  )}
                   <button
                     type="button"
                     tabIndex={-1}
-                    onClick={() => setClientDropdownOpen((prev) => !prev)}
+                    onClick={handleToggleClientDropdown}
                     style={{
                       position: 'absolute',
                       right: '8px',
@@ -1567,14 +1695,19 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                   </button>
                 </div>
 
-                {/* Dropdown list that opens on focus or click or typing */}
+                {/* Dropdown list that opens on focus or click or typing or pressing ArrowDown */}
                 {clientDropdownOpen && (
                   <>
                     <div
                       style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-                      onClick={() => setClientDropdownOpen(false)}
+                      onClick={() => {
+                        setClientDropdownOpen(false)
+                        setShowAllClients(false)
+                        setHighlightedClientIndex(-1)
+                      }}
                     />
                     <div
+                      ref={clientDropdownListRef}
                       style={{
                         position: 'absolute',
                         top: '100%',
@@ -1591,11 +1724,11 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                       }}
                     >
                       <div
-                        onClick={() => {
-                          setSelectedClientForNewProj('')
-                          setClientSearchTermForNewProj('')
-                          setClientDropdownOpen(false)
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          handleSelectClient(null)
                         }}
+                        onClick={() => handleSelectClient(null)}
                         style={{
                           padding: '8px 12px',
                           fontSize: '12px',
@@ -1611,32 +1744,31 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                       </div>
                       {filteredClientsForNewProj.length === 0 ? (
                         <div style={{ padding: '10px 12px', fontSize: '12px', color: '#94a3b8' }}>
-                          No clients found matching "{clientSearchTermForNewProj}"
+                          No clients found matching &quot;{clientSearchTermForNewProj}&quot;
                         </div>
                       ) : (
-                        filteredClientsForNewProj.map((c) => {
+                        filteredClientsForNewProj.map((c, idx) => {
                           const isSelected = c.id === selectedClientForNewProj
+                          const isHighlighted = idx === highlightedClientIndex
                           return (
                             <div
                               key={c.id}
-                              onClick={() => {
-                                setSelectedClientForNewProj(c.id)
-                                setClientSearchTermForNewProj(c.name)
-                                setClientDropdownOpen(false)
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                handleSelectClient(c)
                               }}
+                              onClick={() => handleSelectClient(c)}
+                              onMouseEnter={() => setHighlightedClientIndex(idx)}
                               style={{
                                 padding: '8px 12px',
                                 cursor: 'pointer',
                                 borderBottom: '1px solid #f8fafc',
-                                background: isSelected ? '#f1f5f9' : 'transparent',
+                                background: isHighlighted ? '#e0e7ff' : (isSelected ? '#f1f5f9' : 'transparent'),
+                                transition: 'background 0.1s ease',
                               }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
-                              onMouseLeave={(e) =>
-                                (e.currentTarget.style.background = isSelected ? '#f1f5f9' : 'transparent')
-                              }
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontWeight: 600, fontSize: '13px', color: '#0f172a' }}>{c.name}</div>
+                                <div style={{ fontWeight: 600, fontSize: '13px', color: isHighlighted ? '#1e1b4b' : '#0f172a' }}>{c.name}</div>
                                 {isAdminOrOwner && c.profit_margin_pct !== undefined && (
                                   <span style={{ fontSize: '10px', background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '1px 5px', borderRadius: '3px', fontWeight: 700 }}>
                                     {c.profit_margin_pct}% Margin
@@ -1644,7 +1776,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                                 )}
                               </div>
                               {(c.gst || c.kind_att || c.contact) && (
-                                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                <div style={{ fontSize: '11px', color: isHighlighted ? '#4338ca' : '#64748b', marginTop: '2px' }}>
                                   {c.gst ? `GST: ${c.gst}` : ''}
                                   {c.gst && (c.kind_att || c.contact) ? ' · ' : ''}
                                   {c.kind_att ? `Att: ${c.kind_att}` : ''}
