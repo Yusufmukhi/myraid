@@ -3,6 +3,7 @@ import { addr, CellStyle, ErrVal, Overrides, parseAddr, Workbook } from '../../l
 import { fmtCell } from '../../lib/format'
 import { EXTRA_EDITABLE } from '../../lib/inputs'
 import { filterCutToCutOverrides } from '../../lib/model'
+import { exportWorkbookToXLSX } from '../../lib/excelExport'
 import { api, Org, Session } from '../../lib/api'
 import { Icon, NumField, useUI } from '../ui'
 
@@ -290,6 +291,51 @@ export function CalculationDetails({
     return { profit, total, ratio, costBase: c2cCostBase, labour: c2cLabour, steelWeight: c2cWeight, actualBeforeGst }
   }, [serverWb, wb, c2cWb, effectiveSysOverrides, effectiveSysC2COverrides])
 
+  const handleDownloadExcel = () => {
+    try {
+      const activeSys = systems?.[currentSystemIdx] || systems?.[0]
+      const sysName = (activeSys?.name || 'System').replace(/\s+/g, '_')
+      const isC2C = workbookType === 'c2c'
+      const fileName = isC2C
+        ? `${sysName}_Cut_to_Cut_Analysis.xlsx`
+        : `${sysName}_Quotation_Actual.xlsx`
+
+      const sysQty = Math.max(1, Number(activeSys?.quantity) || 1)
+      const subtotalBeforeGst = activeWb.num('Total cal', 'N27') || 0
+
+      if (isC2C) {
+        const c2cData = {
+          profit: c2cAnalysis.profit,
+          total: c2cAnalysis.total,
+          ratio: c2cAnalysis.ratio,
+          costBase: c2cAnalysis.costBase,
+          labour: c2cAnalysis.labour,
+          steelWeight: c2cAnalysis.steelWeight,
+          subtotalBeforeGst,
+          setsQty: sysQty,
+        }
+        exportWorkbookToXLSX(activeWb, fileName, c2cData, {
+          setsQty: sysQty,
+          subtotalBeforeGst,
+        })
+        toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
+      } else {
+        const profitAmt = activeWb.num('Total cal', 'N26') || 0
+        const profitPctVal = activeWb.num('Total cal', 'C26') || 25
+        exportWorkbookToXLSX(activeWb, fileName, undefined, {
+          setsQty: sysQty,
+          subtotalBeforeGst,
+          isActual: true,
+          profitAmount: profitAmt,
+          profitPct: profitPctVal,
+        })
+        toast('Actual Quotation Excel spreadsheet downloaded successfully!', 'ok')
+      }
+    } catch (e: any) {
+      toast(`Export failed: ${e?.message || 'Error creating Excel file'}`, 'err')
+    }
+  }
+
   const [name, setName] = useState('Total cal')
   const [sel, setSel] = useState<{ r: number; c: number } | null>(null)
   const [editFormulaMode, setEditFormulaMode] = useState(false)
@@ -464,6 +510,15 @@ export function CalculationDetails({
             <span className="legend-item"><span className="legend-dot chg" /> Changed</span>
             <span className="legend-item"><span className="legend-dot formula-ovr" /> Override</span>
           </div>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={handleDownloadExcel}
+            style={{ height: 28, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8, borderColor: '#cbd5e1', background: '#fff', color: '#0f172a' }}
+            title={`Download ${workbookType === 'c2c' ? 'Cut-to-Cut' : 'Actual Quotation'} Excel spreadsheet (.xlsx)`}
+          >
+            📥 Download Excel ({workbookType === 'c2c' ? 'C2C' : 'Actual'})
+          </button>
           {onSave && (
             <button
               type="button"

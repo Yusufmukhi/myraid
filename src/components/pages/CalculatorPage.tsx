@@ -2867,6 +2867,100 @@ export function CalculatorPage({
     onNavigateToSheets(activeSystemIdx)
   }
 
+  const handleDownloadActualExcel = async () => {
+    if (serverCalculating) {
+      toast('Calculating latest rates from server. Please wait a moment before downloading…', 'err')
+      return
+    }
+    if (!summary?.sales || summary.sales <= 0) {
+      toast('Please enter valid system specifications and wait for calculations before downloading.', 'err')
+      return
+    }
+    try {
+      toast('Generating Actual Quotation Excel workbook…', 'ok')
+      let targetWb = wb
+      if ((!targetWb || targetWb.sheets.size <= 1) && session?.token && org?.id) {
+        try {
+          const res = await api.getFullWorksheets(session.token, org.id)
+          if (res?.actual_workbook) {
+            targetWb = new Workbook(res.actual_workbook, res.named_constants)
+          }
+        } catch {}
+      }
+
+      const wbToExport = targetWb || activeWb
+      if (wbToExport) {
+        // Apply actual quotation inputs & formula overrides
+        const actInputs = systems[activeSystemIdx]?.overrides || overrides
+        const actCleaned = { ...actInputs }
+
+        // Proportional transport & accommodation per body allocation
+        const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, summary?.bodies)
+        const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
+          ? summary.bodies
+          : activeSysInfo.singleSetBodies
+        const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
+
+        const projectTransport = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
+        const projectAccommodation = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+
+        const { allocatedTransport: allocatedSysTransport, allocatedAccommodation: allocatedSysAccommodation } = calculateAllocatedLogistics(
+          projectTransport,
+          projectAccommodation,
+          activeSysTotalBodies,
+          totalCombinedBodies,
+          systems.length > 1,
+        )
+
+        actCleaned['Total cal!N24'] = allocatedSysTransport
+        actCleaned['Total cal!N25'] = allocatedSysAccommodation
+
+        // Ensure profit margin and discount are synchronized
+        if (profitPct !== undefined) {
+          actCleaned['__profit_pct'] = profitPct
+          actCleaned['Total cal!C26'] = profitPct
+        }
+        if (discountPct !== undefined) {
+          actCleaned['__discount_pct'] = discountPct
+        }
+
+        // Installation and extra amount
+        actCleaned['__extra_amount'] = extraAmount
+        actCleaned['__include_installation'] = includeInstallation ? 1 : 0
+
+        wbToExport.setOverrides(actCleaned)
+        wbToExport.setFormulaOverrides(formulaOverrides)
+
+        const qtnTitle = (project.summary?.client_info?.qtn_no || name || project.name || 'Quotation').replace(/[/\\?%*:|"<>]/g, '_')
+        const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
+        const fileName = `${qtnTitle}_${activeSysName}_Quotation_Actual.xlsx`
+
+        const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
+        const activeProfitAmount = Math.round(summary.profitAmount || ((summary.beforeGst - (summary.costBase || 0)) * activeSysQty))
+
+        const modelSummaryText = (summary?.models || [])
+          .filter((m) => m.qty > 0)
+          .map((m) => `${m.qty} ${m.code}`)
+          .join(' + ')
+
+        exportWorkbookToXLSX(wbToExport, fileName, undefined, {
+          setsQty: activeSysQty,
+          subtotalBeforeGst: activeSysBeforeGst,
+          sysTransport: allocatedSysTransport,
+          sysAccommodation: allocatedSysAccommodation,
+          modelSummaryStr: modelSummaryText || undefined,
+          isActual: true,
+          profitAmount: activeProfitAmount,
+          profitPct: profitPct !== undefined ? profitPct : (Number(wbToExport.value('Total cal', 25, 2)) || 25),
+          discountPct: discountPct !== undefined ? discountPct : 0,
+        })
+        toast('Actual Quotation Excel spreadsheet downloaded successfully!', 'ok')
+      }
+    } catch (e: any) {
+      toast(`Export failed: ${e?.message || 'Error creating Excel file'}`, 'err')
+    }
+  }
+
   const handleDownloadC2CExcel = async () => {
     if (serverCalculating) {
       toast('Calculating latest rates from server. Please wait a moment before downloading…', 'err')
@@ -3709,6 +3803,28 @@ export function CalculatorPage({
                 {isAdminOrOwner && (
                   <button className="top-toolbar-btn" onClick={handleNavigateToSheets} title="Open 15-Sheet Detail Grid">
                     {Icon.grid} Sheets
+                  </button>
+                )}
+                {isAdminOrOwner && (
+                  <button
+                    className="top-toolbar-btn"
+                    onClick={handleDownloadActualExcel}
+                    disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
+                    title="Download Actual Quotation Excel (.xlsx) spreadsheet with all 15 worksheets and calculated actual rates"
+                    style={{ color: '#0369a1', fontWeight: 600 }}
+                  >
+                    📥 Actual Excel
+                  </button>
+                )}
+                {isAdminOrOwner && (
+                  <button
+                    className="top-toolbar-btn"
+                    onClick={handleDownloadC2CExcel}
+                    disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
+                    title="Download Cut-to-Cut Excel (.xlsx) spreadsheet with all 15 worksheets and baseline cost calculations"
+                    style={{ color: '#7c3aed', fontWeight: 600 }}
+                  >
+                    ✂️ C2C Excel
                   </button>
                 )}
                 <button
@@ -6366,6 +6482,32 @@ export function CalculatorPage({
                   className="btn sm"
                   disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
                   style={{
+                    background: serverCalculating || !summary?.sales || summary.sales <= 0 ? '#94a3b8' : '#0284c7',
+                    borderColor: serverCalculating || !summary?.sales || summary.sales <= 0 ? '#94a3b8' : '#0369a1',
+                    color: '#fff',
+                    fontSize: '12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontWeight: 600,
+                    cursor: serverCalculating || !summary?.sales || summary.sales <= 0 ? 'not-allowed' : 'pointer',
+                  }}
+                  onClick={handleDownloadActualExcel}
+                  title={
+                    serverCalculating
+                      ? 'Calculating latest rates from server. Please wait…'
+                      : !summary?.sales || summary.sales <= 0
+                      ? 'Wait for calculations to complete before downloading'
+                      : 'Download Actual Quotation Excel spreadsheet (.xlsx) with all 15 sheets and calculated quotation rates'
+                  }
+                >
+                  {serverCalculating ? '⏳ Calculating...' : '📥 Download Actual Excel (.xlsx)'}
+                </button>
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
+                  style={{
                     background: serverCalculating || !summary?.sales || summary.sales <= 0 ? '#94a3b8' : '#15803d',
                     borderColor: serverCalculating || !summary?.sales || summary.sales <= 0 ? '#94a3b8' : '#166534',
                     color: '#fff',
@@ -6382,7 +6524,7 @@ export function CalculatorPage({
                       ? 'Calculating latest rates from server. Please wait…'
                       : !summary?.sales || summary.sales <= 0
                       ? 'Wait for calculations to complete before downloading'
-                      : 'Download Cut-to-Cut Excel spreadsheet with all sheets and C2C calculations at E26:G28'
+                      : 'Download Cut-to-Cut Excel spreadsheet (.xlsx) with all sheets and C2C calculations at E26:G28'
                   }
                 >
                   {serverCalculating ? '⏳ Calculating...' : '📥 Download C2C Excel (.xlsx)'}

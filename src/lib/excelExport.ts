@@ -22,6 +22,10 @@ export interface ExcelExportOptions {
   sysTransport?: number
   sysAccommodation?: number
   modelSummaryStr?: string
+  isActual?: boolean
+  profitAmount?: number
+  profitPct?: number
+  discountPct?: number
 }
 
 /**
@@ -114,17 +118,37 @@ export function exportWorkbookToXLSX(
           if (r === 4 && c === 17) { rowArr.push('Subtotal Before GST'); continue }
           if (r === 4 && c === 18) { rowArr.push(subtotalBeforeGst || Number(wb.value(sheetName, 26, 13)) || 0); continue }
 
-          // Row 6: R6 (c=17) C2C Profit label, S6 (c=18) value
-          if (r === 5 && c === 17) { rowArr.push('C2C Profit'); continue }
-          if (r === 5 && c === 18) { rowArr.push(c2cData ? Math.round(c2cData.profit) : 0); continue }
+          const isActualExport = Boolean(options?.isActual || !c2cData)
 
-          // Row 7: R7 (c=17) C2C Total label, S7 (c=18) value
-          if (r === 6 && c === 17) { rowArr.push('C2C Total'); continue }
-          if (r === 6 && c === 18) { rowArr.push(c2cData ? Math.round(c2cData.total) : 0); continue }
+          // Row 6: R6 (c=17) Profit label, S6 (c=18) value
+          if (r === 5 && c === 17) { rowArr.push(isActualExport ? 'Profit Amount' : 'C2C Profit'); continue }
+          if (r === 5 && c === 18) {
+            const pVal = c2cData
+              ? Math.round(c2cData.profit)
+              : Math.round(options?.profitAmount ?? (Number(wb.value(sheetName, 25, 13)) || 0))
+            rowArr.push(pVal)
+            continue
+          }
 
-          // Row 8: R8 (c=17) C2C Ratio label, S8 (c=18) value
-          if (r === 7 && c === 17) { rowArr.push('C2C Ratio'); continue }
-          if (r === 7 && c === 18) { rowArr.push(c2cData ? Number(c2cData.ratio.toFixed(2)) : 0); continue }
+          // Row 7: R7 (c=17) Total label, S7 (c=18) value
+          if (r === 6 && c === 17) { rowArr.push(isActualExport ? 'Quotation Sales' : 'C2C Total'); continue }
+          if (r === 6 && c === 18) {
+            const tVal = c2cData
+              ? Math.round(c2cData.total)
+              : Math.round(subtotalBeforeGst || Number(wb.value(sheetName, 26, 13)) || 0)
+            rowArr.push(tVal)
+            continue
+          }
+
+          // Row 8: R8 (c=17) Ratio/Margin label, S8 (c=18) value
+          if (r === 7 && c === 17) { rowArr.push(isActualExport ? 'Profit Margin %' : 'C2C Ratio'); continue }
+          if (r === 7 && c === 18) {
+            const rVal = c2cData
+              ? Number(c2cData.ratio.toFixed(2))
+              : (options?.profitPct !== undefined ? options.profitPct : (Number(wb.value(sheetName, 25, 2)) || 25))
+            rowArr.push(rVal)
+            continue
+          }
 
           // Row 22: O22 (c=14) SET label, P22 (c=15) sets quantity value
           if (r === 21 && c === 14) { rowArr.push('SET'); continue }
@@ -370,7 +394,7 @@ export function exportWorkbookToXLSX(
           fill: { fgColor: { rgb: 'DBEAFE' } },
           alignment: { horizontal: 'right', vertical: 'center' },
           border: thinBorder,
-          numFmt: '0.00 "₹/kg"',
+          numFmt: c2cData ? '0.00 "₹/kg"' : '0.00"%"',
         }
       }
 

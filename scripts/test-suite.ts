@@ -2932,6 +2932,80 @@ async function runAllTests() {
     logResult(57, 'Copied Quotation Bay Sync, PDF Client Selection Persistence, & Alphabetical Client Search', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 58: Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets
+  // -------------------------------------------------------------------------
+  try {
+    const actWb = new Workbook(rawWb, SERVER_CONSTANTS)
+    // Set actual quotation rates (steel ₹95, trolley steel ₹95, 25% profit margin)
+    actWb.setOverrides({
+      'Total cal!H3': 95,
+      'Total cal!M3': 95,
+      'Total cal!C26': 25,
+      'Total cal!G4': 4,
+    })
+
+    let capturedActBook: any = null
+    const origWriteFile = XLSX.writeFile
+    XLSX.writeFile = (book: any) => {
+      capturedActBook = book
+    }
+
+    const subtotal = actWb.num('Total cal', 'N27') || 350000
+    const profitAmount = actWb.num('Total cal', 'N26') || 70000
+
+    exportWorkbookToXLSX(actWb, 'Quotation_Actual_Test.xlsx', undefined, {
+      setsQty: 1,
+      subtotalBeforeGst: subtotal,
+      isActual: true,
+      profitAmount: profitAmount,
+      profitPct: 25,
+      discountPct: 0,
+      modelSummaryStr: '4 DFMU',
+    })
+
+    XLSX.writeFile = origWriteFile
+
+    // 1. All 15 sheets exported
+    const sheetNames = capturedActBook?.SheetNames || []
+    const hasAll15Sheets = sheetNames.length === 15 &&
+      sheetNames.includes('Total cal') &&
+      sheetNames.includes('DFMU') &&
+      sheetNames.includes('SHEARING SIZE') &&
+      sheetNames.includes('Sheet1')
+
+    // 2. Total cal labels in R6:S8 for Actual Quotation
+    const tcSheet = capturedActBook?.Sheets?.['Total cal']
+    const r6Label = tcSheet?.['R6']?.v
+    const s6Value = tcSheet?.['S6']?.v
+    const r7Label = tcSheet?.['R7']?.v
+    const s7Value = tcSheet?.['S7']?.v
+    const r8Label = tcSheet?.['R8']?.v
+    const s8Value = tcSheet?.['S8']?.v
+    const s8Fmt = tcSheet?.['S8']?.s?.numFmt
+
+    const actualLabelsOk = r6Label === 'Profit Amount' &&
+      r7Label === 'Quotation Sales' &&
+      r8Label === 'Profit Margin %' &&
+      s8Value === 25 &&
+      s8Fmt === '0.00"%"'
+
+    // 3. Rate preservation in sheet: steel rate ₹95 and trolley rate ₹95 retained
+    const steelRateCell = tcSheet?.['H3']?.v
+    const trolleyRateCell = tcSheet?.['M3']?.v
+    const ratesPreservedOk = steelRateCell === 95 && trolleyRateCell === 95
+
+    if (hasAll15Sheets && actualLabelsOk && ratesPreservedOk) {
+      logResult(58, 'Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets', 'PASSED',
+        `All 15 sheets exported; Actual labels generated: R6='Profit Amount' (₹${s6Value}), R7='Quotation Sales' (₹${s7Value}), R8='Profit Margin %' (${s8Value}%), format='${s8Fmt}'; actual steel rate ₹${steelRateCell} and trolley rate ₹${trolleyRateCell} fully preserved.`)
+    } else {
+      logResult(58, 'Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets', 'FAILED',
+        `hasAll15Sheets=${hasAll15Sheets} (${sheetNames.length}), actualLabelsOk=${actualLabelsOk} (r6=${r6Label}, r7=${r7Label}, r8=${r8Label}, s8=${s8Value}, fmt=${s8Fmt}), ratesPreservedOk=${ratesPreservedOk}`)
+    }
+  } catch (e) {
+    logResult(58, 'Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length
