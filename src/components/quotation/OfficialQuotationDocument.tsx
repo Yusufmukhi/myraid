@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MYRIAD_LOGO_DATA_URL, MYRIAD_WATERMARK_DATA_URL } from '../../assets/companyAssets'
 import { BusinessProfile, getBusinessProfile, fetchBusinessProfileFromSupabase } from '../../lib/businessProfile'
@@ -950,6 +950,10 @@ export function OfficialQuotationDocument({
     const defaultFreightTerms = isTransportZero ? 'At your scope.' : 'Including.'
     const defaultLodgingTerms = 'At our scope.'
 
+    const subjectBayMatch = saved.subject ? saved.subject.match(/\b([1-9]\d?)\s*BAY\b/i) : null
+    const hasSubjectBayMismatch = subjectBayMatch && Number(subjectBayMatch[1]) !== bayCount
+    const effectiveSubject = (!saved.subject || hasSubjectBayMismatch) ? defaultSubject : saved.subject
+
     return {
       client_id: saved.client_id || dirMatch?.id || '',
       qtn_no: effectiveQtnNo,
@@ -961,7 +965,7 @@ export function OfficialQuotationDocument({
       buyer_email: resolvedEmail,
       buyer_contact: resolvedContact,
       kind_att: resolvedKindAtt,
-      subject: (!saved.subject || (saved.subject.includes('5 BAY') && bayCount !== 5)) ? defaultSubject : saved.subject,
+      subject: effectiveSubject,
       contacts: resolvedContacts,
       selected_contact_id: saved.selected_contact_id || '',
       show_buyer_name: saved.show_buyer_name !== false,
@@ -1046,6 +1050,13 @@ export function OfficialQuotationDocument({
     return getVisibleClientsForUser(savedClients, username, role, userId)
   }, [savedClients, username, role, userId])
 
+  // Alphabetical ordering of clients by default (A-Z)
+  const alphabeticalSavedClients = useMemo(() => {
+    return [...visibleSavedClients].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    )
+  }, [visibleSavedClients])
+
   const [selectedClientId, setSelectedClientId] = useState<string>(() => {
     if (initialClientInfo.client_id) return initialClientInfo.client_id
     const matching = getVisibleClientsForUser(getSavedClients(effectiveOrgId), username, role, userId).find(
@@ -1053,11 +1064,17 @@ export function OfficialQuotationDocument({
     )
     return matching?.id || ''
   })
-  const [clientSearchText, setClientSearchText] = useState('')
+  const [clientSearchText, setClientSearchText] = useState<string>(() => initialClientInfo.buyer_name || '')
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false)
+  const [showAllClients, setShowAllClients] = useState(false)
+  const [highlightedClientIndex, setHighlightedClientIndex] = useState(-1)
+  const clientDropdownListRef = useRef<HTMLDivElement>(null)
+
   const filteredSavedClients = useMemo(() => {
+    if (showAllClients) return alphabeticalSavedClients || []
     const q = cleanCopiedText(clientSearchText)
-    if (!q) return visibleSavedClients || []
-    return (visibleSavedClients || []).filter(
+    if (!q) return alphabeticalSavedClients || []
+    return (alphabeticalSavedClients || []).filter(
       (c) =>
         fuzzyTextMatch(c.name, q) ||
         (c.gst && fuzzyTextMatch(c.gst, q)) ||
@@ -1065,7 +1082,127 @@ export function OfficialQuotationDocument({
         (c.contact && fuzzyTextMatch(c.contact, q)) ||
         (c.address && fuzzyTextMatch(c.address, q))
     )
-  }, [visibleSavedClients, clientSearchText])
+  }, [alphabeticalSavedClients, clientSearchText, showAllClients])
+
+  const handleSelectSavedClient = useCallback((clientId: string) => {
+    setSelectedClientId(clientId)
+    if (!clientId) return
+    const cl = savedClients.find((c) => c.id === clientId)
+    if (!cl) return
+
+    setClientInfo((prev) => {
+      const loadedExtra = Array.isArray(cl.extra_fields) && cl.extra_fields.length > 0
+        ? cl.extra_fields.map((ef) => {
+            const val = ef.value || (Array.isArray(ef.values) && ef.values[0]) || ''
+            return {
+              id: ef.id || String(Date.now()),
+              label: ef.label || '',
+              value: val,
+              values: [val],
+              visible: ef.visible !== false,
+              visible_values: [true],
+            }
+          })
+        : []
+
+      const loadedContacts = Array.isArray(cl.contacts)
+        ? cl.contacts.filter((cp) => !(cp.name === cl.kind_att && cp.phone === cl.contact && cp.name.trim().length > 0))
+        : []
+
+      return {
+        ...prev,
+        client_id: cl.id,
+        buyer_name: cl.name,
+        buyer_address: cl.address,
+        buyer_gst: cl.gst || '',
+        buyer_email: cl.email !== undefined ? cl.email : '',
+        show_buyer_email: Boolean(cl.email),
+        kind_att: cl.kind_att || '',
+        buyer_contact: cl.contact || '',
+        show_kind_att: true,
+        show_buyer_contact: true,
+        contacts: loadedContacts,
+        selected_contact_id: '',
+        extra_fields: loadedExtra,
+      }
+    })
+
+    if (cl.profit_margin_pct !== undefined) {
+      setProfitPct(cl.profit_margin_pct)
+    }
+
+    if (cl.include_full_proposal !== undefined) {
+      setIncludeFullProposal(Boolean(cl.include_full_proposal))
+    }
+
+    toast(`Loaded details for ${cl.name}`)
+  }, [savedClients, toast])
+
+  const handleToggleClientDropdown = useCallback(() => {
+    setClientDropdownOpen((prev) => {
+      const next = !prev
+      if (next) {
+        setShowAllClients(true)
+        setHighlightedClientIndex(0)
+      } else {
+        setShowAllClients(false)
+        setHighlightedClientIndex(-1)
+      }
+      return next
+    })
+  }, [])
+
+  const handleClientInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!clientDropdownOpen) {
+        setShowAllClients(true)
+        setClientDropdownOpen(true)
+        setHighlightedClientIndex(0)
+        return
+      }
+      setHighlightedClientIndex((prev) => {
+        const next = prev + 1 >= filteredSavedClients.length ? 0 : prev + 1
+        return next
+      })
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (!clientDropdownOpen) {
+        setShowAllClients(true)
+        setClientDropdownOpen(true)
+        setHighlightedClientIndex(Math.max(0, filteredSavedClients.length - 1))
+        return
+      }
+      setHighlightedClientIndex((prev) => {
+        const next = prev - 1 < 0 ? Math.max(0, filteredSavedClients.length - 1) : prev - 1
+        return next
+      })
+    } else if (e.key === 'Enter') {
+      if (clientDropdownOpen && highlightedClientIndex >= 0 && highlightedClientIndex < filteredSavedClients.length) {
+        e.preventDefault()
+        e.stopPropagation()
+        const selected = filteredSavedClients[highlightedClientIndex]
+        handleSelectSavedClient(selected.id)
+        setClientSearchText(selected.name)
+        setClientDropdownOpen(false)
+        setShowAllClients(false)
+        setHighlightedClientIndex(-1)
+      }
+    } else if (e.key === 'Escape') {
+      setClientDropdownOpen(false)
+      setShowAllClients(false)
+      setHighlightedClientIndex(-1)
+    }
+  }, [clientDropdownOpen, filteredSavedClients, highlightedClientIndex])
+
+  useEffect(() => {
+    if (clientDropdownOpen && highlightedClientIndex >= 0 && clientDropdownListRef.current) {
+      const el = clientDropdownListRef.current.children[highlightedClientIndex + 1] as HTMLElement | undefined
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'nearest' })
+      }
+    }
+  }, [highlightedClientIndex, clientDropdownOpen])
   const [showAddClientModal, setShowAddClientModal] = useState<boolean>(false)
   const [newClientData, setNewClientData] = useState<{
     name: string
@@ -1173,59 +1310,6 @@ export function OfficialQuotationDocument({
     window.addEventListener('examcalc:clients-updated', handleUpdate)
     return () => window.removeEventListener('examcalc:clients-updated', handleUpdate)
   }, [effectiveOrgId, selectedClientId, clientInfo.buyer_name])
-
-  const handleSelectSavedClient = (clientId: string) => {
-    setSelectedClientId(clientId)
-    if (!clientId) return
-    const cl = savedClients.find((c) => c.id === clientId)
-    if (!cl) return
-
-    setClientInfo((prev) => {
-      const loadedExtra = Array.isArray(cl.extra_fields) && cl.extra_fields.length > 0
-        ? cl.extra_fields.map((ef) => {
-            const val = ef.value || (Array.isArray(ef.values) && ef.values[0]) || ''
-            return {
-              id: ef.id || String(Date.now()),
-              label: ef.label || '',
-              value: val,
-              values: [val],
-              visible: ef.visible !== false,
-              visible_values: [true],
-            }
-          })
-        : []
-
-      const loadedContacts = Array.isArray(cl.contacts)
-        ? cl.contacts.filter((cp) => !(cp.name === cl.kind_att && cp.phone === cl.contact && cp.name.trim().length > 0))
-        : []
-
-      return {
-        ...prev,
-        buyer_name: cl.name,
-        buyer_address: cl.address,
-        buyer_gst: cl.gst || '',
-        buyer_email: cl.email !== undefined ? cl.email : '',
-        show_buyer_email: Boolean(cl.email),
-        kind_att: cl.kind_att || '',
-        buyer_contact: cl.contact || '',
-        show_kind_att: true,
-        show_buyer_contact: true,
-        contacts: loadedContacts,
-        selected_contact_id: '',
-        extra_fields: loadedExtra,
-      }
-    })
-
-    if (cl.profit_margin_pct !== undefined) {
-      setProfitPct(cl.profit_margin_pct)
-    }
-
-    if (cl.include_full_proposal !== undefined) {
-      setIncludeFullProposal(Boolean(cl.include_full_proposal))
-    }
-
-    toast(`Loaded details for ${cl.name}`)
-  }
 
   const handleSaveCurrentAsClient = async () => {
     if (!clientInfo.buyer_name || !clientInfo.buyer_name.trim()) {
@@ -1870,9 +1954,15 @@ export function OfficialQuotationDocument({
     setBodyItems(defaultBodyItems)
   }, [defaultBodyItems])
 
+  const lastLoadedProjectIdRef = useRef<string>(project.id)
   useEffect(() => {
-    setClientInfo(initialClientInfo)
-  }, [initialClientInfo])
+    if (lastLoadedProjectIdRef.current !== project.id) {
+      lastLoadedProjectIdRef.current = project.id
+      setClientInfo(initialClientInfo)
+      setSelectedClientId(initialClientInfo.client_id || '')
+      setClientSearchText(initialClientInfo.buyer_name || '')
+    }
+  }, [project.id, initialClientInfo])
 
   useEffect(() => {
     setTermsList(initialTermsList)
@@ -2777,6 +2867,7 @@ export function OfficialQuotationDocument({
       })
       const cleanClientInfo = {
         ...clientInfo,
+        client_id: selectedClientId || clientInfo.client_id || '',
         freight_terms: isTransportZero ? 'At your scope.' : clientInfo.freight_terms,
         lodging_terms: (clientInfo.lodging_terms && clientInfo.lodging_terms !== 'At your scope.') ? clientInfo.lodging_terms : 'At our scope.',
       }
@@ -6357,40 +6448,206 @@ export function OfficialQuotationDocument({
                       </button>
                     </div>
 
-                    <input
-                      type="text"
-                      placeholder="Type client name or GST to search..."
-                      value={clientSearchText}
-                      onChange={(e) => setClientSearchText(e.target.value)}
-                      className="option-input-field"
-                      style={{ background: '#ffffff', borderColor: '#cbd5e1', fontSize: '12px', height: '30px', padding: '0 8px' }}
-                    />
+                    <div style={{ position: 'relative' }}>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="Type or click to choose client (A-Z)..."
+                          value={clientSearchText}
+                          onClick={() => {
+                            if (!clientDropdownOpen) {
+                              setShowAllClients(true)
+                              setClientDropdownOpen(true)
+                              setHighlightedClientIndex(0)
+                            }
+                          }}
+                          onFocus={() => {
+                            if (!clientDropdownOpen) {
+                              setShowAllClients(true)
+                              setClientDropdownOpen(true)
+                              setHighlightedClientIndex(0)
+                            }
+                          }}
+                          onKeyDown={handleClientInputKeyDown}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setClientSearchText(val)
+                            setShowAllClients(false)
+                            setClientDropdownOpen(true)
+                            setHighlightedClientIndex(0)
+                            const cleaned = cleanCopiedText(val)
+                            const matched = cleaned
+                              ? alphabeticalSavedClients.find((c) => fuzzyTextMatch(c.name, cleaned))
+                              : undefined
+                            if (matched) {
+                              handleSelectSavedClient(matched.id)
+                            }
+                          }}
+                          className="option-input-field"
+                          style={{
+                            width: '100%',
+                            background: '#ffffff',
+                            borderColor: '#cbd5e1',
+                            fontSize: '12px',
+                            height: '32px',
+                            padding: clientSearchText ? '0 54px 0 8px' : '0 32px 0 8px',
+                            fontWeight: selectedClientId ? 600 : 400,
+                          }}
+                        />
+                        {clientSearchText && (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedClientId('')
+                              setClientSearchText('')
+                              setClientDropdownOpen(false)
+                              setShowAllClients(false)
+                              setHighlightedClientIndex(-1)
+                            }}
+                            style={{
+                              position: 'absolute',
+                              right: '26px',
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              color: '#94a3b8',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                            }}
+                            title="Clear client selection"
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={handleToggleClientDropdown}
+                          style={{
+                            position: 'absolute',
+                            right: '6px',
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            color: '#64748b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          title="Toggle client list"
+                        >
+                          <span style={{ fontSize: '9px' }}>{clientDropdownOpen ? '▲' : '▼'}</span>
+                        </button>
+                      </div>
 
-                    <select
-                      className="option-input-field font-bold"
-                      value={selectedClientId}
-                      onChange={(e) => {
-                        handleSelectSavedClient(e.target.value)
-                        const found = visibleSavedClients.find((c) => c.id === e.target.value)
-                        if (found) {
-                          setClientSearchText(found.name)
-                        }
-                      }}
-                      style={{ background: '#ffffff', borderColor: '#cbd5e1', fontSize: '12px' }}
-                    >
-                      <option value="">
-                        {filteredSavedClients.length === 0
-                          ? '-- No matching clients found --'
-                          : clientSearchText.trim()
-                          ? `-- Matching Clients (${filteredSavedClients.length}) --`
-                          : `-- Select Saved Client (${visibleSavedClients.length}) --`}
-                      </option>
-                      {filteredSavedClients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} {userIsAdmin && c.profit_margin_pct !== undefined ? `(${c.profit_margin_pct}% Margin)` : ''} {c.gst ? `· GST: ${c.gst}` : ''}
-                        </option>
-                      ))}
-                    </select>
+                      {clientDropdownOpen && (
+                        <>
+                          <div
+                            style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+                            onClick={() => {
+                              setClientDropdownOpen(false)
+                              setShowAllClients(false)
+                              setHighlightedClientIndex(-1)
+                            }}
+                          />
+                          <div
+                            ref={clientDropdownListRef}
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: 0,
+                              right: 0,
+                              zIndex: 1000,
+                              background: '#ffffff',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '6px',
+                              boxShadow: '0 6px 18px rgba(0,0,0,0.15)',
+                              maxHeight: '230px',
+                              overflowY: 'auto',
+                              marginTop: '3px',
+                            }}
+                          >
+                            <div
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                setSelectedClientId('')
+                                setClientSearchText('')
+                                setClientDropdownOpen(false)
+                                setShowAllClients(false)
+                                setHighlightedClientIndex(-1)
+                              }}
+                              style={{
+                                padding: '6px 10px',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid #f1f5f9',
+                                color: '#64748b',
+                                fontStyle: 'italic',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            >
+                              -- None (Keep manually entered client) --
+                            </div>
+                            {filteredSavedClients.length === 0 ? (
+                              <div style={{ padding: '8px 10px', fontSize: '11.5px', color: '#94a3b8' }}>
+                                No clients found matching &quot;{clientSearchText}&quot;
+                              </div>
+                            ) : (
+                              filteredSavedClients.map((c, idx) => {
+                                const isSelected = c.id === selectedClientId
+                                const isHighlighted = idx === highlightedClientIndex
+                                return (
+                                  <div
+                                    key={c.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault()
+                                      handleSelectSavedClient(c.id)
+                                      setClientSearchText(c.name)
+                                      setClientDropdownOpen(false)
+                                      setShowAllClients(false)
+                                      setHighlightedClientIndex(-1)
+                                    }}
+                                    onMouseEnter={() => setHighlightedClientIndex(idx)}
+                                    style={{
+                                      padding: '6px 10px',
+                                      cursor: 'pointer',
+                                      borderBottom: '1px solid #f8fafc',
+                                      background: isHighlighted ? '#e0e7ff' : (isSelected ? '#f1f5f9' : 'transparent'),
+                                      transition: 'background 0.1s ease',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <div style={{ fontWeight: 600, fontSize: '12px', color: isHighlighted ? '#1e1b4b' : '#0f172a' }}>{c.name}</div>
+                                      {userIsAdmin && c.profit_margin_pct !== undefined && (
+                                        <span style={{ fontSize: '9.5px', background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '1px 4px', borderRadius: '3px', fontWeight: 700 }}>
+                                          {c.profit_margin_pct}% Margin
+                                        </span>
+                                      )}
+                                    </div>
+                                    {(c.gst || c.kind_att || c.contact) && (
+                                      <div style={{ fontSize: '10.5px', color: isHighlighted ? '#4338ca' : '#64748b', marginTop: '1px' }}>
+                                        {c.gst ? `GST: ${c.gst}` : ''}
+                                        {c.gst && (c.kind_att || c.contact) ? ' · ' : ''}
+                                        {c.kind_att ? `Att: ${c.kind_att}` : ''}
+                                        {c.contact ? ` (${c.contact})` : ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
 
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       <button

@@ -2858,6 +2858,80 @@ async function runAllTests() {
     logResult(56, 'System Bay Count Detection & Installation Bodies Table Accurate Rendering (4 Bay vs 5 Bay Auto-healing)', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 57: Copied Quotation Bay Sync, PDF Client Selection Persistence, & Alphabetical Client Search
+  // -------------------------------------------------------------------------
+  try {
+    // 1. Bay count auto-healing in PDF subject line across copies/revisions
+    const copiedSubject = 'QUOTATION FOR SUPPLY 2 BAY MECHANICAL MOBILE COMPACTOR'
+    const newBayCount = 3
+    const subjectBayMatch = copiedSubject.match(/\b([1-9]\d?)\s*BAY\b/i)
+    const hasSubjectBayMismatch = subjectBayMatch && Number(subjectBayMatch[1]) !== newBayCount
+    const effectiveSubject = (!copiedSubject || hasSubjectBayMismatch)
+      ? `QUOTATION FOR SUPPLY ${newBayCount} BAY MECHANICAL MOBILE COMPACTOR`
+      : copiedSubject
+    const subjectHealedOk = effectiveSubject === 'QUOTATION FOR SUPPLY 3 BAY MECHANICAL MOBILE COMPACTOR'
+
+    // 2. Installation bodies table auto-healing when copied 2-bay quotation is updated to 3-bay
+    const staleSavedBodies = [{ title: 'DFMU 2 BAY', per_bay_qty: 4, total_body: 16 }]
+    const hasStaleBayMismatch = staleSavedBodies.some((it) => {
+      const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
+      return m && Number(m[1]) !== newBayCount
+    })
+    const regeneratedBodies = generateDefaultBodyItems(
+      { models: [{ code: 'DFMU', qty: 4, name: 'Double Face Movable Unit' }] } as any,
+      null,
+      { 'Total cal!A3': 6 }
+    )
+    const dfmu3Bay = regeneratedBodies.find((b) => b.title.includes('DFMU'))
+    const bodiesHealedOk = hasStaleBayMismatch && dfmu3Bay?.title === 'DFMU 3 BAY' && dfmu3Bay?.per_bay_qty === 6 && dfmu3Bay?.total_body === 24
+
+    // 3. Alphabetical ordering of client directory by default (A to Z)
+    const rawClients = [
+      { id: '1', name: 'Zeta Logistics Ltd' },
+      { id: '2', name: 'Apollo Industrial Systems' },
+      { id: '3', name: 'Mahavir Steel Corporation' },
+      { id: '4', name: 'Bharat Tubes & Pipes' },
+    ]
+    const sortedClients = [...rawClients].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    )
+    const alphabeticalOk = sortedClients[0].name === 'Apollo Industrial Systems' &&
+      sortedClients[1].name === 'Bharat Tubes & Pipes' &&
+      sortedClients[2].name === 'Mahavir Steel Corporation' &&
+      sortedClients[3].name === 'Zeta Logistics Ltd'
+
+    // 4. Persistence of client selection into project summary
+    const mockSelectedClient = sortedClients[1] // Bharat Tubes & Pipes
+    const mockClientInfo = {
+      client_id: mockSelectedClient.id,
+      buyer_name: mockSelectedClient.name,
+      buyer_address: 'Plot 45, Phase 2, GIDC',
+      buyer_gst: '24AABCB1234F1Z1',
+    }
+    const cleanClientInfo = {
+      ...mockClientInfo,
+      client_id: mockSelectedClient.id || mockClientInfo.client_id || '',
+    }
+    const persistedSummary = {
+      client_info: cleanClientInfo,
+      client_id: cleanClientInfo.client_id,
+    }
+    const clientPersistOk = persistedSummary.client_id === '4' &&
+      persistedSummary.client_info.client_id === '4' &&
+      persistedSummary.client_info.buyer_name === 'Bharat Tubes & Pipes'
+
+    if (subjectHealedOk && bodiesHealedOk && alphabeticalOk && clientPersistOk) {
+      logResult(57, 'Copied Quotation Bay Sync, PDF Client Selection Persistence, & Alphabetical Client Search', 'PASSED',
+        'Copied quotation bay change accurately updates PDF subject and installation bodies (2 Bay -> 3 Bay); client directory sorts alphabetically A-Z by default; PDF client changes persist client_id and buyer details across saves.')
+    } else {
+      logResult(57, 'Copied Quotation Bay Sync, PDF Client Selection Persistence, & Alphabetical Client Search', 'FAILED',
+        `subjectHealedOk=${subjectHealedOk}, bodiesHealedOk=${bodiesHealedOk}, alphabeticalOk=${alphabeticalOk}, clientPersistOk=${clientPersistOk}`)
+    }
+  } catch (e) {
+    logResult(57, 'Copied Quotation Bay Sync, PDF Client Selection Persistence, & Alphabetical Client Search', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

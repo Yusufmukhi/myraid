@@ -32,6 +32,8 @@ import {
 
   UnitWiseBreakdownResult,
 
+  generateDefaultBodyItems,
+
 } from '../quotation/OfficialQuotationDocument'
 
 import {
@@ -1958,7 +1960,7 @@ export function CalculatorPage({
 
     return liveSystems.map((sys, idx) => {
       const isCurrent = idx === activeSystemIdx
-      const sysOv: Overrides = { ...(sys.overrides || {}) }
+      const sysOv: Overrides = { ...(sys.overrides || {}), ...(isCurrent ? overrides : {}) }
       if (overrides['Total cal!B49'] !== undefined) sysOv['Total cal!B49'] = labourPerBody
       const sysExtra = isCurrent
         ? extraAmount
@@ -1980,11 +1982,11 @@ export function CalculatorPage({
 
       const sysBodiesInfo = systemBreakdowns[idx] || calculateSystemBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
       const sysBodies = sysBodiesInfo.singleSetBodies
-      const sysA3 = Number(sysOv['Total cal!A3'] ?? (isCurrent ? overrides['Total cal!A3'] : undefined))
-      const sysD3 = Number(sysOv['Total cal!D3'] ?? (isCurrent ? overrides['Total cal!D3'] : undefined))
+      const sysA3 = Number(isCurrent ? (overrides['Total cal!A3'] ?? sysOv['Total cal!A3']) : sysOv['Total cal!A3'])
+      const sysD3 = Number(isCurrent ? (overrides['Total cal!D3'] ?? sysOv['Total cal!D3']) : sysOv['Total cal!D3'])
       const sysBay = (sysA3 && sysA3 > 0)
         ? Math.max(1, Math.round(sysA3 / 2))
-        : (sys.bay ?? detectSystemBayCount(sys, sysOv) ?? (sysD3 && sysD3 > 0 ? Math.max(1, Math.round(sysD3 / 915)) : 4))
+        : (isCurrent && bayInput && Number(bayInput) > 0 ? Number(bayInput) : (sys.bay ?? detectSystemBayCount(sys, sysOv) ?? (sysD3 && sysD3 > 0 ? Math.max(1, Math.round(sysD3 / 915)) : 4)))
 
       // Proportional shared transport and accommodation per set across total combined bodies
       const { allocatedTransport: sysTransport, allocatedAccommodation: sysAccommodation } = calculateAllocatedLogistics(
@@ -2423,6 +2425,32 @@ export function CalculatorPage({
 
       // ── Step 4: Build final summary with server-calculated values ──
 
+      const primaryBay = compiledSets[0]?.bay || (bayInput ? Number(bayInput) : 4)
+      let cleanedBodyItems = project.summary?.body_items
+      if (cleanedBodyItems && Array.isArray(cleanedBodyItems)) {
+        const hasBayMismatch = cleanedBodyItems.some((it: any) => {
+          const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
+          return m && Number(m[1]) !== primaryBay
+        })
+        if (hasBayMismatch) {
+          cleanedBodyItems = undefined
+        }
+      }
+
+      let cleanedClientInfo = project.summary?.client_info
+      if (cleanedClientInfo?.subject) {
+        const m = cleanedClientInfo.subject.match(/\b([1-9]\d?)\s*BAY\b/i)
+        if (m && Number(m[1]) !== primaryBay) {
+          cleanedClientInfo = {
+            ...cleanedClientInfo,
+            subject: `QUOTATION FOR SUPPLY ${primaryBay} BAY MECHANICAL MOBILE COMPACTOR`,
+          }
+        }
+      }
+
+      const primaryInputs = effectiveSystems[0]?.overrides || serverCleanedOverrides
+      const primaryFO = effectiveSystems[0]?.formulaOverrides || formulaOverrides
+
       const updatedSummary = {
 
         ...project.summary,
@@ -2457,14 +2485,14 @@ export function CalculatorPage({
 
         calculated_on_server: true,
 
+        ...(cleanedBodyItems ? { body_items: cleanedBodyItems } : { body_items: generateDefaultBodyItems(serverSummary, wb, primaryInputs, compiledSets) }),
+        ...(cleanedClientInfo ? { client_info: cleanedClientInfo } : {}),
+
       }
 
 
 
       // ── Step 5: Persist to Supabase ──
-
-      const primaryInputs = effectiveSystems[0]?.overrides || serverCleanedOverrides
-      const primaryFO = effectiveSystems[0]?.formulaOverrides || formulaOverrides
 
       await api.projectUpdate(
 
@@ -2680,9 +2708,15 @@ export function CalculatorPage({
 
     const finalSales = Math.round(Number(allSystemsTotals.sales || (summary.sales * activeSysQty)) || 0)
 
+    const targetClientId = clientInfo.client_id || project.summary?.client_id || (project as any).client_id || ''
+
     const updatedSummary = {
       ...project.summary,
-      client_info: clientInfo,
+      client_info: {
+        ...clientInfo,
+        client_id: targetClientId,
+      },
+      client_id: targetClientId,
       quotation_items: items,
       body_items: bodyItems,
       quotation_mode: extraSettings?.quotation_mode || quotationMode,
@@ -4122,6 +4156,13 @@ export function CalculatorPage({
                     const num = Math.max(1, Math.round(cleanCopiedNumber(pasted)))
                     setBayInput(String(num))
                     setInput('Total cal!A3', num * 2)
+                    setSystems((prev) =>
+                      prev.map((s, i) =>
+                        i === activeSystemIdx
+                          ? { ...s, bay: num, overrides: { ...(s.overrides || {}), 'Total cal!A3': num * 2 } }
+                          : s
+                      )
+                    )
                   }
                 }}
 
@@ -4136,6 +4177,13 @@ export function CalculatorPage({
                   if (!isNaN(parsed) && parsed > 0) {
 
                     setInput('Total cal!A3', parsed * 2)
+                    setSystems((prev) =>
+                      prev.map((s, i) =>
+                        i === activeSystemIdx
+                          ? { ...s, bay: parsed, overrides: { ...(s.overrides || {}), 'Total cal!A3': parsed * 2 } }
+                          : s
+                      )
+                    )
 
                   }
 
@@ -7147,7 +7195,7 @@ export function CalculatorPage({
             ...project.summary,
             ...summary,
             quotation_mode: quotationMode,
-            systems,
+            systems: getEffectiveSystems(overrides, formulaOverrides),
             quotation_sets: compiledSets,
             include_installation: includeInstallation,
             extra_amount: extraAmount,
