@@ -3794,28 +3794,6 @@ export function CalculatorPage({
                     {Icon.grid} Sheets
                   </button>
                 )}
-                {isAdminOrOwner && (
-                  <button
-                    className="top-toolbar-btn"
-                    onClick={handleDownloadActualExcel}
-                    disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
-                    title="Download Actual Quotation Excel (.xlsx) spreadsheet with all 15 worksheets and calculated actual rates"
-                    style={{ color: '#0369a1', fontWeight: 600 }}
-                  >
-                    📥 Actual Excel
-                  </button>
-                )}
-                {isAdminOrOwner && (
-                  <button
-                    className="top-toolbar-btn"
-                    onClick={handleDownloadC2CExcel}
-                    disabled={serverCalculating || !summary?.sales || summary.sales <= 0}
-                    title="Download Cut-to-Cut Excel (.xlsx) spreadsheet with all 15 worksheets and baseline cost calculations"
-                    style={{ color: '#7c3aed', fontWeight: 600 }}
-                  >
-                    ✂️ C2C Excel
-                  </button>
-                )}
                 <button
                   className="top-toolbar-btn"
                   onClick={openShareModal}
