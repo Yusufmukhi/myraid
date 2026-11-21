@@ -779,6 +779,16 @@ export function CalculatorPage({
   const nameInputRef = useRef<HTMLInputElement>(null)
   const bayInputRef = useRef<HTMLInputElement>(null)
 
+  // Dynamic Bay state (drives DFMU/DFFU rows = Bay * 2, and SFMU/SFFU rows = Bay)
+  const rawDfmuRows = overrides['Total cal!A3'] !== undefined ? Number(overrides['Total cal!A3']) : activeWb.num('Total cal', 'A3')
+  const currentDfmuRows = rawDfmuRows !== undefined && !isNaN(rawDfmuRows) ? rawDfmuRows : 0
+  const currentBay = Math.max(0, Math.round(currentDfmuRows / 2))
+  const [bayInput, setBayInput] = useState<string>(String(currentBay))
+
+  useEffect(() => {
+    setBayInput(String(currentBay))
+  }, [currentBay])
+
   const displayClientName = useMemo(() => {
     const buyer = (project.summary?.client_info?.buyer_name || '').trim()
     if (buyer) return buyer
@@ -3160,27 +3170,6 @@ export function CalculatorPage({
       toast((e as Error).message, 'err')
     }
   }
-
-
-
-  // Dynamic Bay state (drives DFMU/DFFU rows = Bay * 2, and SFMU/SFFU rows = Bay)
-
-  const rawDfmuRows = overrides['Total cal!A3'] !== undefined ? Number(overrides['Total cal!A3']) : activeWb.num('Total cal', 'A3')
-  const currentDfmuRows = rawDfmuRows !== undefined && !isNaN(rawDfmuRows) ? rawDfmuRows : 0
-
-  const currentBay = Math.max(0, Math.round(currentDfmuRows / 2))
-
-  const [bayInput, setBayInput] = useState<string>(String(currentBay))
-
-
-
-  useEffect(() => {
-
-    setBayInput(String(currentBay))
-
-  }, [currentBay])
-
-
 
   // Render an editable Excel table cell with zero & backspace preservation
 
