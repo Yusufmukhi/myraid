@@ -2995,15 +2995,261 @@ async function runAllTests() {
     const trolleyRateCell = tcSheet?.['M3']?.v
     const ratesPreservedOk = steelRateCell === 95 && trolleyRateCell === 95
 
-    if (hasAll15Sheets && actualLabelsOk && ratesPreservedOk) {
+    // 4. Verify ZERO #NAME? triggers across all 15 sheets (no unresolved CONST_*, unquoted NO/ROW, or #NAME? values)
+    let badFormulaCount = 0
+    let nameErrorValueCount = 0
+    for (const sName of sheetNames) {
+      const sheetObj = capturedActBook?.Sheets?.[sName] || {}
+      for (const [k, cell] of Object.entries<any>(sheetObj)) {
+        if (k.startsWith('!')) continue
+        if (cell?.v === '#NAME?') nameErrorValueCount++
+        if (typeof cell?.f === 'string') {
+          const stripped = cell.f.replace(/"(?:[^"]|"")*"/g, '')
+          if (/\bCONST_[A-Za-z0-9_]+\b/.test(stripped) || /\b(NO|ROW)\b(?!\s*[\(!])/.test(stripped)) {
+            badFormulaCount++
+          }
+        }
+      }
+    }
+    const zeroNameErrorsOk = badFormulaCount === 0 && nameErrorValueCount === 0
+
+    if (hasAll15Sheets && actualLabelsOk && ratesPreservedOk && zeroNameErrorsOk) {
       logResult(58, 'Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets', 'PASSED',
-        `All 15 sheets exported; Actual labels generated: R6='Profit Amount' (₹${s6Value}), R7='Quotation Sales' (₹${s7Value}), R8='Profit Margin %' (${s8Value}%), format='${s8Fmt}'; actual steel rate ₹${steelRateCell} and trolley rate ₹${trolleyRateCell} fully preserved.`)
+        `All 15 sheets exported with ZERO #NAME? / unresolved constants; Actual labels generated: R6='Profit Amount' (₹${s6Value}), R7='Quotation Sales' (₹${s7Value}), R8='Profit Margin %' (${s8Value}%), format='${s8Fmt}'; actual steel rate ₹${steelRateCell} and trolley rate ₹${trolleyRateCell} fully preserved.`)
     } else {
       logResult(58, 'Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets', 'FAILED',
-        `hasAll15Sheets=${hasAll15Sheets} (${sheetNames.length}), actualLabelsOk=${actualLabelsOk} (r6=${r6Label}, r7=${r7Label}, r8=${r8Label}, s8=${s8Value}, fmt=${s8Fmt}), ratesPreservedOk=${ratesPreservedOk}`)
+        `hasAll15Sheets=${hasAll15Sheets} (${sheetNames.length}), actualLabelsOk=${actualLabelsOk}, ratesPreservedOk=${ratesPreservedOk}, zeroNameErrorsOk=${zeroNameErrorsOk} (badFormulas=${badFormulaCount}, nameErrs=${nameErrorValueCount})`)
     }
   } catch (e) {
     logResult(58, 'Actual Quotation Excel (.xlsx) Export with Live Rates & All 15 Worksheets', 'FAILED', (e as Error).message)
+  }
+
+  // -------------------------------------------------------------------------
+  // Test 59: Multi-System Subject Bays, System Titles with Bay, 5-System Bodies, Edit Pad Persistence, & Custom Rows Isolation
+  // -------------------------------------------------------------------------
+  try {
+    const {
+      formatSubjectBayPart,
+      formatSystemTitleWithBay,
+      areBodyItemsValidForSets,
+      generateDefaultBodyItems,
+    } = await import('../src/components/quotation/OfficialQuotationDocument')
+
+    // 1. Subject bay formatting across single, uniform multi, and mixed multi systems
+    const sameBaySubjectOk = formatSubjectBayPart([3, 3, 3]) === '3'
+    const mixedBaySubjectOk = formatSubjectBayPart([3, 2]) === '3, 2' && formatSubjectBayPart([3, 2, 4]) === '3, 2, 4'
+
+    // 2. Description of Goods system header with Bay count
+    const sysTitleFormattedOk = formatSystemTitleWithBay('SYSTEM A', 3) === 'SYSTEM A (3 BAY)' &&
+      formatSystemTitleWithBay('SYSTEM B', 2) === 'SYSTEM B (2 BAY)' &&
+      formatSystemTitleWithBay('SYSTEM A (2 BAY)', 3) === 'SYSTEM A (3 BAY)'
+
+    // 3. 5-system body items generation & stale 2-line rejection
+    const fiveSets: any[] = [
+      { id: 's1', system_title: 'SYSTEM A', bay: 3, quantity: 1, items: [{ model_code: 'DFMU', unit_qty: 4 }, { model_code: 'SFMU', unit_qty: 1 }] },
+      { id: 's2', system_title: 'SYSTEM B', bay: 2, quantity: 1, items: [{ model_code: 'DFMU', unit_qty: 2 }, { model_code: 'SFFU', unit_qty: 1 }] },
+      { id: 's3', system_title: 'SYSTEM C', bay: 4, quantity: 1, items: [{ model_code: 'DFMU', unit_qty: 3 }] },
+      { id: 's4', system_title: 'SYSTEM D', bay: 3, quantity: 1, items: [{ model_code: 'DFMU', unit_qty: 5 }] },
+      { id: 's5', system_title: 'SYSTEM E', bay: 5, quantity: 1, items: [{ model_code: 'DFMU', unit_qty: 2 }] },
+    ]
+    const staleTwoLineBodies: any[] = [
+      { id: 's1-DFMU-1', system_id: 's1', system_name: 'SYSTEM A', title: 'DFMU 3 BAY', per_bay_qty: 6, qty: 4, total_body: 24 },
+      { id: 's1-SFMU-2', system_id: 's1', system_name: 'SYSTEM A', title: 'SFMU 3 BAY', per_bay_qty: 3, qty: 1, total_body: 3 },
+    ]
+    const rejectsStaleTwoLines = !areBodyItemsValidForSets(staleTwoLineBodies, fiveSets)
+    const regeneratedFiveBodies = generateDefaultBodyItems({} as any, null, {}, fiveSets)
+    const distinctSystemsCovered = new Set(regeneratedFiveBodies.map((b) => b.system_id)).size
+    const validatesFiveSystems = areBodyItemsValidForSets(regeneratedFiveBodies, fiveSets)
+    const fiveSystemsBodiesOk = rejectsStaleTwoLines && regeneratedFiveBodies.length === 7 && distinctSystemsCovered === 5 && validatesFiveSystems
+
+    // 4. Verify Edit Pad persistence, multi-system default hidden bodies, and quotation-only custom rows in source
+    const pdfSrc = fs.readFileSync('src/components/quotation/OfficialQuotationDocument.tsx', 'utf8')
+    const editPadPersistenceOk = pdfSrc.includes('table_scale: tableScale') &&
+      pdfSrc.includes('table_density: tableDensity') &&
+      pdfSrc.includes('goods_col_widths: goodsColWidths') &&
+      pdfSrc.includes('body_col_widths: bodyColWidths') &&
+      pdfSrc.includes('body_placement_manual: bodyPlacementManual')
+    const multiHiddenByDefaultOk = pdfSrc.includes('if (isMultiSystem)') &&
+      pdfSrc.includes('if (project.summary?.body_placement_manual')
+    const customRowsIsolatedOk = pdfSrc.includes('// Preserve quotation-specific custom rows') &&
+      pdfSrc.includes('if (ef.visible === false) return null') &&
+      pdfSrc.includes('extra_fields: existingClient?.extra_fields || []')
+
+    if (sameBaySubjectOk && mixedBaySubjectOk && sysTitleFormattedOk && fiveSystemsBodiesOk && editPadPersistenceOk && multiHiddenByDefaultOk && customRowsIsolatedOk) {
+      logResult(59, 'Multi-System Subject Bays, System Titles with Bay, 5-System Bodies, Edit Pad Persistence, & Custom Rows Isolation', 'PASSED',
+        'Mixed bays -> "3, 2 BAY"; identical bays -> "3 BAY"; system headers render "SYSTEM A (3 BAY)"; 5-system stale 2-line bodies rejected & regenerated (7 rows across 5 systems); Edit Pad sizes/widths persisted; multi-system bodies hidden by default; custom rows strictly quotation-scoped.')
+    } else {
+      logResult(59, 'Multi-System Subject Bays, System Titles with Bay, 5-System Bodies, Edit Pad Persistence, & Custom Rows Isolation', 'FAILED',
+        `sameBay=${sameBaySubjectOk}, mixedBay=${mixedBaySubjectOk}, sysTitle=${sysTitleFormattedOk}, fiveBodies=${fiveSystemsBodiesOk} (count=${regeneratedFiveBodies.length}, sys=${distinctSystemsCovered}), editPad=${editPadPersistenceOk}, multiHidden=${multiHiddenByDefaultOk}, customRows=${customRowsIsolatedOk}`)
+    }
+  } catch (e) {
+    logResult(59, 'Multi-System Subject Bays, System Titles with Bay, 5-System Bodies, Edit Pad Persistence, & Custom Rows Isolation', 'FAILED', (e as Error).message)
+  }
+
+  // -------------------------------------------------------------------------
+  // Test 60: Excel Export Exact Quotation Values (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System Consolidated Workbook
+  // -------------------------------------------------------------------------
+  try {
+    const { exportMultiSystemWorkbookToXLSX } = await import('../src/lib/excelExport')
+
+    const wbTest = new Workbook(rawWb, SERVER_CONSTANTS)
+    wbTest.setOverrides({
+      'Total cal!A3': 6,
+      'Total cal!G4': 4,
+      'Total cal!G8': 1,
+      'Total cal!N24': 10000,
+      'Total cal!N25': 5000,
+      'Total cal!C26': 15,
+      '__profit_pct': 15,
+      '__discount_pct': 10,
+      '__include_installation': 0,
+    })
+
+    const capturedWrites: { name: string; wbObj: any }[] = []
+    const origWriteFile = XLSX.writeFile
+    XLSX.writeFile = (outWb: any, outName: string) => {
+      capturedWrites.push({ name: outName, wbObj: outWb })
+    }
+
+    try {
+      const sumSingle = summarize(wbTest, 15, 10, false, 0)
+      exportWorkbookToXLSX(wbTest, 'Test_Exact_Values.xlsx', undefined, {
+        setsQty: 1,
+        subtotalBeforeGst: Math.round(sumSingle.beforeGst),
+        sysTransport: 10000,
+        sysAccommodation: 5000,
+        isActual: true,
+        profitPct: 15,
+        discountPct: 10,
+        includeInstallation: false,
+        extraAmount: 0,
+      })
+
+      const singleWs = capturedWrites[0]?.wbObj?.Sheets?.['Total cal']
+      const exactC26Ok = Number(singleWs?.['C26']?.v) === 15
+      const exactN26Ok = singleWs?.['N26']?.f === 'SUM(N22:N25)*C26/100'
+      const exactS5Ok = singleWs?.['S5']?.f === 'N27'
+      const exactS6Ok = singleWs?.['S6']?.f === 'N26'
+      const exactS8Ok = singleWs?.['S8']?.f === 'C26' && Number(singleWs?.['S8']?.v) === 15
+      const exactN23Ok = Number(singleWs?.['N23']?.v) === 0
+
+      // Now test Multi-System Consolidated Export (2 systems)
+      const ovA = { 'Total cal!A3': 6, 'Total cal!G4': 4, 'Total cal!G8': 1, 'Total cal!N24': 6000, 'Total cal!N25': 3000, 'Total cal!C26': 15, '__profit_pct': 15, '__discount_pct': 10, '__include_installation': 1 }
+      wbTest.setOverrides(ovA)
+      const sumA = summarize(wbTest, 15, 10, true, 0)
+
+      const ovB = { 'Total cal!A3': 4, 'Total cal!G4': 2, 'Total cal!G12': 1, 'Total cal!N24': 4000, 'Total cal!N25': 2000, 'Total cal!C26': 15, '__profit_pct': 15, '__discount_pct': 10, '__include_installation': 1 }
+      wbTest.setOverrides(ovB)
+      const sumB = summarize(wbTest, 15, 10, true, 0)
+
+      exportMultiSystemWorkbookToXLSX(
+        wbTest,
+        [
+          {
+            name: 'SYSTEM A',
+            bay: 3,
+            setsQty: 2,
+            overrides: ovA,
+            formulaOverrides: {},
+            profitPct: 15,
+            discountPct: 10,
+            includeInstallation: true,
+            extraAmount: 0,
+            allocatedTransport: 6000,
+            allocatedAccommodation: 3000,
+            subtotalBeforeGst: Math.round(sumA.beforeGst * 2),
+            preDiscountTotal: Math.round(sumA.subtotalWithProfit * 2),
+            profitAmount: Math.round(sumA.profitAmount * 2),
+            summary: sumA,
+          },
+          {
+            name: 'SYSTEM B',
+            bay: 2,
+            setsQty: 1,
+            overrides: ovB,
+            formulaOverrides: {},
+            profitPct: 15,
+            discountPct: 10,
+            includeInstallation: true,
+            extraAmount: 0,
+            allocatedTransport: 4000,
+            allocatedAccommodation: 2000,
+            subtotalBeforeGst: Math.round(sumB.beforeGst),
+            preDiscountTotal: Math.round(sumB.subtotalWithProfit),
+            profitAmount: Math.round(sumB.profitAmount),
+            summary: sumB,
+          },
+        ],
+        'Test_Multi_System.xlsx',
+        {
+          title: 'Multi Sys QTN',
+          clientName: 'CAMEL INDIA PRIVATE LIMITED',
+          qtnNo: '1797',
+          isActual: true,
+          profitPct: 15,
+          discountPct: 10,
+          includeInstallation: true,
+        },
+      )
+
+      const multiWb = capturedWrites[1]?.wbObj
+      const expectedSheets = [
+        'Total cal',
+        'SYSTEM A - Total cal',
+        'SYSTEM A - SHEARING SIZE',
+        'SYSTEM A - HARDWARE LIST',
+        'SYSTEM B - Total cal',
+        'SYSTEM B - SHEARING SIZE',
+        'SYSTEM B - HARDWARE LIST',
+      ]
+      const actualSheets = multiWb?.SheetNames || []
+      const multiSheetOrderOk = expectedSheets.length === actualSheets.length &&
+        expectedSheets.every((s, idx) => actualSheets[idx] === s)
+
+      const masterWs = multiWb?.Sheets?.['Total cal']
+      let hasSysALink = false
+      let hasSysBLink = false
+      let hasBreakdownText = false
+      let multiErrorCount = 0
+
+      if (masterWs) {
+        for (const [k, cell] of Object.entries<any>(masterWs)) {
+          if (k.startsWith('!') || !cell) continue
+          if (typeof cell.f === 'string') {
+            if (cell.f.includes("'SYSTEM A - Total cal'!")) hasSysALink = true
+            if (cell.f.includes("'SYSTEM B - Total cal'!")) hasSysBLink = true
+          }
+          if (typeof cell.v === 'string' && cell.v.includes('SET-WISE & MODEL-WISE BREAKDOWN')) {
+            hasBreakdownText = true
+          }
+        }
+      }
+
+      for (const sName of actualSheets) {
+        const ws = multiWb.Sheets[sName]
+        for (const [k, cell] of Object.entries<any>(ws || {})) {
+          if (k.startsWith('!') || !cell) continue
+          if (typeof cell.f === 'string' && /CONST_STEEL_FACTOR|CONST_SURFACE_FACTOR|#REF!|#NAME\?/i.test(cell.f)) {
+            multiErrorCount++
+          }
+          if (cell.t === 'e' || (typeof cell.v === 'string' && (/^#(NAME|REF|VALUE|DIV\/0|N\/A|NUM)!$/i.test(cell.v.trim()) || cell.v.includes('#ERROR')))) {
+            multiErrorCount++
+          }
+        }
+      }
+
+      if (exactC26Ok && exactN26Ok && exactS5Ok && exactS6Ok && exactS8Ok && exactN23Ok && multiSheetOrderOk && hasSysALink && hasSysBLink && hasBreakdownText && multiErrorCount === 0) {
+        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System 3-Sheet Workbook Export', 'PASSED',
+          `Single-sys: C26=${singleWs['C26']?.v}%, N26='${singleWs['N26']?.f}', S5='${singleWs['S5']?.f}', S8='${singleWs['S8']?.f}' (${singleWs['S8']?.v}%), N23=${singleWs['N23']?.v}; Multi-sys: 7 ordered tabs [Total cal + 3 sheets x 2 systems] with live cross-sheet links & per-set breakdown and 0 formula/error leaks.`)
+      } else {
+        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System 3-Sheet Workbook Export', 'FAILED',
+          `exactC26=${exactC26Ok}, exactN26=${exactN26Ok} (${singleWs?.['N26']?.f}), exactS5=${exactS5Ok} (${singleWs?.['S5']?.f}), exactS6=${exactS6Ok}, exactS8=${exactS8Ok}, exactN23=${exactN23Ok}, multiSheetOrder=${multiSheetOrderOk} (${actualSheets.join(', ')}), sysALink=${hasSysALink}, sysBLink=${hasSysBLink}, breakdown=${hasBreakdownText}, multiErrors=${multiErrorCount}`)
+      }
+    } finally {
+      XLSX.writeFile = origWriteFile
+    }
+  } catch (e) {
+    logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System 3-Sheet Workbook Export', 'FAILED', (e as Error).message)
   }
 
   console.log('\n======================================================================')

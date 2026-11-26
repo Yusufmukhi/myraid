@@ -1,7 +1,8 @@
 import _XLSX from 'xlsx-js-style'
 const XLSX: any = (_XLSX as any)?.utils ? _XLSX : ((_XLSX as any)?.default || _XLSX)
 import { Workbook, addr } from './engine'
-import { getSheetMeta, CellStyle } from './excelStyles'
+import { getSheetMeta } from './excelStyles'
+import { getWidthExtra } from './model'
 
 export interface C2CExportData {
   profit: number
@@ -26,6 +27,37 @@ export interface ExcelExportOptions {
   profitAmount?: number
   profitPct?: number
   discountPct?: number
+  includeInstallation?: boolean
+  extraAmount?: number
+}
+
+export interface MultiSystemExcelEntry {
+  name: string
+  bay: number
+  setsQty: number
+  overrides: Record<string, number | null>
+  formulaOverrides: Record<string, string>
+  profitPct: number
+  discountPct: number
+  includeInstallation: boolean
+  extraAmount: number
+  allocatedTransport: number
+  allocatedAccommodation: number
+  subtotalBeforeGst: number
+  preDiscountTotal?: number
+  profitAmount?: number
+  summary: any
+  c2cData?: C2CExportData
+}
+
+export interface MultiSystemExcelOptions {
+  title?: string
+  clientName?: string
+  qtnNo?: string
+  isActual: boolean
+  profitPct: number
+  discountPct: number
+  includeInstallation: boolean
 }
 
 /**
@@ -38,7 +70,6 @@ export function resolveExcelFormula(
   namedConstants: Record<string, number>,
 ): string | null {
   const expr = rawFormula.startsWith('=') ? rawFormula.slice(1) : rawFormula
-  // Split preserving double-quoted string literals so text inside "..." is never modified
   const parts = expr.split(/("(?:[^"]|"")*")/g)
   const resolved = parts
     .map((part, idx) => {
@@ -57,7 +88,6 @@ export function resolveExcelFormula(
     })
     .join('')
 
-  // If any CONST_* identifier is still unresolved outside quotes, return null so cached value stays intact
   const stripped = resolved.replace(/"(?:[^"]|"")*"/g, '')
   if (/\bCONST_[A-Za-z0-9_]+\b/.test(stripped)) {
     return null
@@ -66,458 +96,1089 @@ export function resolveExcelFormula(
 }
 
 /**
- * Exports a full multi-sheet Workbook instance to a genuine styled .xlsx Excel spreadsheet file.
- * Preserves the exact color scheme, column widths, and merged cells from the original exam.xlsx file.
- * - Yellow (FFFF00): Specifications, dimensions, thicknesses, and price inputs
- * - Green (92D050): Calculated unit rates, steel weights, and totals
- * - Red (FF0000): Total amounts and special sheet constraints
- * - Blue (00B0F0): Ex-Works subtotal and section headers
- * - Displays tables with native gridlines visible across all worksheets.
- * - Places Subtotal Before GST at Total cal!S5, C2C Profit at S6, C2C Total at S7, and C2C Ratio at S8.
- * - Allocates transportation and accommodation per body on Total cal!N24 & N25.
- * - Multiplies model unit quantities by setsQty on Total cal (G4, G8, G12, G16, G20).
- * - Writes SET label in O22 and sets quantity value in P22.
- * - Dynamic system model summary in Shearing size row 6 B6 and set count in E6.
- * - Corrects Shearing size row 45 stiffener gauge reference to Total cal!J3 and zeros H45 if stiffener is 0.
+ * Rewrites cross-sheet references when exporting a 3-sheet subset per system
+ * (Total cal, SHEARING SIZE, HARDWARE LIST). If the formula references any sheet outside
+ * allowedTargetSheets (e.g. DFMU, Sheet1, kg), returns null so the cell preserves its
+ * live evaluated value without causing #REF! in Excel.
  */
-export function exportWorkbookToXLSX(
+export function rewriteFormulaForSubset(
+  expr: string,
+  sheetRenameMap: Record<string, string>,
+  allowedTargetSheets: Set<string>,
+): string | null {
+  const parts = expr.split(/("(?:[^"]|"")*")/g)
+  let hasExternalDisallowedRef = false
+
+  const rewritten = parts
+    .map((part, idx) => {
+      if (idx % 2 === 1) return part // inside quotes
+      return part.replace(/(?:'([^']+)'|([A-Za-z0-9_.\-]+))!/g, (_match, quoted, bare) => {
+        const refName = quoted || bare
+        if (!allowedTargetSheets.has(refName)) {
+          hasExternalDisallowedRef = true
+          return _match
+        }
+        const renamed = sheetRenameMap[refName] || refName
+        const needsQuotes = /[^A-Za-z0-9_.]/.test(renamed)
+        return (needsQuotes ? `'${renamed.replace(/'/g, "''")}'` : renamed) + '!'
+      })
+    })
+    .join('')
+
+  return hasExternalDisallowedRef ? null : rewritten
+}
+
+function makeUniqueTabName(prefix: string, suffix: string, usedNames: Set<string>): string {
+  const cleanPrefix = (prefix || 'Sys').replace(/[\\/?*[\]:]/g, '_').trim()
+  const sep = suffix ? ' - ' : ''
+  const maxPrefixLen = Math.max(4, 31 - sep.length - suffix.length)
+  let candidate = `${cleanPrefix.slice(0, maxPrefixLen)}${sep}${suffix}`.slice(0, 31)
+  let counter = 2
+  while (usedNames.has(candidate)) {
+    const tag = `_${counter++}`
+    const adjLen = Math.max(2, maxPrefixLen - tag.length)
+    candidate = `${cleanPrefix.slice(0, adjLen)}${tag}${sep}${suffix}`.slice(0, 31)
+  }
+  usedNames.add(candidate)
+  return candidate
+}
+
+const THIN_BORDER = {
+  top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  right: { style: 'thin', color: { rgb: 'CBD5E1' } },
+}
+
+const DARK_BORDER = {
+  top: { style: 'thin', color: { rgb: '334155' } },
+  bottom: { style: 'thin', color: { rgb: '334155' } },
+  left: { style: 'thin', color: { rgb: '334155' } },
+  right: { style: 'thin', color: { rgb: '334155' } },
+}
+
+/**
+ * Temporarily applies scaled unit quantities (G4, G8, G12, G16, G20), profit %, and
+ * transport/accommodation onto `wb` so every cross-sheet formula evaluates for `setsQty` sets,
+ * invokes `fn`, and guarantees restoring original overrides afterwards.
+ */
+function withScaledWorkbookOverrides<T>(
   wb: Workbook,
-  filename: string,
+  setsQty: number,
+  profitPct: number | undefined,
+  allocatedTransport: number | undefined,
+  allocatedAccommodation: number | undefined,
+  fn: () => T,
+): T {
+  const origOverrides = wb.getOverrides()
+  const origFormulaOverrides = wb.getFormulaOverrides()
+  const scaled: Record<string, number | null> = { ...origOverrides }
+
+  if (setsQty > 1) {
+    const qtyRows = [3, 7, 11, 15, 19]
+    const qtyKeys = ['Total cal!G4', 'Total cal!G8', 'Total cal!G12', 'Total cal!G16', 'Total cal!G20']
+    qtyRows.forEach((r, idx) => {
+      const baseVal = Number(wb.value('Total cal', r, 6) ?? wb.raw('Total cal', r, 6)) || 0
+      scaled[qtyKeys[idx]] = baseVal * setsQty
+    })
+  }
+  if (allocatedTransport !== undefined) {
+    scaled['Total cal!N24'] = allocatedTransport
+  }
+  if (allocatedAccommodation !== undefined) {
+    scaled['Total cal!N25'] = allocatedAccommodation
+  }
+  if (profitPct !== undefined && !isNaN(profitPct)) {
+    scaled['Total cal!C26'] = profitPct
+  }
+
+  wb.setOverrides(scaled)
+  try {
+    return fn()
+  } finally {
+    wb.setOverrides(origOverrides)
+    wb.setFormulaOverrides(origFormulaOverrides)
+  }
+}
+
+interface CrossSheetSubsetConfig {
+  sheetRenameMap: Record<string, string>
+  allowedTargetSheets: Set<string>
+}
+
+function buildStyledWorksheet(
+  wb: Workbook,
+  sheetName: string,
   c2cData?: C2CExportData,
-  options?: ExcelExportOptions
-) {
-  const book = XLSX.utils.book_new()
+  options?: ExcelExportOptions,
+  crossSheetConfig?: CrossSheetSubsetConfig,
+): any | null {
+  const sheetData = wb.sheets.get(sheetName)
+  if (!sheetData) return null
+
   const namedConstants = wb.getNamedConstants ? wb.getNamedConstants() : {}
   const setsQty = Math.max(1, Number(options?.setsQty ?? c2cData?.setsQty) || 1)
-  const subtotalBeforeGst = options?.subtotalBeforeGst ?? c2cData?.subtotalBeforeGst ?? 0
-  const allocatedTransport = options?.sysTransport ?? c2cData?.sysTransport
-  const allocatedAccommodation = options?.sysAccommodation ?? c2cData?.sysAccommodation
+  const isActualExport = Boolean(options?.isActual || !c2cData)
+  const includeInstallation = options?.includeInstallation !== false
+  const extraAmount = isNaN(Number(options?.extraAmount)) ? 0 : Math.max(0, Number(options?.extraAmount))
+  const discountPct = isNaN(Number(options?.discountPct)) ? 0 : Math.max(0, Number(options?.discountPct))
 
-  // Read active system model quantities from Total cal for Shearing Size row 6
+  const width = Number(wb.value('Total cal', 2, 3)) || 1830
+  const extraDfmu = getWidthExtra(width, 'DFMU')
+  const extraSfmu = getWidthExtra(width, 'SFMU')
+  const extraDfmuD = getWidthExtra(width, 'DFMU-D')
+
   const dfmuQ = Number(wb.value('Total cal', 3, 6) ?? wb.raw('Total cal', 3, 6)) || 0
   const sfmuQ = Number(wb.value('Total cal', 7, 6) ?? wb.raw('Total cal', 7, 6)) || 0
   const sffuQ = Number(wb.value('Total cal', 11, 6) ?? wb.raw('Total cal', 11, 6)) || 0
   const dffuQ = Number(wb.value('Total cal', 15, 6) ?? wb.raw('Total cal', 15, 6)) || 0
   const dfmudQ = Number(wb.value('Total cal', 19, 6) ?? wb.raw('Total cal', 19, 6)) || 0
+  const totalUnitsScaled = dfmuQ + sfmuQ + sffuQ + dffuQ + dfmudQ
+  const totalExtraAmountSum = extraAmount * totalUnitsScaled
 
-  const modelParts: string[] = []
-  if (dfmuQ > 0) modelParts.push(`${dfmuQ} DFMU`)
-  if (sffuQ > 0) modelParts.push(`${sffuQ} SFFU`)
-  if (sfmuQ > 0) modelParts.push(`${sfmuQ} SFMU`)
-  if (dffuQ > 0) modelParts.push(`${dffuQ} DFFU`)
-  if (dfmudQ > 0) modelParts.push(`${dfmudQ} DFMU-D`)
+  const unitModelParts: string[] = []
+  const perSetDiv = setsQty > 1 ? setsQty : 1
+  if (dfmuQ > 0) unitModelParts.push(`${Math.round(dfmuQ / perSetDiv)} DFMU`)
+  if (sffuQ > 0) unitModelParts.push(`${Math.round(sffuQ / perSetDiv)} SFFU`)
+  if (sfmuQ > 0) unitModelParts.push(`${Math.round(sfmuQ / perSetDiv)} SFMU`)
+  if (dffuQ > 0) unitModelParts.push(`${Math.round(dffuQ / perSetDiv)} DFFU`)
+  if (dfmudQ > 0) unitModelParts.push(`${Math.round(dfmudQ / perSetDiv)} DFMU-D`)
+  const systemModelSummary = options?.modelSummaryStr || (unitModelParts.length > 0 ? unitModelParts.join(' + ') : '1 SYSTEM')
 
-  const systemModelSummary = options?.modelSummaryStr || (modelParts.length > 0 ? modelParts.join(' + ') : '1 SYSTEM')
+  // Compute exact financial metrics for Total cal cached values
+  const effectiveProfitPct = (options?.profitPct !== undefined && !isNaN(options.profitPct))
+    ? options.profitPct
+    : (Number(wb.value('Total cal', 25, 2)) || 25)
+  const d4Val = (Number(wb.value('Total cal', 3, 3)) || 0) + extraDfmu
+  const d8Val = (Number(wb.value('Total cal', 7, 3)) || 0) + extraSfmu
+  const d12Val = Number(wb.value('Total cal', 11, 3)) || 0
+  const d16Val = Number(wb.value('Total cal', 15, 3)) || 0
+  const d20Val = (Number(wb.value('Total cal', 19, 3)) || 0) + extraDfmuD
 
-  for (const sheetName of wb.names) {
-    const sheetData = wb.sheets.get(sheetName)
-    if (!sheetData) continue
+  const exWorksTotal = dfmuQ * d4Val + sfmuQ * d8Val + sffuQ * d12Val + dffuQ * d16Val + dfmudQ * d20Val
+  const instTotal = includeInstallation ? (Number(wb.value('Total cal', 22, 13)) || 0) : 0
+  const transTotal = Number(wb.value('Total cal', 23, 13)) || 0
+  const accTotal = Number(wb.value('Total cal', 24, 13)) || 0
+  const directCostBase = exWorksTotal + instTotal + transTotal + accTotal + totalExtraAmountSum
+  const computedProfit = directCostBase * (effectiveProfitPct / 100)
+  const subtotalWithProfit = directCostBase + computedProfit
+  const discountAmount = subtotalWithProfit * (discountPct / 100)
+  const afterDiscount = subtotalWithProfit - discountAmount
+  const gstAmount = afterDiscount * 0.18
+  const grandTotalSales = afterDiscount + gstAmount
 
-    const normSheet = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '')
-    const isShearing = normSheet.includes('shearing')
+  const normSheet = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const isShearing = normSheet.includes('shearing')
 
-    const rows = sheetData.rows
-    const cols = sheetData.cols
-    // Ensure Total cal has at least 23 columns (Cols A to W)
-    const targetCols = sheetName === 'Total cal' ? Math.max(cols, 23) : cols
-    const aoa: (string | number | boolean | null)[][] = []
+  const rows = sheetData.rows
+  const cols = sheetData.cols
+  const targetCols = sheetName === 'Total cal' ? Math.max(cols, 23) : cols
+  const aoa: (string | number | boolean | null)[][] = []
 
-    for (let r = 0; r < rows; r++) {
-      const rowArr: (string | number | boolean | null)[] = []
-      for (let c = 0; c < targetCols; c++) {
-        if (c >= cols) {
-          rowArr.push(null)
+  for (let r = 0; r < rows; r++) {
+    const rowArr: (string | number | boolean | null)[] = []
+    for (let c = 0; c < targetCols; c++) {
+      if (sheetName === 'Total cal') {
+        // Unit rates with width extra when width >= 3000
+        if (c === 3 && r === 3 && extraDfmu > 0) { rowArr.push(d4Val); continue }
+        if (c === 3 && r === 7 && extraSfmu > 0) { rowArr.push(d8Val); continue }
+        if (c === 3 && r === 19 && extraDfmuD > 0) { rowArr.push(d20Val); continue }
+
+        // N22 (r=21, c=13): Total ex-works
+        if (r === 21 && c === 13) { rowArr.push(exWorksTotal); continue }
+        // N23 (r=22, c=13): Installation (0 if excluded)
+        if (r === 22 && c === 13) { rowArr.push(instTotal); continue }
+        // N24 (r=23, c=13): Transport
+        if (r === 23 && c === 13) { rowArr.push(transTotal); continue }
+        // N25 (r=24, c=13): Accommodation
+        if (r === 24 && c === 13) { rowArr.push(accTotal); continue }
+        // Extra amount cell (J25 label, K25 value) if extraAmount > 0
+        if (r === 24 && c === 9 && totalExtraAmountSum > 0) { rowArr.push('EXTRA AMT'); continue }
+        if (r === 24 && c === 10 && totalExtraAmountSum > 0) { rowArr.push(totalExtraAmountSum); continue }
+
+        // C26 (r=25, c=2): Actual Quotation Profit %
+        if (r === 25 && c === 2) { rowArr.push(effectiveProfitPct); continue }
+        // N26 (r=25, c=13): Profit on SUM(N22:N25) * C26 / 100
+        if (r === 25 && c === 13) { rowArr.push(computedProfit); continue }
+        // N27 (r=26, c=13): BEFORE GST (Cost Base + Profit)
+        if (r === 26 && c === 13) { rowArr.push(subtotalWithProfit); continue }
+        // N28 (r=27, c=13): 18% GST
+        if (r === 27 && c === 13) { rowArr.push(gstAmount); continue }
+        // N29 (r=28, c=13): SALES (Incl. GST)
+        if (r === 28 && c === 13) { rowArr.push(grandTotalSales); continue }
+
+        // R5:S8 & Discount/GST summary cards
+        if (r === 4 && c === 17) { rowArr.push('Subtotal Before GST'); continue }
+        if (r === 4 && c === 18) { rowArr.push(c2cData ? (options?.subtotalBeforeGst ?? subtotalWithProfit) : subtotalWithProfit); continue }
+
+        if (r === 5 && c === 17) { rowArr.push(isActualExport ? 'Profit Amount' : 'C2C Profit'); continue }
+        if (r === 5 && c === 18) {
+          rowArr.push(c2cData ? Math.round(c2cData.profit) : Math.round(computedProfit))
           continue
         }
-        // Total cal sheet customizations
-        if (sheetName === 'Total cal') {
-          // Model quantities: multiply unit quantity by setsQty when exporting
-          // G4 (DFMU: r=3), G8 (SFMU: r=7), G12 (SFFU: r=11), G16 (DFFU: r=15), G20 (DFMU-D: r=19)
-          if (c === 6 && [3, 7, 11, 15, 19].includes(r)) {
-            const rawVal = wb.value(sheetName, r, c) ?? wb.raw(sheetName, r, c)
-            const numVal = typeof rawVal === 'number' ? rawVal : Number(rawVal) || 0
-            rowArr.push(setsQty > 1 ? numVal * setsQty : numVal)
-            continue
-          }
 
-          // Row 24 (index r=23): N24 (c=13) Transport allocated per body for this system
-          if (r === 23 && c === 13 && allocatedTransport !== undefined) {
-            rowArr.push(allocatedTransport)
-            continue
-          }
-
-          // Row 25 (index r=24): N25 (c=13) Accommodation allocated per body for this system
-          if (r === 24 && c === 13 && allocatedAccommodation !== undefined) {
-            rowArr.push(allocatedAccommodation)
-            continue
-          }
-
-          // Row 5: R5 (c=17) Subtotal Before GST label, S5 (c=18) value
-          if (r === 4 && c === 17) { rowArr.push('Subtotal Before GST'); continue }
-          if (r === 4 && c === 18) { rowArr.push(subtotalBeforeGst || Number(wb.value(sheetName, 26, 13)) || 0); continue }
-
-          const isActualExport = Boolean(options?.isActual || !c2cData)
-
-          // Row 6: R6 (c=17) Profit label, S6 (c=18) value
-          if (r === 5 && c === 17) { rowArr.push(isActualExport ? 'Profit Amount' : 'C2C Profit'); continue }
-          if (r === 5 && c === 18) {
-            const pVal = c2cData
-              ? Math.round(c2cData.profit)
-              : Math.round(options?.profitAmount ?? (Number(wb.value(sheetName, 25, 13)) || 0))
-            rowArr.push(pVal)
-            continue
-          }
-
-          // Row 7: R7 (c=17) Total label, S7 (c=18) value
-          if (r === 6 && c === 17) { rowArr.push(isActualExport ? 'Quotation Sales' : 'C2C Total'); continue }
-          if (r === 6 && c === 18) {
-            const tVal = c2cData
-              ? Math.round(c2cData.total)
-              : Math.round(subtotalBeforeGst || Number(wb.value(sheetName, 26, 13)) || 0)
-            rowArr.push(tVal)
-            continue
-          }
-
-          // Row 8: R8 (c=17) Ratio/Margin label, S8 (c=18) value
-          if (r === 7 && c === 17) { rowArr.push(isActualExport ? 'Profit Margin %' : 'C2C Ratio'); continue }
-          if (r === 7 && c === 18) {
-            const rVal = c2cData
-              ? Number(c2cData.ratio.toFixed(2))
-              : (options?.profitPct !== undefined ? options.profitPct : (Number(wb.value(sheetName, 25, 2)) || 25))
-            rowArr.push(rVal)
-            continue
-          }
-
-          // Row 22: O22 (c=14) SET label, P22 (c=15) sets quantity value
-          if (r === 21 && c === 14) { rowArr.push('SET'); continue }
-          if (r === 21 && c === 15) { rowArr.push(setsQty); continue }
+        if (r === 6 && c === 17) { rowArr.push(isActualExport ? 'Quotation Sales' : 'C2C Total'); continue }
+        if (r === 6 && c === 18) {
+          rowArr.push(c2cData ? Math.round(c2cData.total) : Math.round(afterDiscount))
+          continue
         }
 
-        // Shearing size sheet customizations
-        if (isShearing) {
-          // Row 6 (r=5): B6 (c=1) system models, E6 (c=4) set count, F6 (c=5) SET/SETS
-          if (r === 5) {
-            if (c === 1) { rowArr.push(systemModelSummary); continue }
-            if (c === 4) { rowArr.push(setsQty); continue }
-            if (c === 5) { rowArr.push(setsQty > 1 ? 'SETS' : 'SET'); continue }
-          }
-
-          // Row 45 (r=44): stiffener gauge and quantity corrections
-          if (r === 44) {
-            if (c === 5) {
-              // F45: shelf stiffener gauge from Total cal!J3 (r=2, c=9)
-              const stiffenerVal = wb.value('Total cal', 2, 9)
-              const numOrStr = typeof stiffenerVal === 'number' || typeof stiffenerVal === 'string' ? stiffenerVal : 0
-              rowArr.push(numOrStr)
-              continue
-            }
-            if (c === 7) {
-              // H45: if stiffener is 0, show 0, else show Sheet1!I82
-              const stiffenerVal = wb.value('Total cal', 2, 9)
-              if (!stiffenerVal || Number(stiffenerVal) === 0) {
-                rowArr.push(0)
-              } else {
-                const h45Val = wb.value(sheetName, 44, 7) ?? wb.value('Sheet1', 81, 8) ?? 0
-                const numOrStr = typeof h45Val === 'number' || typeof h45Val === 'string' ? h45Val : 0
-                rowArr.push(numOrStr)
-              }
-              continue
-            }
-          }
+        if (r === 7 && c === 17) { rowArr.push(isActualExport ? 'Profit Margin %' : 'C2C Ratio'); continue }
+        if (r === 7 && c === 18) {
+          rowArr.push(c2cData ? Number(c2cData.ratio.toFixed(2)) : effectiveProfitPct)
+          continue
         }
 
-        const evaluatedVal = wb.value(sheetName, r, c)
-        if (typeof evaluatedVal === 'number') {
-          rowArr.push(evaluatedVal)
-        } else if (typeof evaluatedVal === 'string') {
-          rowArr.push(evaluatedVal)
-        } else if (typeof evaluatedVal === 'boolean') {
-          rowArr.push(evaluatedVal)
-        } else {
-          const raw = wb.raw(sheetName, r, c)
-          if (typeof raw === 'number' || typeof raw === 'string') {
-            rowArr.push(raw)
+        if (isActualExport) {
+          if (discountPct > 0) {
+            if (r === 8 && c === 17) { rowArr.push('Discount %'); continue }
+            if (r === 8 && c === 18) { rowArr.push(discountPct); continue }
+            if (r === 9 && c === 17) { rowArr.push('Discount Amount'); continue }
+            if (r === 9 && c === 18) { rowArr.push(discountAmount); continue }
+            if (r === 10 && c === 17) { rowArr.push('After Discount'); continue }
+            if (r === 10 && c === 18) { rowArr.push(afterDiscount); continue }
+            if (r === 11 && c === 17) { rowArr.push('18% GST'); continue }
+            if (r === 11 && c === 18) { rowArr.push(gstAmount); continue }
+            if (r === 12 && c === 17) { rowArr.push('Grand Total (Incl. GST)'); continue }
+            if (r === 12 && c === 18) { rowArr.push(grandTotalSales); continue }
           } else {
-            rowArr.push(null)
+            if (r === 8 && c === 17) { rowArr.push('18% GST'); continue }
+            if (r === 8 && c === 18) { rowArr.push(gstAmount); continue }
+            if (r === 9 && c === 17) { rowArr.push('Grand Total (Incl. GST)'); continue }
+            if (r === 9 && c === 18) { rowArr.push(grandTotalSales); continue }
           }
         }
+
+        // Row 22: O22 (c=14) SET label, P22 (c=15) sets quantity value
+        if (r === 21 && c === 14) { rowArr.push('SET'); continue }
+        if (r === 21 && c === 15) { rowArr.push(setsQty); continue }
       }
-      aoa.push(rowArr)
-    }
 
-    const ws = XLSX.utils.aoa_to_sheet(aoa)
+      if (c >= cols) {
+        rowArr.push(null)
+        continue
+      }
 
-    // Restore formulas without the leading '=' so Excel evaluates them natively
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        // Do not overwrite our special cells on Total cal
-        if (sheetName === 'Total cal') {
-          if (c === 6 && [3, 7, 11, 15, 19].includes(r)) continue
-          if ((r >= 4 && r <= 7) && (c === 17 || c === 18)) continue
-          if (r === 21 && (c === 14 || c === 15)) continue
-          if (r === 23 && c === 13 && allocatedTransport !== undefined) continue
-          if (r === 24 && c === 13 && allocatedAccommodation !== undefined) continue
+      // Shearing size sheet customizations
+      if (isShearing) {
+        if (r === 5) {
+          if (c === 1) { rowArr.push(systemModelSummary); continue }
+          if (c === 4) { rowArr.push(setsQty); continue }
+          if (c === 5) { rowArr.push(setsQty > 1 ? 'SETS' : 'SET'); continue }
         }
-
-        // Shearing size sheet customizations: do not overwrite row 6 and row 45
-        if (isShearing && r === 5 && (c === 1 || c === 4 || c === 5)) {
-          continue
-        }
-        if (isShearing && r === 44 && c === 5) {
-          const cellRef = addr(r, c)
-          if (ws[cellRef]) {
-            ws[cellRef].f = "'Total cal'!J3"
+        if (r === 44) {
+          if (c === 5) {
+            const stiffenerVal = wb.value('Total cal', 2, 9)
+            rowArr.push(typeof stiffenerVal === 'number' || typeof stiffenerVal === 'string' ? stiffenerVal : 0)
+            continue
           }
-          continue
-        }
-        if (isShearing && r === 44 && c === 7) {
-          const cellRef = addr(r, c)
-          if (ws[cellRef]) {
-            ws[cellRef].f = "IF('Total cal'!J3=0,0,Sheet1!I82)"
-          }
-          continue
-        }
-
-        if (!wb.isOverridden?.(sheetName, r, c)) {
-          const raw = wb.raw(sheetName, r, c)
-          if (typeof raw === 'string' && raw.startsWith('=')) {
-            const resolvedFormula = resolveExcelFormula(raw, namedConstants)
-            const cellRef = addr(r, c)
-            if (ws[cellRef] && resolvedFormula !== null) {
-              ws[cellRef].f = resolvedFormula
+          if (c === 7) {
+            const stiffenerVal = wb.value('Total cal', 2, 9)
+            if (!stiffenerVal || Number(stiffenerVal) === 0) {
+              rowArr.push(0)
+            } else {
+              const h45Val = wb.value(sheetName, 44, 7) ?? wb.value('Sheet1', 81, 8) ?? 0
+              rowArr.push(typeof h45Val === 'number' || typeof h45Val === 'string' ? h45Val : 0)
             }
+            continue
           }
         }
       }
+
+      const evaluatedVal = wb.value(sheetName, r, c)
+      if (typeof evaluatedVal === 'number' || typeof evaluatedVal === 'string' || typeof evaluatedVal === 'boolean') {
+        rowArr.push(evaluatedVal)
+      } else {
+        const raw = wb.raw(sheetName, r, c)
+        rowArr.push(typeof raw === 'number' || typeof raw === 'string' ? raw : null)
+      }
     }
+    aoa.push(rowArr)
+  }
 
-    // Load authentic template styling, column widths, and merges from original exam.xlsx
-    const meta = getSheetMeta(sheetName)
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
 
-    // Apply exact column widths (preventing giant / stretched cells)
-    if (meta?.cols && meta.cols.length > 0) {
-      ws['!cols'] = meta.cols.map((col: any) => ({ ...col }))
+  const applyFormula = (r: number, c: number, expr: string | null) => {
+    if (!expr) return
+    const ref = addr(r, c)
+    if (!ws[ref]) return
+    if (crossSheetConfig) {
+      const rewritten = rewriteFormulaForSubset(expr, crossSheetConfig.sheetRenameMap, crossSheetConfig.allowedTargetSheets)
+      if (rewritten !== null) {
+        ws[ref].f = rewritten
+      }
     } else {
-      // Natural compact fallback: clamp between 10 and 18 chars, ignoring long multi-column titles
-      const fallbackCols = []
-      for (let c = 0; c < Math.min(cols, 20); c++) {
-        let maxLen = 8
-        for (let r = 0; r < Math.min(rows, 35); r++) {
-          const val = aoa[r]?.[c]
-          if (val !== null && val !== undefined) {
-            const s = String(val)
-            if (s.length > 0 && s.length <= 18) {
-              if (s.length > maxLen) maxLen = s.length
-            }
+      ws[ref].f = expr
+    }
+  }
+
+  // Restore / inject live formulas without leading '=' so Excel evaluates everything dynamically
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < targetCols; c++) {
+      if (sheetName === 'Total cal') {
+        // Explicit custom Total cal formulas
+        if (c === 3 && r === 3 && extraDfmu > 0) { applyFormula(r, c, `DFMU!E85+${extraDfmu}`); continue }
+        if (c === 3 && r === 7 && extraSfmu > 0) { applyFormula(r, c, `SFMU!E88+${extraSfmu}`); continue }
+        if (c === 3 && r === 19 && extraDfmuD > 0) { applyFormula(r, c, `'DFMU-D'!E97+${extraDfmuD}`); continue }
+
+        if (c === 6 && [3, 7, 11, 15, 19].includes(r)) continue // scaled quantities are numeric inputs
+        if (r === 21 && (c === 14 || c === 15)) continue // O22/P22 SET count
+        if (r === 24 && (c === 9 || c === 10) && totalExtraAmountSum > 0) {
+          if (c === 10) applyFormula(r, c, `(G4+G8+G12+G16+G20)*${extraAmount}`)
+          continue
+        }
+
+        // Installation N23: =B50 when included, numeric 0 when excluded
+        if (r === 22 && c === 13) {
+          if (includeInstallation) applyFormula(r, c, 'B50')
+          continue
+        }
+        if (r === 23 && c === 13) continue // N24 transport numeric input
+        if (r === 24 && c === 13) continue // N25 acc numeric input
+        if (r === 25 && c === 2) continue // C26 profit % numeric input
+
+        // N26 (Profit): SUM(N22:N25) * C26 / 100 (using quotation profit %, never hardcoded 20%)
+        if (r === 25 && c === 13) {
+          applyFormula(r, c, totalExtraAmountSum > 0 ? '(SUM(N22:N25)+K25)*C26/100' : 'SUM(N22:N25)*C26/100')
+          continue
+        }
+        // N27 (Before GST / With Profit): SUM(N22:N26)
+        if (r === 26 && c === 13) {
+          applyFormula(r, c, totalExtraAmountSum > 0 ? 'SUM(N22:N26)+K25' : 'SUM(N22:N26)')
+          continue
+        }
+        // N28 (18% GST) & N29 (Sales)
+        if (r === 27 && c === 13) {
+          applyFormula(r, c, discountPct > 0 ? 'S11*18%' : 'N27*18%')
+          continue
+        }
+        if (r === 28 && c === 13) {
+          applyFormula(r, c, discountPct > 0 ? 'S11+N28' : 'SUM(N27:N28)')
+          continue
+        }
+
+        // R5:S13 live summary cards
+        if (r === 4 && c === 18) {
+          // Link S5 directly to N27 when Actual export (never hardcoded!)
+          if (isActualExport) applyFormula(r, c, 'N27')
+          continue
+        }
+        if (r === 5 && c === 18) {
+          if (isActualExport) applyFormula(r, c, 'N26')
+          continue
+        }
+        if (r === 6 && c === 18) {
+          if (isActualExport) applyFormula(r, c, discountPct > 0 ? 'S11' : 'N27')
+          continue
+        }
+        if (r === 7 && c === 18) {
+          if (isActualExport) applyFormula(r, c, 'C26')
+          continue
+        }
+        if (isActualExport && (c === 17 || c === 18) && r >= 8 && r <= 12) {
+          if (discountPct > 0) {
+            if (r === 9 && c === 18) applyFormula(r, c, 'N27*S9/100')
+            if (r === 10 && c === 18) applyFormula(r, c, 'N27-S10')
+            if (r === 11 && c === 18) applyFormula(r, c, 'S11*0.18')
+            if (r === 12 && c === 18) applyFormula(r, c, 'S11+S12')
+          } else {
+            if (r === 8 && c === 18) applyFormula(r, c, 'N27*0.18')
+            if (r === 9 && c === 18) applyFormula(r, c, 'N27+S9')
           }
+          continue
         }
-        fallbackCols.push({ wch: Math.min(18, Math.max(10, maxLen + 2)) })
+        if ((r >= 4 && r <= 12) && (c === 17 || c === 18)) continue
       }
-      ws['!cols'] = fallbackCols
-    }
 
-    // Ensure Total cal columns: 23 columns (Cols A to W) with authentic widths from exam.xlsx
-    if (sheetName === 'Total cal') {
-      const currentCols = ws['!cols'] || []
-      while (currentCols.length < 23) {
-        currentCols.push({ wch: 10 })
+      if (c >= cols) continue
+
+      // Shearing size sheet customizations
+      if (isShearing && r === 5 && (c === 1 || c === 4 || c === 5)) continue
+      if (isShearing && r === 44 && c === 5) {
+        applyFormula(r, c, "'Total cal'!J3")
+        continue
       }
-      currentCols[17] = { wch: 20 }  // Col R: Labels ("Subtotal Before GST", "C2C Profit", etc.)
-      currentCols[18] = { wch: 15 }  // Col S: Values (currency numbers)
-      ws['!cols'] = currentCols
-    }
+      if (isShearing && r === 44 && c === 7) {
+        applyFormula(r, c, "IF('Total cal'!J3=0,0,Sheet1!I82)")
+        continue
+      }
 
-    // Apply exact row heights from authentic exam.xlsx template
-    if (meta?.rows && meta.rows.length > 0) {
-      ws['!rows'] = meta.rows.map((r: any) => (r ? { ...r } : null))
-    }
-
-    // Apply merged cells if present
-    if (meta?.merges && meta.merges.length > 0) {
-      ws['!merges'] = meta.merges
-    }
-
-    // Apply authentic colors & styles (Yellow FFFF00, Green 92D050, Red FF0000, Blue 00B0F0)
-    if (meta?.styles) {
-      for (const [cellRef, style] of Object.entries(meta.styles)) {
-        if (ws[cellRef]) {
-          ws[cellRef].s = style
+      if (!wb.isOverridden?.(sheetName, r, c)) {
+        const raw = wb.raw(sheetName, r, c)
+        if (typeof raw === 'string' && raw.startsWith('=')) {
+          const resolvedFormula = resolveExcelFormula(raw, namedConstants)
+          applyFormula(r, c, resolvedFormula)
         }
       }
     }
+  }
 
-    // Style Total cal custom cells (R5, S5, R6, S6, R7, S7, R8, S8, O22, P22)
-    if (sheetName === 'Total cal') {
-      const thinBorder = {
-        top: { style: 'thin', color: { rgb: 'CBD5E1' } },
-        bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
-        left: { style: 'thin', color: { rgb: 'CBD5E1' } },
-        right: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  // Load authentic template styling, column widths, and merges
+  const meta = getSheetMeta(sheetName)
+  if (meta?.cols && meta.cols.length > 0) {
+    ws['!cols'] = meta.cols.map((col: any) => ({ ...col }))
+  } else {
+    const fallbackCols = []
+    for (let c = 0; c < Math.min(cols, 20); c++) {
+      let maxLen = 8
+      for (let r = 0; r < Math.min(rows, 35); r++) {
+        const val = aoa[r]?.[c]
+        if (val !== null && val !== undefined) {
+          const s = String(val)
+          if (s.length > 0 && s.length <= 18 && s.length > maxLen) maxLen = s.length
+        }
       }
+      fallbackCols.push({ wch: Math.min(18, Math.max(10, maxLen + 2)) })
+    }
+    ws['!cols'] = fallbackCols
+  }
 
-      // R5: "Subtotal Before GST" label
-      if (ws['R5']) {
-        ws['R5'].s = {
+  if (sheetName === 'Total cal') {
+    const currentCols = ws['!cols'] || []
+    while (currentCols.length < 23) currentCols.push({ wch: 10 })
+    currentCols[17] = { wch: 20 } // Col R
+    currentCols[18] = { wch: 15 } // Col S
+    ws['!cols'] = currentCols
+  }
+
+  if (meta?.rows && meta.rows.length > 0) {
+    ws['!rows'] = meta.rows.map((r: any) => (r ? { ...r } : null))
+  }
+  if (meta?.merges && meta.merges.length > 0) {
+    ws['!merges'] = meta.merges
+  }
+  if (meta?.styles) {
+    for (const [cellRef, style] of Object.entries(meta.styles)) {
+      if (ws[cellRef]) ws[cellRef].s = style
+    }
+  }
+
+  // Style Total cal custom summary cells
+  if (sheetName === 'Total cal') {
+    const styleLabel = (ref: string) => {
+      if (ws[ref]) {
+        ws[ref].s = {
           font: { bold: true, color: { rgb: '1E293B' }, sz: 10 },
           fill: { fgColor: { rgb: 'F1F5F9' } },
           alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
+          border: THIN_BORDER,
         }
       }
-
-      // S5: Sale value is Subtotal Before GST
-      if (ws['S5']) {
-        ws['S5'].s = {
-          font: { bold: true, color: { rgb: '0F172A' }, sz: 11 },
-          fill: { fgColor: { rgb: 'E2EFDA' } }, // Clean soft green
+    }
+    const styleMoney = (ref: string, bg = 'FFFFFF', fg = '0F172A', fmt?: string) => {
+      if (ws[ref]) {
+        ws[ref].s = {
+          font: { bold: true, color: { rgb: fg }, sz: 11 },
+          fill: { fgColor: { rgb: bg } },
           alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
+          border: THIN_BORDER,
           numFmt: '"₹"#,##0.00;[Red]-"₹"#,##0.00;"-"',
         }
-      }
-
-      // R6: "C2C Profit" label
-      if (ws['R6']) {
-        ws['R6'].s = {
-          font: { bold: true, color: { rgb: '1E293B' }, sz: 10 },
-          fill: { fgColor: { rgb: 'F1F5F9' } },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
-        }
-      }
-
-      // S6: C2C Profit value
-      if (ws['S6']) {
-        ws['S6'].s = {
-          font: { bold: true, color: { rgb: '166534' }, sz: 11 },
-          fill: { fgColor: { rgb: '92D050' } }, // Classic Excel totals green
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
-          numFmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"',
-        }
-      }
-
-      // R7: "C2C Total" label
-      if (ws['R7']) {
-        ws['R7'].s = {
-          font: { bold: true, color: { rgb: '1E293B' }, sz: 10 },
-          fill: { fgColor: { rgb: 'F1F5F9' } },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
-        }
-      }
-
-      // S7: C2C Total value
-      if (ws['S7']) {
-        ws['S7'].s = {
-          font: { bold: true, color: { rgb: '166534' }, sz: 11 },
-          fill: { fgColor: { rgb: '92D050' } },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
-          numFmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"',
-        }
-      }
-
-      // R8: "C2C Ratio" label
-      if (ws['R8']) {
-        ws['R8'].s = {
-          font: { bold: true, color: { rgb: '1E293B' }, sz: 10 },
-          fill: { fgColor: { rgb: 'F1F5F9' } },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
-        }
-      }
-
-      // S8: C2C Ratio value
-      if (ws['S8']) {
-        ws['S8'].s = {
-          font: { bold: true, color: { rgb: '1E3A8A' }, sz: 11 },
-          fill: { fgColor: { rgb: 'DBEAFE' } },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: thinBorder,
-          numFmt: c2cData ? '0.00 "₹/kg"' : '0.00"%"',
-        }
-      }
-
-      // O22: "SET" label
-      if (ws['O22']) {
-        ws['O22'].s = {
-          font: { bold: true, color: { rgb: '1E3A8A' }, sz: 10 },
-          fill: { fgColor: { rgb: 'DBEAFE' } },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: thinBorder,
-        }
-      }
-
-      // P22: Sets Quantity Value
-      if (ws['P22']) {
-        ws['P22'].s = {
-          font: { bold: true, color: { rgb: '1E3A8A' }, sz: 11 },
-          fill: { fgColor: { rgb: 'EFF6FF' } },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: thinBorder,
-        }
+        if (fmt) ws[ref].s.numFmt = fmt
       }
     }
 
-    // Shearing size sheet row 6 styling for E6 & F6
-    if (isShearing) {
-      if (ws['E6']) {
-        ws['E6'].s = {
-          font: { bold: true, color: { rgb: '000000' }, sz: 11 },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          fill: { fgColor: { rgb: 'FFFF00' } },
-          border: {
-            top: { style: 'thin', color: { rgb: 'D9D9D9' } },
-            bottom: { style: 'thin', color: { rgb: 'D9D9D9' } },
-            left: { style: 'thin', color: { rgb: 'D9D9D9' } },
-            right: { style: 'thin', color: { rgb: 'D9D9D9' } },
+    styleLabel('R5')
+    styleMoney('S5', 'E2EFDA', '0F172A')
+    styleLabel('R6')
+    styleMoney('S6', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
+    styleLabel('R7')
+    styleMoney('S7', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
+    styleLabel('R8')
+    styleMoney('S8', 'DBEAFE', '1E3A8A', c2cData ? '0.00 "₹/kg"' : '0.00"%"')
+
+    if (isActualExport) {
+      if (discountPct > 0) {
+        styleLabel('R9'); styleMoney('S9', 'FEF9C3', '854D0E', '0.00"%"')
+        styleLabel('R10'); styleMoney('S10', 'FEF2F2', 'B91C1C')
+        styleLabel('R11'); styleMoney('S11', 'E2EFDA', '0F172A')
+        styleLabel('R12'); styleMoney('S12', 'F8FAFC', '334155')
+        styleLabel('R13'); styleMoney('S13', 'DBEAFE', '1E3A8A')
+      } else {
+        styleLabel('R9'); styleMoney('S9', 'F8FAFC', '334155')
+        styleLabel('R10'); styleMoney('S10', 'DBEAFE', '1E3A8A')
+      }
+    }
+
+    if (ws['O22']) {
+      ws['O22'].s = {
+        font: { bold: true, color: { rgb: '1E3A8A' }, sz: 10 },
+        fill: { fgColor: { rgb: 'DBEAFE' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: THIN_BORDER,
+      }
+    }
+    if (ws['P22']) {
+      ws['P22'].s = {
+        font: { bold: true, color: { rgb: '1E3A8A' }, sz: 11 },
+        fill: { fgColor: { rgb: 'EFF6FF' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: THIN_BORDER,
+      }
+    }
+  }
+
+  if (isShearing) {
+    if (ws['E6']) {
+      ws['E6'].s = {
+        font: { bold: true, color: { rgb: '000000' }, sz: 11 },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        fill: { fgColor: { rgb: 'FFFF00' } },
+        border: { top: { style: 'thin', color: { rgb: 'D9D9D9' } }, bottom: { style: 'thin', color: { rgb: 'D9D9D9' } }, left: { style: 'thin', color: { rgb: 'D9D9D9' } }, right: { style: 'thin', color: { rgb: 'D9D9D9' } } },
+      }
+    }
+    if (ws['F6']) {
+      ws['F6'].s = {
+        font: { bold: true, color: { rgb: '000000' }, sz: 11 },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: { top: { style: 'thin', color: { rgb: 'D9D9D9' } }, bottom: { style: 'thin', color: { rgb: 'D9D9D9' } }, left: { style: 'thin', color: { rgb: 'D9D9D9' } }, right: { style: 'thin', color: { rgb: 'D9D9D9' } } },
+      }
+    }
+  }
+
+  if (isShearing) {
+    ws['!pageSetup'] = { paperSize: 9, orientation: 'portrait' }
+    ws['!margins'] = { left: 0.7, right: 0.7, top: 0.2, bottom: 0.2, header: 0.3, footer: 0.3 }
+  } else {
+    ws['!margins'] = { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }
+  }
+
+  ws['!views'] = [{ showGridLines: true }]
+  return ws
+}
+
+/**
+ * Exports a single-system multi-sheet Workbook instance to a genuine styled .xlsx Excel file.
+ * Preserves all 15 sheets with live formulas, resolved constants (0 #NAME? errors),
+ * and full dynamic links (N26 = SUM(N22:N25)*C26/100, S5 = N27).
+ */
+export function exportWorkbookToXLSX(
+  wb: Workbook,
+  filename: string,
+  c2cData?: C2CExportData,
+  options?: ExcelExportOptions,
+) {
+  const book = XLSX.utils.book_new()
+  const setsQty = Math.max(1, Number(options?.setsQty ?? c2cData?.setsQty) || 1)
+  const allocatedTransport = options?.sysTransport ?? c2cData?.sysTransport
+  const allocatedAccommodation = options?.sysAccommodation ?? c2cData?.sysAccommodation
+  const profitPct = options?.profitPct
+
+  withScaledWorkbookOverrides(wb, setsQty, profitPct, allocatedTransport, allocatedAccommodation, () => {
+    for (const sheetName of wb.names) {
+      const ws = buildStyledWorksheet(wb, sheetName, c2cData, options)
+      if (ws) {
+        XLSX.utils.book_append_sheet(book, ws, sheetName.slice(0, 31))
+      }
+    }
+  })
+
+  const cleanFileName = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
+  XLSX.writeFile(book, cleanFileName)
+}
+
+/**
+ * Exports a multi-system quotation into a single Excel (.xlsx) workbook with:
+ * - Sheet 1 ("Total cal"): Complete master calculation across all systems (Profit, Discount,
+ *   Transport, Accommodation, Installation, GST) AND per-set + model breakdown for every system.
+ * - For each system (SYSTEM A, SYSTEM B, ...): 3 linked sheets:
+ *   1. "<System> - Total cal"
+ *   2. "<System> - SHEARING SIZE"
+ *   3. "<System> - HARDWARE LIST"
+ */
+export function exportMultiSystemWorkbookToXLSX(
+  wb: Workbook,
+  systemsData: MultiSystemExcelEntry[],
+  filename: string,
+  globalOptions: MultiSystemExcelOptions,
+) {
+  const book = XLSX.utils.book_new()
+  const usedTabNames = new Set<string>(['Total cal'])
+  const wbSheetKeys = Array.from(wb.sheets.keys())
+  const tcSrcName = wbSheetKeys.find((k) => k.toLowerCase() === 'total cal') || 'Total cal'
+  const shSrcName = wbSheetKeys.find((k) => /^shearing\b/i.test(k) && /\bsize$/i.test(k))
+  const hwSrcName = wbSheetKeys.find((k) => /^hardware\b/i.test(k) && /\blist$/i.test(k))
+
+  // 1. Pre-allocate unique <=31 char tab names for each system's 3 sheets
+  const systemSheetsMeta = systemsData.map((sys, idx) => {
+    const fallbackName = `SYS ${String.fromCharCode(65 + idx)}`
+    const baseLabel = (sys.name || fallbackName).trim()
+    const tcTab = makeUniqueTabName(baseLabel, tcSrcName, usedTabNames)
+    const shTab = shSrcName ? makeUniqueTabName(baseLabel, shSrcName, usedTabNames) : ''
+    const hwTab = hwSrcName ? makeUniqueTabName(baseLabel, hwSrcName, usedTabNames) : ''
+    return { sys, idx, tcTab, shTab, hwTab }
+  })
+
+  // 2. Build Tab 1: Master "Total cal" Consolidated Summary Sheet
+  const quoteRef = (val: string, colCell: string) => {
+    const safeTab = `'${val.replace(/'/g, "''")}'`
+    return `${safeTab}!${colCell}`
+  }
+
+  const masterRows: any[][] = []
+  const masterFormulas: Array<{ r: number; c: number; f: string; fmt?: string }> = []
+  const masterStyles: Array<{ r: number; c: number; s: any }> = []
+
+  const headerStyle = {
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+    fill: { fgColor: { rgb: '1E3A8A' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: DARK_BORDER,
+  }
+  const subHeaderStyle = {
+    font: { bold: true, color: { rgb: '0F172A' }, sz: 10 },
+    fill: { fgColor: { rgb: 'DBEAFE' } },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: THIN_BORDER,
+  }
+  const cellMoneyFmt = '"₹"#,##0.00;[Red]-"₹"#,##0.00;"-"'
+  const cellWeightFmt = '#,##0.00 "kg"'
+  const cellPctFmt = '0.00"%"'
+
+  const modeLabel = globalOptions.isActual ? 'ACTUAL QUOTATION' : 'CUT-TO-CUT ANALYSIS'
+  masterRows.push([
+    `${modeLabel} — CONSOLIDATED MASTER CALCULATION`,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+  ])
+  masterRows.push([
+    `Quotation: ${globalOptions.qtnNo || globalOptions.title || 'Project'}`,
+    null,
+    `Client: ${globalOptions.clientName || '-'}`,
+    null, null,
+    `Systems: ${systemsData.length}`,
+    null,
+    `Profit %: ${globalOptions.profitPct}%`,
+    null,
+    `Discount %: ${globalOptions.discountPct}%`,
+    null,
+    `Installation: ${globalOptions.includeInstallation ? 'Included' : 'At Buyer Scope'}`,
+    null, null, null,
+  ])
+  masterRows.push([]) // blank row 3
+
+  // Section 1: System-Wise Consolidated Summary Table (row index 3 -> Excel Row 4)
+  masterRows.push(['SYSTEM-WISE QUOTATION SUMMARY (ALL SYSTEMS & SETS)'])
+  const sysTblHeaderRow = masterRows.length // 0-based
+  masterRows.push([
+    'Sl',
+    'System Name',
+    'Bay',
+    'Sets',
+    'Models Summary',
+    'Bodies / Set',
+    'Total Bodies',
+    'Ex-Works (All Sets)',
+    'Installation',
+    'Transport',
+    'Acc',
+    'Extra Amt',
+    'Cost Base',
+    'Profit %',
+    'Profit Amount',
+    '1-Set Rate (Pre-Disc)',
+    'With Profit',
+    'Disc %',
+    'Disc Amount',
+    '1-Set Rate (Net)',
+    'Net Before GST',
+    'GST (18%)',
+    'Total Incl. GST',
+    'SP Steel (kg)',
+    'Trolley (kg)',
+    'Total Wt (kg)',
+    'Wt w/ Mach (kg)',
+    'Powder Coat (₹)',
+    'Labour (₹)',
+  ])
+  for (let c = 0; c < 29; c++) {
+    masterStyles.push({ r: sysTblHeaderRow, c, s: headerStyle })
+  }
+
+  const firstSysRow = masterRows.length + 1 // 1-based Excel row
+  let totalCombinedSets = 0
+  let totalCombinedBodiesAll = 0
+
+  systemSheetsMeta.forEach(({ sys, idx, tcTab }) => {
+    const excelRow = masterRows.length + 1
+    const setsQty = Math.max(1, Number(sys.setsQty) || 1)
+    const bodiesPerSet = Math.max(1, Number(sys.summary?.bodies) || 1)
+    const totalBodiesSys = bodiesPerSet * setsQty
+    totalCombinedSets += setsQty
+    totalCombinedBodiesAll += totalBodiesSys
+
+    const activeModelsStr = (sys.summary?.models || [])
+      .filter((m: any) => m.qty > 0)
+      .map((m: any) => `${m.qty} ${m.code}`)
+      .join(' + ') || 'Custom'
+
+    const exWorks = (sys.summary?.subtotal || 0) * setsQty
+    const inst = (sys.includeInstallation ? (sys.summary?.rawInstallation ?? sys.summary?.installation ?? 0) : 0) * setsQty
+    const trans = sys.allocatedTransport || 0
+    const acc = sys.allocatedAccommodation || 0
+    const totalUnitsOneSet = (sys.summary?.models || []).reduce((a: number, m: any) => a + (Number(m.qty) || 0), 0)
+    const extraTotal = (sys.extraAmount || 0) * totalUnitsOneSet * setsQty
+    const costBase = exWorks + inst + trans + acc + extraTotal
+    const profitAmt = costBase * (sys.profitPct / 100)
+    const withProfit = costBase + profitAmt
+    const discAmt = withProfit * (sys.discountPct / 100)
+    const netBeforeGst = withProfit - discAmt
+    const gstAmt = netBeforeGst * 0.18
+    const inclGst = netBeforeGst + gstAmt
+
+    const spWt = (sys.summary?.steel?.spTotal || 0) * setsQty
+    const trWt = (sys.summary?.trolley?.total || 0) * setsQty
+    const totWt = (sys.summary?.totalWeight || 0) * setsQty
+    const machWt = (sys.summary?.weightWithMachine || 0) * setsQty
+    const pcAmt = (sys.summary?.powderTotal || 0) * setsQty
+    const labAmt = (sys.summary?.labourSubtotal || 0) * setsQty
+
+    const rIdx = masterRows.length
+    masterRows.push([
+      idx + 1,
+      sys.name,
+      sys.bay,
+      setsQty,
+      activeModelsStr,
+      bodiesPerSet,
+      totalBodiesSys,
+      exWorks,
+      inst,
+      trans,
+      acc,
+      extraTotal,
+      costBase,
+      sys.profitPct,
+      profitAmt,
+      withProfit / setsQty,
+      withProfit,
+      sys.discountPct,
+      discAmt,
+      netBeforeGst / setsQty,
+      netBeforeGst,
+      gstAmt,
+      inclGst,
+      spWt,
+      trWt,
+      totWt,
+      machWt,
+      pcAmt,
+      labAmt,
+    ])
+
+    // Live cross-sheet links to each system's Total cal tab + formula derivations
+    masterFormulas.push(
+      { r: rIdx, c: 6, f: `F${excelRow}*D${excelRow}` },
+      { r: rIdx, c: 7, f: quoteRef(tcTab, 'N22'), fmt: cellMoneyFmt },
+      { r: rIdx, c: 8, f: quoteRef(tcTab, 'N23'), fmt: cellMoneyFmt },
+      { r: rIdx, c: 9, f: quoteRef(tcTab, 'N24'), fmt: cellMoneyFmt },
+      { r: rIdx, c: 10, f: quoteRef(tcTab, 'N25'), fmt: cellMoneyFmt },
+      ...(extraTotal > 0 ? [{ r: rIdx, c: 11, f: quoteRef(tcTab, 'K25'), fmt: cellMoneyFmt }] : []),
+      { r: rIdx, c: 12, f: `SUM(H${excelRow}:L${excelRow})`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 13, f: quoteRef(tcTab, 'C26'), fmt: cellPctFmt },
+      { r: rIdx, c: 14, f: quoteRef(tcTab, 'N26'), fmt: cellMoneyFmt },
+      { r: rIdx, c: 15, f: `Q${excelRow}/D${excelRow}`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 16, f: quoteRef(tcTab, 'N27'), fmt: cellMoneyFmt },
+      { r: rIdx, c: 18, f: `Q${excelRow}*(R${excelRow}/100)`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 19, f: `U${excelRow}/D${excelRow}`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 20, f: `Q${excelRow}-S${excelRow}`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 21, f: `U${excelRow}*0.18`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 22, f: `U${excelRow}+V${excelRow}`, fmt: cellMoneyFmt },
+      { r: rIdx, c: 23, f: quoteRef(tcTab, 'J36'), fmt: cellWeightFmt },
+      { r: rIdx, c: 24, f: quoteRef(tcTab, 'J42'), fmt: cellWeightFmt },
+      { r: rIdx, c: 25, f: quoteRef(tcTab, 'J44'), fmt: cellWeightFmt },
+      { r: rIdx, c: 26, f: quoteRef(tcTab, 'J45'), fmt: cellWeightFmt },
+      { r: rIdx, c: 27, f: quoteRef(tcTab, 'E39'), fmt: cellMoneyFmt },
+      { r: rIdx, c: 28, f: quoteRef(tcTab, 'N50'), fmt: cellMoneyFmt },
+    )
+    for (let c = 0; c < 29; c++) {
+      const fmt = c === 13 || c === 17 ? cellPctFmt : (c >= 23 && c <= 26 ? cellWeightFmt : (c >= 7 && c <= 28 ? cellMoneyFmt : undefined))
+      masterStyles.push({
+        r: rIdx,
+        c,
+        s: {
+          border: THIN_BORDER,
+          alignment: { horizontal: c === 1 || c === 4 ? 'left' : 'right', vertical: 'center' },
+          ...(fmt ? { numFmt: fmt } : {}),
+        },
+      })
+    }
+  })
+
+  const lastSysRow = masterRows.length // 1-based Excel row of last system
+  const sysTotalRowIdx = masterRows.length
+  const sumRange = (colLetter: string) => `SUM(${colLetter}${firstSysRow}:${colLetter}${lastSysRow})`
+
+  masterRows.push([
+    '', 'TOTAL (ALL SYSTEMS)', '', totalCombinedSets, '', '', totalCombinedBodiesAll,
+    0, 0, 0, 0, 0, 0, globalOptions.profitPct, 0, '', 0, globalOptions.discountPct, 0, '', 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
+  ])
+  const sumCols: Array<[number, string, string?]> = [
+    [3, 'D'], [6, 'G'], [7, 'H', cellMoneyFmt], [8, 'I', cellMoneyFmt], [9, 'J', cellMoneyFmt],
+    [10, 'K', cellMoneyFmt], [11, 'L', cellMoneyFmt], [12, 'M', cellMoneyFmt], [14, 'O', cellMoneyFmt],
+    [16, 'Q', cellMoneyFmt], [18, 'S', cellMoneyFmt], [20, 'U', cellMoneyFmt], [21, 'V', cellMoneyFmt],
+    [22, 'W', cellMoneyFmt], [23, 'X', cellWeightFmt], [24, 'Y', cellWeightFmt],
+    [25, 'Z', cellWeightFmt], [26, 'AA', cellWeightFmt], [27, 'AB', cellMoneyFmt], [28, 'AC', cellMoneyFmt],
+  ]
+  sumCols.forEach(([colIdx, colLetter, fmt]) => {
+    masterFormulas.push({ r: sysTotalRowIdx, c: colIdx, f: sumRange(colLetter), fmt })
+  })
+  for (let c = 0; c < 29; c++) {
+    masterStyles.push({
+      r: sysTotalRowIdx,
+      c,
+      s: {
+        font: { bold: true, color: { rgb: '0F172A' }, sz: 10 },
+        fill: { fgColor: { rgb: 'E2EFDA' } },
+        border: DARK_BORDER,
+        alignment: { horizontal: c === 1 ? 'left' : 'right', vertical: 'center' },
+      },
+    })
+  }
+
+  const totalExcelRow = sysTotalRowIdx + 1
+  masterRows.push([]) // blank
+
+  // Section 2: Commercial Grand Totals Block
+  masterRows.push(['CONSOLIDATED COMMERCIAL SUMMARY (QUOTATION TOTALS)'])
+  const summaryPairs: Array<[string, string, string]> = [
+    ['Total Ex-Works (All Systems & Sets)', `H${totalExcelRow}`, cellMoneyFmt],
+    ['Total Installation Charges', `I${totalExcelRow}`, cellMoneyFmt],
+    ['Total Transportation Charges', `J${totalExcelRow}`, cellMoneyFmt],
+    ['Total Accommodation Charges', `K${totalExcelRow}`, cellMoneyFmt],
+    ['Total Extra Charges', `L${totalExcelRow}`, cellMoneyFmt],
+    ['Total Direct Cost Base', `M${totalExcelRow}`, cellMoneyFmt],
+    [`Profit (${globalOptions.profitPct}%)`, `O${totalExcelRow}`, cellMoneyFmt],
+    ['Subtotal With Profit (Before Discount)', `Q${totalExcelRow}`, cellMoneyFmt],
+    [`Discount (${globalOptions.discountPct}%)`, `S${totalExcelRow}`, cellMoneyFmt],
+    ['Net Quotation Total (Before GST)', `U${totalExcelRow}`, cellMoneyFmt],
+    ['GST @ 18%', `V${totalExcelRow}`, cellMoneyFmt],
+    ['GRAND TOTAL (INCL. 18% GST)', `W${totalExcelRow}`, cellMoneyFmt],
+  ]
+  summaryPairs.forEach(([label, formulaExpr, fmt], idx) => {
+    const rIdx = masterRows.length
+    masterRows.push([label, null, 0])
+    masterFormulas.push({ r: rIdx, c: 2, f: formulaExpr, fmt })
+    const isGrand = idx === summaryPairs.length - 1
+    masterStyles.push({
+      r: rIdx, c: 0,
+      s: {
+        font: { bold: true, color: { rgb: isGrand ? 'FFFFFF' : '1E293B' }, sz: 10 },
+        fill: { fgColor: { rgb: isGrand ? '1E3A8A' : 'F1F5F9' } },
+        border: THIN_BORDER,
+      },
+    })
+    masterStyles.push({
+      r: rIdx, c: 2,
+      s: {
+        font: { bold: true, color: { rgb: isGrand ? '1E3A8A' : '0F172A' }, sz: isGrand ? 11 : 10 },
+        fill: { fgColor: { rgb: isGrand ? 'DBEAFE' : 'FFFFFF' } },
+        border: THIN_BORDER,
+        alignment: { horizontal: 'right', vertical: 'center' },
+        numFmt: fmt,
+      },
+    })
+  })
+
+  masterRows.push([]) // blank
+
+  // Section 3: Breakdown For Each System & Each Set (Model-Level Detail)
+  masterRows.push(['SET-WISE & MODEL-WISE BREAKDOWN FOR EACH SYSTEM'])
+  const bdHeaderIdx = masterRows.length
+  masterRows.push([
+    'Sl',
+    'System / Set',
+    'Model Code',
+    'Unit Rate (₹)',
+    'Width Extra (₹)',
+    'Qty / Set',
+    'Sets',
+    'Total Qty',
+    '1-Set Ex-Works (₹)',
+    'All-Sets Ex-Works (₹)',
+    'Powder Coat (₹)',
+    'Cost / Unit Incl. Logistics',
+  ])
+  for (let c = 0; c < 12; c++) {
+    masterStyles.push({ r: bdHeaderIdx, c, s: headerStyle })
+  }
+
+  systemSheetsMeta.forEach(({ sys, tcTab }) => {
+    const setsQty = Math.max(1, Number(sys.setsQty) || 1)
+    const secIdx = masterRows.length
+    masterRows.push([`${sys.name} (${sys.bay} BAY) — ${setsQty} ${setsQty > 1 ? 'SETS' : 'SET'} (Tab: ${tcTab})`])
+    for (let c = 0; c < 12; c++) masterStyles.push({ r: secIdx, c, s: subHeaderStyle })
+
+    const activeModels = (sys.summary?.models || []).filter((m: any) => Number(m.qty) > 0)
+    const modelCellMap: Record<string, string> = { DFMU: 'D4', SFMU: 'D8', SFFU: 'D12', DFFU: 'D16', 'DFMU-D': 'D20' }
+    const qtyCellMap: Record<string, string> = { DFMU: 'G4', SFMU: 'G8', SFFU: 'G12', DFFU: 'G16', 'DFMU-D': 'G20' }
+
+    const startModelRow = masterRows.length + 1
+    activeModels.forEach((m: any, mIdx: number) => {
+      const rIdx = masterRows.length
+      const excelR = rIdx + 1
+      const qtyPerSet = Number(m.qty) || 0
+      const wExtra = Number(m.widthExtra) || 0
+      const baseRate = Math.max(0, (Number(m.unitRate) || 0) - wExtra)
+      const oneSetEx = (Number(m.unitRate) || 0) * qtyPerSet
+      const allSetsEx = oneSetEx * setsQty
+      const powderAll = (Number(m.powder) || 0) * setsQty
+
+      masterRows.push([
+        mIdx + 1,
+        `${setsQty > 1 ? `1 of ${setsQty} Sets` : '1 Set'}`,
+        m.code,
+        baseRate,
+        wExtra,
+        qtyPerSet,
+        setsQty,
+        qtyPerSet * setsQty,
+        oneSetEx,
+        allSetsEx,
+        powderAll,
+        baseRate + wExtra + (sys.extraAmount || 0),
+      ])
+
+      const rateRef = modelCellMap[m.code]
+      const totQtyRef = qtyCellMap[m.code]
+      if (rateRef) {
+        masterFormulas.push({ r: rIdx, c: 3, f: quoteRef(tcTab, rateRef), fmt: cellMoneyFmt })
+      }
+      if (totQtyRef) {
+        masterFormulas.push({ r: rIdx, c: 7, f: `F${excelR}*G${excelR}` })
+      } else {
+        masterFormulas.push({ r: rIdx, c: 7, f: `F${excelR}*G${excelR}` })
+      }
+      masterFormulas.push(
+        { r: rIdx, c: 8, f: `(D${excelR}+E${excelR})*F${excelR}`, fmt: cellMoneyFmt },
+        { r: rIdx, c: 9, f: `I${excelR}*G${excelR}`, fmt: cellMoneyFmt },
+      )
+      for (let c = 0; c < 12; c++) {
+        masterStyles.push({
+          r: rIdx,
+          c,
+          s: {
+            border: THIN_BORDER,
+            alignment: { horizontal: c <= 2 ? 'center' : 'right', vertical: 'center' },
+            ...(c >= 3 && c !== 5 && c !== 6 && c !== 7 ? { numFmt: cellMoneyFmt } : {}),
           },
-        }
+        })
       }
-      if (ws['F6']) {
-        ws['F6'].s = {
-          font: { bold: true, color: { rgb: '000000' }, sz: 11 },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: {
-            top: { style: 'thin', color: { rgb: 'D9D9D9' } },
-            bottom: { style: 'thin', color: { rgb: 'D9D9D9' } },
-            left: { style: 'thin', color: { rgb: 'D9D9D9' } },
-            right: { style: 'thin', color: { rgb: 'D9D9D9' } },
+    })
+
+    const endModelRow = masterRows.length
+    if (endModelRow >= startModelRow) {
+      const subIdx = masterRows.length
+      masterRows.push(['', `${sys.name} Subtotal (${setsQty} ${setsQty > 1 ? 'Sets' : 'Set'})`, '', '', '', '', setsQty, 0, 0, 0, 0, ''])
+      masterFormulas.push(
+        { r: subIdx, c: 7, f: `SUM(H${startModelRow}:H${endModelRow})` },
+        { r: subIdx, c: 8, f: `SUM(I${startModelRow}:I${endModelRow})`, fmt: cellMoneyFmt },
+        { r: subIdx, c: 9, f: `SUM(J${startModelRow}:J${endModelRow})`, fmt: cellMoneyFmt },
+        { r: subIdx, c: 10, f: `SUM(K${startModelRow}:K${endModelRow})`, fmt: cellMoneyFmt },
+      )
+      for (let c = 0; c < 12; c++) {
+        masterStyles.push({
+          r: subIdx,
+          c,
+          s: {
+            font: { bold: true, color: { rgb: '0F172A' }, sz: 10 },
+            fill: { fgColor: { rgb: 'F8FAFC' } },
+            border: THIN_BORDER,
           },
-        }
+        })
       }
     }
+  })
 
-    // Page setup and print margins matching original exam.xlsx template
-    if (isShearing) {
-      ws['!pageSetup'] = {
-        paperSize: 9,              // A4 (210 x 297 mm)
-        orientation: 'portrait',   // Standard A4 portrait
-      }
-      ws['!margins'] = {
-        left: 0.7,
-        right: 0.7,
-        top: 0.2,
-        bottom: 0.2,
-        header: 0.3,
-        footer: 0.3,
-      }
-    } else {
-      ws['!margins'] = {
-        left: 0.7,
-        right: 0.7,
-        top: 0.75,
-        bottom: 0.75,
-        header: 0.3,
-        footer: 0.3,
+  const masterWs = XLSX.utils.aoa_to_sheet(masterRows)
+  for (const mf of masterFormulas) {
+    const cellRef = addr(mf.r, mf.c)
+    if (masterWs[cellRef]) {
+      masterWs[cellRef].f = mf.f
+      if (mf.fmt) {
+        masterWs[cellRef].s = { ...(masterWs[cellRef].s || {}), numFmt: mf.fmt }
       }
     }
+  }
+  for (const ms of masterStyles) {
+    const cellRef = addr(ms.r, ms.c)
+    if (masterWs[cellRef]) {
+      masterWs[cellRef].s = { ...(masterWs[cellRef].s || {}), ...ms.s }
+    }
+  }
+  masterWs['!cols'] = [
+    { wch: 6 }, { wch: 24 }, { wch: 8 }, { wch: 10 }, { wch: 26 },
+    { wch: 13 }, { wch: 13 }, { wch: 18 }, { wch: 15 }, { wch: 14 },
+    { wch: 13 }, { wch: 13 }, { wch: 16 }, { wch: 10 }, { wch: 16 },
+    { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 15 }, { wch: 18 },
+    { wch: 18 }, { wch: 15 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
+    { wch: 14 }, { wch: 15 }, { wch: 15 }, { wch: 14 },
+  ]
+  masterWs['!views'] = [{ showGridLines: true }]
+  masterWs['!pageSetup'] = { paperSize: 9, orientation: 'landscape' }
+  XLSX.utils.book_append_sheet(book, masterWs, 'Total cal')
 
-    // Enable native Excel grid lines across all sheets so exported tables display clearly
-    ws['!views'] = [{ showGridLines: true }]
+  // 3. Append 3 sheets per system: "<System> - Total cal", "<System> - SHEARING SIZE", "<System> - HARDWARE LIST"
+  const origOverrides = wb.getOverrides()
+  const origFormulaOverrides = wb.getFormulaOverrides()
 
-    XLSX.utils.book_append_sheet(book, ws, sheetName.slice(0, 31))
+  try {
+    systemSheetsMeta.forEach(({ sys, tcTab, shTab, hwTab }) => {
+      wb.setOverrides(sys.overrides || {})
+      wb.setFormulaOverrides(sys.formulaOverrides || {})
+
+      const sheetRenameMap: Record<string, string> = { [tcSrcName]: tcTab }
+      const allowedTargetSheets = new Set<string>([tcSrcName])
+      if (shSrcName && shTab) {
+        sheetRenameMap[shSrcName] = shTab
+        allowedTargetSheets.add(shSrcName)
+      }
+      if (hwSrcName && hwTab) {
+        sheetRenameMap[hwSrcName] = hwTab
+        allowedTargetSheets.add(hwSrcName)
+      }
+      const crossSheetConfig: CrossSheetSubsetConfig = {
+        sheetRenameMap,
+        allowedTargetSheets,
+      }
+
+      const sysOpts: ExcelExportOptions = {
+        setsQty: sys.setsQty,
+        subtotalBeforeGst: sys.subtotalBeforeGst,
+        sysTransport: sys.allocatedTransport,
+        sysAccommodation: sys.allocatedAccommodation,
+        isActual: globalOptions.isActual,
+        profitPct: sys.profitPct,
+        discountPct: sys.discountPct,
+        includeInstallation: sys.includeInstallation,
+        extraAmount: sys.extraAmount,
+      }
+
+      withScaledWorkbookOverrides(
+        wb,
+        sys.setsQty,
+        sys.profitPct,
+        sys.allocatedTransport,
+        sys.allocatedAccommodation,
+        () => {
+          const tcWs = buildStyledWorksheet(wb, tcSrcName, sys.c2cData, sysOpts, crossSheetConfig)
+          if (tcWs) XLSX.utils.book_append_sheet(book, tcWs, tcTab)
+
+          if (shSrcName && shTab) {
+            const shWs = buildStyledWorksheet(wb, shSrcName, sys.c2cData, sysOpts, crossSheetConfig)
+            if (shWs) XLSX.utils.book_append_sheet(book, shWs, shTab)
+          }
+
+          if (hwSrcName && hwTab) {
+            const hwWs = buildStyledWorksheet(wb, hwSrcName, sys.c2cData, sysOpts, crossSheetConfig)
+            if (hwWs) XLSX.utils.book_append_sheet(book, hwWs, hwTab)
+          }
+        },
+      )
+    })
+  } finally {
+    wb.setOverrides(origOverrides)
+    wb.setFormulaOverrides(origFormulaOverrides)
   }
 
   const cleanFileName = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`

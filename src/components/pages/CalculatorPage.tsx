@@ -8,7 +8,7 @@ import { count, inr, inr2, kg } from '../../lib/format'
 
 import { cleanOverrides, extractTemplateDefaults, summarize, Summary, filterCutToCutOverrides } from '../../lib/model'
 
-import { exportWorkbookToXLSX } from '../../lib/excelExport'
+import { exportWorkbookToXLSX, exportMultiSystemWorkbookToXLSX, MultiSystemExcelEntry } from '../../lib/excelExport'
 import { cleanCopiedNumber, cleanCopiedText } from '../../lib/cleanText'
 import { detectValueChanges, parseRevision } from '../../lib/revision'
 
@@ -2917,71 +2917,142 @@ export function CalculatorPage({
 
       const wbToExport = targetWb || activeWb
       if (wbToExport) {
-        // Apply actual quotation inputs & formula overrides
-        const actInputs = { ...(systems[activeSystemIdx]?.overrides || {}), ...overrides }
-        const actCleaned = { ...actInputs }
-
-        // Proportional transport & accommodation per body allocation
-        const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, summary?.bodies)
-        const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
-          ? summary.bodies
-          : activeSysInfo.singleSetBodies
-        const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
-
+        const qtnNoStr = project.summary?.client_info?.qtn_no || ''
+        const clientNameStr = project.summary?.client_info?.client_name || ''
+        const qtnTitle = (qtnNoStr || name || project.name || 'Quotation').replace(/[/\\?%*:|"<>]/g, '_')
         const projectTransport = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
         const projectAccommodation = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+        const effProfitPct = profitPct !== undefined ? profitPct : (Number(wbToExport.value('Total cal', 25, 2)) || 25)
+        const effDiscountPct = discountPct !== undefined ? discountPct : 0
 
-        const { allocatedTransport: allocatedSysTransport, allocatedAccommodation: allocatedSysAccommodation } = calculateAllocatedLogistics(
-          projectTransport,
-          projectAccommodation,
-          activeSysTotalBodies,
-          totalCombinedBodies,
-          systems.length > 1,
-        )
+        if (systems.length > 1) {
+          const entries: MultiSystemExcelEntry[] = systems.map((sys, idx) => {
+            const compiled = compiledSets[idx]
+            const sysQty = Math.max(1, Number(sys.quantity) || 1)
+            const isCurrent = idx === activeSystemIdx
+            const sysOv = { ...(compiled?.overrides || sys.overrides || {}), ...(isCurrent ? overrides : {}) }
+            const sysIncInst = compiled?.includeInstallation ?? sys.includeInstallation ?? includeInstallation
+            const sysExtra = compiled?.extraAmount ?? (isCurrent ? extraAmount : Number(sys.extraAmount ?? sysOv['__extra_amount'] ?? 0))
 
-        actCleaned['Total cal!N24'] = allocatedSysTransport
-        actCleaned['Total cal!N25'] = allocatedSysAccommodation
+            const sysInfo = systemBreakdowns[idx] || calculateSystemBodies(sys, sysOv, wb, isCurrent, summary?.bodies)
+            const sysTotalBodies = sysInfo.singleSetBodies * sysQty
+            const { allocatedTransport, allocatedAccommodation } = calculateAllocatedLogistics(
+              projectTransport,
+              projectAccommodation,
+              sysTotalBodies,
+              totalCombinedBodies,
+              true,
+            )
 
-        // Ensure profit margin and discount are synchronized
-        if (profitPct !== undefined) {
-          actCleaned['__profit_pct'] = profitPct
-          actCleaned['Total cal!C26'] = profitPct
+            sysOv['Total cal!N24'] = allocatedTransport
+            sysOv['Total cal!N25'] = allocatedAccommodation
+            sysOv['__profit_pct'] = effProfitPct
+            sysOv['Total cal!C26'] = effProfitPct
+            sysOv['__discount_pct'] = effDiscountPct
+            sysOv['__extra_amount'] = sysExtra
+            sysOv['__include_installation'] = sysIncInst ? 1 : 0
+
+            const sysSum = compiled?.summary || summary
+            const sysBeforeGst = compiled?.amount || Math.round((sysSum?.beforeGst || 0) * sysQty)
+            const sysPreDisc = compiled?.pre_discount_amount || Math.round((sysSum?.subtotalWithProfit || sysSum?.beforeGst || 0) * sysQty)
+            const sysProfitAmt = Math.round((sysSum?.profitAmount ?? ((sysSum?.beforeGst || 0) - (sysSum?.costBase || 0))) * sysQty)
+
+            return {
+              name: sys.name || `SYSTEM ${String.fromCharCode(65 + idx)}`,
+              bay: compiled?.bay || sys.bay || 3,
+              setsQty: sysQty,
+              overrides: sysOv,
+              formulaOverrides: isCurrent ? formulaOverrides : (sys.formulaOverrides || {}),
+              profitPct: effProfitPct,
+              discountPct: effDiscountPct,
+              includeInstallation: sysIncInst,
+              extraAmount: sysExtra,
+              allocatedTransport,
+              allocatedAccommodation,
+              subtotalBeforeGst: sysBeforeGst,
+              preDiscountTotal: sysPreDisc,
+              profitAmount: sysProfitAmt,
+              summary: sysSum,
+            }
+          })
+
+          const fileName = `${qtnTitle}_All_Systems_Quotation_Actual.xlsx`
+          exportMultiSystemWorkbookToXLSX(wbToExport, entries, fileName, {
+            title: name || project.name || 'Quotation',
+            clientName: clientNameStr,
+            qtnNo: qtnNoStr,
+            isActual: true,
+            profitPct: effProfitPct,
+            discountPct: effDiscountPct,
+            includeInstallation,
+          })
+          if (wbToExport === wb) {
+            wb.setOverrides(overrides)
+            wb.setFormulaOverrides(formulaOverrides)
+          }
+          toast('Consolidated Multi-System Actual Excel downloaded successfully!', 'ok')
+        } else {
+          // Apply actual quotation inputs & formula overrides
+          const actInputs = { ...(systems[activeSystemIdx]?.overrides || {}), ...overrides }
+          const actCleaned = { ...actInputs }
+
+          const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, summary?.bodies)
+          const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
+            ? summary.bodies
+            : activeSysInfo.singleSetBodies
+          const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
+
+          const { allocatedTransport: allocatedSysTransport, allocatedAccommodation: allocatedSysAccommodation } = calculateAllocatedLogistics(
+            projectTransport,
+            projectAccommodation,
+            activeSysTotalBodies,
+            totalCombinedBodies,
+            false,
+          )
+
+          actCleaned['Total cal!N24'] = allocatedSysTransport
+          actCleaned['Total cal!N25'] = allocatedSysAccommodation
+
+          // Ensure profit margin and discount are synchronized
+          actCleaned['__profit_pct'] = effProfitPct
+          actCleaned['Total cal!C26'] = effProfitPct
+          actCleaned['__discount_pct'] = effDiscountPct
+          actCleaned['__extra_amount'] = extraAmount
+          actCleaned['__include_installation'] = includeInstallation ? 1 : 0
+
+          wbToExport.setOverrides(actCleaned)
+          wbToExport.setFormulaOverrides(formulaOverrides)
+
+          const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
+          const fileName = `${qtnTitle}_${activeSysName}_Quotation_Actual.xlsx`
+
+          const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
+          const activeProfitAmount = Math.round(summary.profitAmount || ((summary.beforeGst - (summary.costBase || 0)) * activeSysQty))
+
+          const modelSummaryText = (summary?.models || [])
+            .filter((m) => m.qty > 0)
+            .map((m) => `${m.qty} ${m.code}`)
+            .join(' + ')
+
+          exportWorkbookToXLSX(wbToExport, fileName, undefined, {
+            setsQty: activeSysQty,
+            subtotalBeforeGst: activeSysBeforeGst,
+            sysTransport: allocatedSysTransport,
+            sysAccommodation: allocatedSysAccommodation,
+            modelSummaryStr: modelSummaryText || undefined,
+            isActual: true,
+            profitAmount: activeProfitAmount,
+            profitPct: effProfitPct,
+            discountPct: effDiscountPct,
+            includeInstallation,
+            extraAmount,
+          })
+          if (wbToExport === wb) {
+            wb.setOverrides(overrides)
+            wb.setFormulaOverrides(formulaOverrides)
+          }
+          toast('Actual Quotation Excel spreadsheet downloaded successfully!', 'ok')
         }
-        if (discountPct !== undefined) {
-          actCleaned['__discount_pct'] = discountPct
-        }
-
-        // Installation and extra amount
-        actCleaned['__extra_amount'] = extraAmount
-        actCleaned['__include_installation'] = includeInstallation ? 1 : 0
-
-        wbToExport.setOverrides(actCleaned)
-        wbToExport.setFormulaOverrides(formulaOverrides)
-
-        const qtnTitle = (project.summary?.client_info?.qtn_no || name || project.name || 'Quotation').replace(/[/\\?%*:|"<>]/g, '_')
-        const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
-        const fileName = `${qtnTitle}_${activeSysName}_Quotation_Actual.xlsx`
-
-        const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
-        const activeProfitAmount = Math.round(summary.profitAmount || ((summary.beforeGst - (summary.costBase || 0)) * activeSysQty))
-
-        const modelSummaryText = (summary?.models || [])
-          .filter((m) => m.qty > 0)
-          .map((m) => `${m.qty} ${m.code}`)
-          .join(' + ')
-
-        exportWorkbookToXLSX(wbToExport, fileName, undefined, {
-          setsQty: activeSysQty,
-          subtotalBeforeGst: activeSysBeforeGst,
-          sysTransport: allocatedSysTransport,
-          sysAccommodation: allocatedSysAccommodation,
-          modelSummaryStr: modelSummaryText || undefined,
-          isActual: true,
-          profitAmount: activeProfitAmount,
-          profitPct: profitPct !== undefined ? profitPct : (Number(wbToExport.value('Total cal', 25, 2)) || 25),
-          discountPct: discountPct !== undefined ? discountPct : 0,
-        })
-        toast('Actual Quotation Excel spreadsheet downloaded successfully!', 'ok')
       }
     } catch (e: any) {
       toast(`Export failed: ${e?.message || 'Error creating Excel file'}`, 'err')
@@ -3012,72 +3083,187 @@ export function CalculatorPage({
 
       const wbToExport = targetWb || activeWb
       if (wbToExport) {
-        // Apply cut-to-cut inputs & formula overrides
-        const actInputs = { ...(systems[activeSystemIdx]?.overrides || {}), ...overrides }
-        const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
-        const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
-        const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
-        const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
-        const c2cInputs = { ...filterCutToCutOverrides(actInputs), ...mergedC2COv }
-        // Proportional transport & accommodation per body allocation
-        const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, summary?.bodies)
-        const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
-          ? summary.bodies
-          : activeSysInfo.singleSetBodies
-        const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
-
+        const qtnNoStr = project.summary?.client_info?.qtn_no || ''
+        const clientNameStr = project.summary?.client_info?.client_name || ''
+        const qtnTitle = (qtnNoStr || name || project.name || 'Quotation').replace(/[/\\?%*:|"<>]/g, '_')
         const projectTransport = (overrides['Total cal!N24'] !== undefined ? Number(overrides['Total cal!N24']) : (wb.num('Total cal', 'N24') || 0))
         const projectAccommodation = (overrides['Total cal!N25'] !== undefined ? Number(overrides['Total cal!N25']) : (wb.num('Total cal', 'N25') || 0))
+        const effProfitPct = profitPct !== undefined ? profitPct : (Number(wbToExport.value('Total cal', 25, 2)) || 25)
+        const effDiscountPct = discountPct !== undefined ? discountPct : 0
 
-        const { allocatedTransport: allocatedSysTransport, allocatedAccommodation: allocatedSysAccommodation } = calculateAllocatedLogistics(
-          projectTransport,
-          projectAccommodation,
-          activeSysTotalBodies,
-          totalCombinedBodies,
-          systems.length > 1,
-        )
+        if (systems.length > 1) {
+          const prevOv = wbToExport.getOverrides()
+          const prevFO = wbToExport.getFormulaOverrides()
 
-        c2cInputs['Total cal!N24'] = allocatedSysTransport
-        c2cInputs['Total cal!N25'] = allocatedSysAccommodation
+          const entries: MultiSystemExcelEntry[] = systems.map((sys, idx) => {
+            const compiled = compiledSets[idx]
+            const sysQty = Math.max(1, Number(sys.quantity) || 1)
+            const isCurrent = idx === activeSystemIdx
+            const actInputs = isCurrent ? { ...(sys.overrides || {}), ...overrides } : { ...(compiled?.overrides || sys.overrides || {}) }
+            const sysCustomC2C = isCurrent
+              ? { ...(project.summary?.c2c_overrides || {}), ...(sys.c2c_overrides || {}) }
+              : (sys.c2c_overrides || {})
+            const sysCustomC2CFO = isCurrent
+              ? { ...(project.summary?.c2c_formula_overrides || {}), ...(sys.c2c_formula_overrides || {}) }
+              : (sys.c2c_formula_overrides || {})
+            const sysIncInst = compiled?.includeInstallation ?? sys.includeInstallation ?? includeInstallation
+            const sysExtra = compiled?.extraAmount ?? (isCurrent ? extraAmount : Number(sys.extraAmount ?? actInputs['__extra_amount'] ?? 0))
 
-        wbToExport.setOverrides(c2cInputs)
-        wbToExport.setFormulaOverrides({ ...formulaOverrides, ...mergedC2CFO })
+            const c2cOv: Overrides = { ...filterCutToCutOverrides(actInputs), ...sysCustomC2C }
+            const sysInfo = systemBreakdowns[idx] || calculateSystemBodies(sys, actInputs, wb, isCurrent, summary?.bodies)
+            const sysTotalBodies = sysInfo.singleSetBodies * sysQty
+            const { allocatedTransport, allocatedAccommodation } = calculateAllocatedLogistics(
+              projectTransport,
+              projectAccommodation,
+              sysTotalBodies,
+              totalCombinedBodies,
+              true,
+            )
 
-        const qtnTitle = (project.summary?.client_info?.qtn_no || name || project.name || 'Quotation').replace(/[/\\?%*:|"<>]/g, '_')
-        const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
-        const fileName = `${qtnTitle}_${activeSysName}_Cut_to_Cut_Analysis.xlsx`
+            c2cOv['Total cal!N24'] = allocatedTransport
+            c2cOv['Total cal!N25'] = allocatedAccommodation
+            c2cOv['__profit_pct'] = effProfitPct
+            c2cOv['Total cal!C26'] = effProfitPct
+            c2cOv['__discount_pct'] = effDiscountPct
+            c2cOv['__extra_amount'] = sysExtra
+            c2cOv['__include_installation'] = sysIncInst ? 1 : 0
 
-        const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
-        const sysC2CProfit = systems.length > 1 ? singleC2CProfit : displayC2CProfit
-        const sysC2CTotal = systems.length > 1 ? singleC2CTotal : displayC2CTotal
-        const sysC2CRatio = systems.length > 1 ? singleC2CRatio : displayC2CRatio
+            const c2cFO = isCurrent ? { ...formulaOverrides, ...sysCustomC2CFO } : { ...(sys.formulaOverrides || {}), ...sysCustomC2CFO }
+            wbToExport.setFormulaOverrides(c2cFO)
+            wbToExport.setOverrides(c2cOv)
+            const c2cSum = summarize(wbToExport, effProfitPct, effDiscountPct, sysIncInst, sysExtra)
 
-        const modelSummaryText = (summary?.models || [])
-          .filter((m) => m.qty > 0)
-          .map((m) => `${m.qty} ${m.code}`)
-          .join(' + ')
+            const sysBeforeGst = compiled?.amount || Math.round((compiled?.summary?.beforeGst || summary.beforeGst) * sysQty)
+            const sysPreDisc = compiled?.pre_discount_amount || Math.round((compiled?.summary?.subtotalWithProfit || summary.beforeGst) * sysQty)
+            const c2cMetrics = calculateC2CAnalysis(
+              sysBeforeGst,
+              (c2cSum.costBase || 0) * sysQty,
+              (c2cSum.labourSubtotal || 0) * sysQty,
+              (c2cSum.totalWeight || 0) * sysQty,
+            )
 
-        const c2cData = {
-          profit: sysC2CProfit,
-          total: sysC2CTotal,
-          ratio: sysC2CRatio,
-          costBase: c2cSummary?.costBase,
-          labour: c2cSummary?.labourSubtotal,
-          steelWeight: c2cSummary?.totalWeight,
-          subtotalBeforeGst: activeSysBeforeGst,
-          setsQty: activeSysQty,
-          sysTransport: allocatedSysTransport,
-          sysAccommodation: allocatedSysAccommodation,
+            return {
+              name: sys.name || `SYSTEM ${String.fromCharCode(65 + idx)}`,
+              bay: compiled?.bay || sys.bay || 3,
+              setsQty: sysQty,
+              overrides: c2cOv,
+              formulaOverrides: c2cFO,
+              profitPct: effProfitPct,
+              discountPct: effDiscountPct,
+              includeInstallation: sysIncInst,
+              extraAmount: sysExtra,
+              allocatedTransport,
+              allocatedAccommodation,
+              subtotalBeforeGst: sysBeforeGst,
+              preDiscountTotal: sysPreDisc,
+              profitAmount: c2cMetrics.profit,
+              summary: c2cSum,
+              c2cData: {
+                profit: c2cMetrics.profit,
+                total: c2cMetrics.total,
+                ratio: c2cMetrics.ratio,
+                costBase: c2cSum.costBase,
+                labour: c2cSum.labourSubtotal,
+                steelWeight: c2cSum.totalWeight,
+                subtotalBeforeGst: sysBeforeGst,
+                setsQty: sysQty,
+                sysTransport: allocatedTransport,
+                sysAccommodation: allocatedAccommodation,
+              },
+            }
+          })
+
+          wbToExport.setOverrides(prevOv)
+          wbToExport.setFormulaOverrides(prevFO)
+
+          const fileName = `${qtnTitle}_All_Systems_Cut_to_Cut_Analysis.xlsx`
+          exportMultiSystemWorkbookToXLSX(wbToExport, entries, fileName, {
+            title: name || project.name || 'Quotation',
+            clientName: clientNameStr,
+            qtnNo: qtnNoStr,
+            isActual: false,
+            profitPct: effProfitPct,
+            discountPct: effDiscountPct,
+            includeInstallation,
+          })
+          toast('Consolidated Multi-System Cut-to-Cut Excel downloaded successfully!', 'ok')
+        } else {
+          // Apply cut-to-cut inputs & formula overrides
+          const actInputs = { ...(systems[activeSystemIdx]?.overrides || {}), ...overrides }
+          const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
+          const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
+          const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
+          const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
+          const c2cInputs = { ...filterCutToCutOverrides(actInputs), ...mergedC2COv }
+
+          const activeSysInfo = systemBreakdowns[activeSystemIdx] || calculateSystemBodies(systems[activeSystemIdx], overrides, wb, true, summary?.bodies)
+          const activeSingleSetBodies = (summary?.bodies && summary.bodies > 0)
+            ? summary.bodies
+            : activeSysInfo.singleSetBodies
+          const activeSysTotalBodies = activeSingleSetBodies * (activeSysQty > 0 ? activeSysQty : 1)
+
+          const { allocatedTransport: allocatedSysTransport, allocatedAccommodation: allocatedSysAccommodation } = calculateAllocatedLogistics(
+            projectTransport,
+            projectAccommodation,
+            activeSysTotalBodies,
+            totalCombinedBodies,
+            false,
+          )
+
+          c2cInputs['Total cal!N24'] = allocatedSysTransport
+          c2cInputs['Total cal!N25'] = allocatedSysAccommodation
+          c2cInputs['__profit_pct'] = effProfitPct
+          c2cInputs['Total cal!C26'] = effProfitPct
+          c2cInputs['__discount_pct'] = effDiscountPct
+          c2cInputs['__extra_amount'] = extraAmount
+          c2cInputs['__include_installation'] = includeInstallation ? 1 : 0
+
+          const prevOv = wbToExport.getOverrides()
+          const prevFO = wbToExport.getFormulaOverrides()
+          wbToExport.setOverrides(c2cInputs)
+          wbToExport.setFormulaOverrides({ ...formulaOverrides, ...mergedC2CFO })
+
+          const activeSysName = (systems[activeSystemIdx]?.name || 'System').replace(/\s+/g, '_')
+          const fileName = `${qtnTitle}_${activeSysName}_Cut_to_Cut_Analysis.xlsx`
+
+          const activeSysBeforeGst = compiledSets[activeSystemIdx]?.amount || Math.round(summary.beforeGst * activeSysQty)
+          const sysC2CProfit = displayC2CProfit
+          const sysC2CTotal = displayC2CTotal
+          const sysC2CRatio = displayC2CRatio
+
+          const modelSummaryText = (summary?.models || [])
+            .filter((m) => m.qty > 0)
+            .map((m) => `${m.qty} ${m.code}`)
+            .join(' + ')
+
+          const c2cData = {
+            profit: sysC2CProfit,
+            total: sysC2CTotal,
+            ratio: sysC2CRatio,
+            costBase: c2cSummary?.costBase,
+            labour: c2cSummary?.labourSubtotal,
+            steelWeight: c2cSummary?.totalWeight,
+            subtotalBeforeGst: activeSysBeforeGst,
+            setsQty: activeSysQty,
+            sysTransport: allocatedSysTransport,
+            sysAccommodation: allocatedSysAccommodation,
+          }
+
+          exportWorkbookToXLSX(wbToExport, fileName, c2cData, {
+            setsQty: activeSysQty,
+            subtotalBeforeGst: activeSysBeforeGst,
+            sysTransport: allocatedSysTransport,
+            sysAccommodation: allocatedSysAccommodation,
+            modelSummaryStr: modelSummaryText || undefined,
+            profitPct: effProfitPct,
+            discountPct: effDiscountPct,
+            includeInstallation,
+            extraAmount,
+          })
+          wbToExport.setOverrides(prevOv)
+          wbToExport.setFormulaOverrides(prevFO)
+          toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
         }
-
-        exportWorkbookToXLSX(wbToExport, fileName, c2cData, {
-          setsQty: activeSysQty,
-          subtotalBeforeGst: activeSysBeforeGst,
-          sysTransport: allocatedSysTransport,
-          sysAccommodation: allocatedSysAccommodation,
-          modelSummaryStr: modelSummaryText || undefined,
-        })
-        toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
       }
     } catch (e: any) {
       toast(`Export failed: ${e?.message || 'Error creating Excel file'}`, 'err')

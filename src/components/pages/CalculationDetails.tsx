@@ -302,6 +302,18 @@ export function CalculationDetails({
 
       const sysQty = Math.max(1, Number(activeSys?.quantity) || 1)
       const subtotalBeforeGst = activeWb.num('Total cal', 'N27') || 0
+      const profitPctVal = effectiveSysOverrides['__profit_pct'] !== undefined
+        ? Number(effectiveSysOverrides['__profit_pct'])
+        : (activeWb.num('Total cal', 'C26') || 25)
+      const discountPctVal = effectiveSysOverrides['__discount_pct'] !== undefined
+        ? Number(effectiveSysOverrides['__discount_pct'])
+        : 0
+      const includeInstVal = effectiveSysOverrides['__include_installation'] !== undefined
+        ? Number(effectiveSysOverrides['__include_installation']) !== 0
+        : (activeSys?.includeInstallation !== false)
+      const extraAmtVal = effectiveSysOverrides['__extra_amount'] !== undefined
+        ? Number(effectiveSysOverrides['__extra_amount'])
+        : (Number(activeSys?.extraAmount) || 0)
 
       if (isC2C) {
         const c2cData = {
@@ -317,17 +329,23 @@ export function CalculationDetails({
         exportWorkbookToXLSX(activeWb, fileName, c2cData, {
           setsQty: sysQty,
           subtotalBeforeGst,
+          profitPct: profitPctVal,
+          discountPct: discountPctVal,
+          includeInstallation: includeInstVal,
+          extraAmount: extraAmtVal,
         })
         toast('Cut-to-Cut Excel spreadsheet downloaded successfully!', 'ok')
       } else {
         const profitAmt = activeWb.num('Total cal', 'N26') || 0
-        const profitPctVal = activeWb.num('Total cal', 'C26') || 25
         exportWorkbookToXLSX(activeWb, fileName, undefined, {
           setsQty: sysQty,
           subtotalBeforeGst,
           isActual: true,
           profitAmount: profitAmt,
           profitPct: profitPctVal,
+          discountPct: discountPctVal,
+          includeInstallation: includeInstVal,
+          extraAmount: extraAmtVal,
         })
         toast('Actual Quotation Excel spreadsheet downloaded successfully!', 'ok')
       }
