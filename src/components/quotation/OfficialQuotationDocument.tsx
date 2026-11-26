@@ -856,6 +856,100 @@ export function numberToIndianWords(num: number): string {
   return parts.join(' ').replace(/\s+/g, ' ').trim()
 }
 
+export function getSetBayCount(
+  s: any,
+  sIdx: number,
+  projectInputs?: Record<string, any>,
+  wb?: Workbook | null,
+  fallbackSummary?: any,
+): number {
+  const explicitBay = Number(s?.bay ?? s?.bay_count)
+  if (explicitBay > 0) return explicitBay
+
+  const sysOv = s?.overrides || (sIdx === 0 ? projectInputs : undefined) || {}
+  const a3 = Number(sysOv['Total cal!A3'] ?? (sIdx === 0 && wb ? wb.num('Total cal', 'A3') : undefined))
+  if (a3 > 0) return Math.max(1, Math.round(a3 / 2))
+
+  const detected = detectSystemBayCount(s, sysOv)
+  if (detected && detected > 0) return detected
+
+  const d3 = Number(sysOv['Total cal!D3'] ?? (sIdx === 0 && wb ? wb.num('Total cal', 'D3') : undefined))
+  if (d3 > 0) return Math.max(1, Math.round(d3 / 915))
+
+  if (sIdx === 0 && fallbackSummary) {
+    const fallbackDetected = detectSystemBayCount({ summary: fallbackSummary }, projectInputs)
+    if (fallbackDetected && fallbackDetected > 0) return fallbackDetected
+  }
+  return 4
+}
+
+export function formatSubjectBayPart(bays: number[]): string {
+  const valid = bays.map((b) => Math.round(Number(b))).filter((b) => b > 0 && !isNaN(b))
+  if (valid.length === 0) return '4'
+  const unique = Array.from(new Set(valid))
+  return unique.join(', ')
+}
+
+export function formatSystemTitleWithBay(title: string, bay: number): string {
+  const clean = (title || 'SYSTEM A').trim()
+  if (!bay || bay <= 0) return clean
+  // Replace stale bay inside parentheses like "SYSTEM A (2 BAY)" -> "SYSTEM A (3 BAY)"
+  if (/\(\s*\d+\s*BAY\s*\)/i.test(clean)) {
+    return clean.replace(/\(\s*\d+\s*BAY\s*\)/i, `(${bay} BAY)`)
+  }
+  // If title already specifies bay at the end like "SYSTEM A - 2 BAY" or "2 BAY", update the bay count cleanly
+  if (/\b\d+\s*BAY$/i.test(clean)) {
+    return clean.replace(/\b\d+\s*BAY$/i, `${bay} BAY`)
+  }
+  return `${clean} (${bay} BAY)`
+}
+
+export function areBodyItemsValidForSets(
+  savedBodies: InstallationBodyItem[],
+  currentSets: any[] | undefined,
+  projectInputs?: Record<string, any>,
+  wb?: Workbook | null,
+  fallbackSummary?: any,
+): boolean {
+  if (!Array.isArray(savedBodies) || savedBodies.length === 0) return false
+  const singleBay = getSetBayCount(currentSets?.[0] || {}, 0, projectInputs, wb, fallbackSummary)
+
+  if (Array.isArray(currentSets) && currentSets.length > 0) {
+    // Check that every system in currentSets is represented in savedBodies with its own accurate bay
+    for (let sIdx = 0; sIdx < currentSets.length; sIdx++) {
+      const s = currentSets[sIdx]
+      const expectedBay = getSetBayCount(s, sIdx, projectInputs, wb, fallbackSummary)
+      const sysId = String(s.id || sIdx)
+      const sysName = (s.system_title || s.name || `SYSTEM ${String.fromCharCode(65 + sIdx)}`).trim()
+
+      const sysItems = savedBodies.filter(
+        (b) =>
+          (b.system_id && String(b.system_id) === sysId) ||
+          (currentSets.length === 1 && (!b.system_id || b.system_id === 'default')) ||
+          (b.system_name && b.system_name.trim().toLowerCase() === sysName.toLowerCase()),
+      )
+
+      if (sysItems.length === 0) {
+        return false
+      }
+
+      const bayMismatch = sysItems.some((it) => {
+        if (it.title?.includes('5 BAY') && (it.total_body === 90 || expectedBay !== 5)) return true
+        const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
+        return m && Number(m[1]) !== expectedBay
+      })
+      if (bayMismatch) return false
+    }
+    return true
+  }
+
+  return !savedBodies.some((it: any) => {
+    if (it.title?.includes('5 BAY') && (it.total_body === 90 || (singleBay && singleBay !== 5))) return true
+    const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
+    return m && Number(m[1]) !== singleBay
+  })
+}
+
 export function OfficialQuotationDocument({
   project,
   summary,
@@ -882,12 +976,16 @@ export function OfficialQuotationDocument({
     const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
     const currentA3 = Number(project.inputs?.['Total cal!A3'] ?? (wb ? wb.num('Total cal', 'A3') : undefined))
     const currentD3 = Number(project.inputs?.['Total cal!D3'] ?? (wb ? wb.num('Total cal', 'D3') : undefined))
-    const bayCount = (initialSets && initialSets[0]?.bay) ||
+    const fallbackBay =
       (currentA3 > 0 ? Math.max(1, Math.round(currentA3 / 2)) : null) ||
       (currentD3 > 0 ? Math.max(1, Math.round(currentD3 / 915)) : null) ||
       detectSystemBayCount({ summary: project.summary }, project.inputs) ||
       4
-    const defaultSubject = `QUOTATION FOR SUPPLY ${bayCount} BAY MECHANICAL MOBILE COMPACTOR`
+    const systemBays = (initialSets && initialSets.length > 0)
+      ? initialSets.map((s, idx) => getSetBayCount(s, idx, project.inputs, wb, project.summary))
+      : [fallbackBay]
+    const expectedBayPart = formatSubjectBayPart(systemBays)
+    const defaultSubject = `QUOTATION FOR SUPPLY ${expectedBayPart} BAY MECHANICAL MOBILE COMPACTOR`
 
     // Generate standard official QTN NO based on project name and fiscal year:
     // e.g. "QTY NO 123" -> MSSLP/26-27/MT-SL/123
@@ -922,7 +1020,7 @@ export function OfficialQuotationDocument({
     const resolvedContacts = (Array.isArray(saved.contacts) && saved.contacts.length > 0)
       ? saved.contacts
       : (Array.isArray(dirMatch?.contacts) ? dirMatch.contacts : [])
-    const resolvedExtra = (Array.isArray(saved.extra_fields) && saved.extra_fields.length > 0)
+    const resolvedExtra = Array.isArray(saved.extra_fields)
       ? saved.extra_fields
       : (Array.isArray(dirMatch?.extra_fields) ? dirMatch.extra_fields : [])
 
@@ -950,8 +1048,10 @@ export function OfficialQuotationDocument({
     const defaultFreightTerms = isTransportZero ? 'At your scope.' : 'Including.'
     const defaultLodgingTerms = 'At our scope.'
 
-    const subjectBayMatch = saved.subject ? saved.subject.match(/\b([1-9]\d?)\s*BAY\b/i) : null
-    const hasSubjectBayMismatch = subjectBayMatch && Number(subjectBayMatch[1]) !== bayCount
+    const autoSubjectMatch = saved.subject?.trim().match(/^QUOTATION FOR SUPPLY\s+([\d,\s]+?)\s*BAYS?\s+MECHANICAL MOBILE COMPACTOR$/i)
+    const savedBayNorm = autoSubjectMatch ? autoSubjectMatch[1].replace(/\s+/g, '') : ''
+    const expectedBayNorm = expectedBayPart.replace(/\s+/g, '')
+    const hasSubjectBayMismatch = Boolean(autoSubjectMatch && savedBayNorm !== expectedBayNorm)
     const effectiveSubject = (!saved.subject || hasSubjectBayMismatch) ? defaultSubject : saved.subject
 
     return {
@@ -1000,7 +1100,7 @@ export function OfficialQuotationDocument({
       warranty_terms: saved.warranty_terms || '12 months Warrenty Manufacturing defect.',
       amc_terms: saved.amc_terms || `Annual Monthly Contract from " ${getBusinessProfile(effectiveOrgId).company_name || 'MYRIAD'}" will be starting after completion of 1 years Warranty. Till 1 years any kind of servicing will be done Free to Client`,
     }
-  }, [project, summary, wb])
+  }, [project, summary, wb, initialSets])
 
   const { toast } = useUI()
   const [clientInfo, setClientInfo] = useState<QuotationClientInfo>(initialClientInfo)
@@ -1091,19 +1191,22 @@ export function OfficialQuotationDocument({
     if (!cl) return
 
     setClientInfo((prev) => {
-      const loadedExtra = Array.isArray(cl.extra_fields) && cl.extra_fields.length > 0
-        ? cl.extra_fields.map((ef) => {
-            const val = ef.value || (Array.isArray(ef.values) && ef.values[0]) || ''
-            return {
-              id: ef.id || String(Date.now()),
-              label: ef.label || '',
-              value: val,
-              values: [val],
-              visible: ef.visible !== false,
-              visible_values: [true],
-            }
-          })
-        : []
+      const hasExistingQuoteRows = Array.isArray(prev.extra_fields) && prev.extra_fields.some((f) => (f.label || '').trim() || (f.value || '').trim())
+      const loadedExtra = hasExistingQuoteRows
+        ? prev.extra_fields
+        : (Array.isArray(cl.extra_fields) && cl.extra_fields.length > 0
+          ? cl.extra_fields.map((ef) => {
+              const val = ef.value || (Array.isArray(ef.values) && ef.values[0]) || ''
+              return {
+                id: ef.id || String(Date.now()),
+                label: ef.label || '',
+                value: val,
+                values: [val],
+                visible: ef.visible !== false,
+                visible_values: [true],
+              }
+            })
+          : [])
 
       const loadedContacts = Array.isArray(cl.contacts)
         ? cl.contacts.filter((cp) => !(cp.name === cl.kind_att && cp.phone === cl.contact && cp.name.trim().length > 0))
@@ -1263,48 +1366,30 @@ export function OfficialQuotationDocument({
     return list
   }, [clientInfo.kind_att, clientInfo.buyer_contact, clientInfo.contacts, selectedClientId, visibleSavedClients])
 
-  // Keep saved clients synchronized across components/tabs and update active quotation state immediately
+  // Keep saved clients synchronized across components/tabs without overwriting quotation-specific overrides or custom rows
   useEffect(() => {
     const handleUpdate = () => {
       const freshList = getSavedClients(effectiveOrgId)
       setSavedClients(freshList)
 
-      // When a client is updated in the directory, sync changes directly into clientInfo so PDF immediately shows them!
       const matching = selectedClientId
         ? freshList.find((c) => c.id === selectedClientId)
         : freshList.find((c) => fuzzyTextMatch(c.name, clientInfo.buyer_name))
 
       if (matching) {
-        setClientInfo((prev) => {
-          const loadedExtra = Array.isArray(matching.extra_fields)
-            ? matching.extra_fields.map((ef) => {
-                const val = ef.value || (Array.isArray(ef.values) && ef.values[0]) || ''
-                return {
-                  id: ef.id || String(Date.now()),
-                  label: ef.label || '',
-                  value: val,
-                  values: [val],
-                  visible: ef.visible !== false,
-                  visible_values: [true],
-                }
-              })
-            : prev.extra_fields
-
-          const loadedContacts = Array.isArray(matching.contacts) ? matching.contacts : prev.contacts
-
-          return {
-            ...prev,
-            buyer_name: matching.name,
-            buyer_address: matching.address || prev.buyer_address,
-            buyer_gst: matching.gst || prev.buyer_gst,
-            buyer_email: matching.email !== undefined ? matching.email : prev.buyer_email,
-            show_buyer_email: Boolean(matching.email || prev.buyer_email),
-            kind_att: matching.kind_att || prev.kind_att,
-            buyer_contact: matching.contact || prev.buyer_contact,
-            contacts: loadedContacts,
-            extra_fields: loadedExtra,
-          }
-        })
+        setClientInfo((prev) => ({
+          ...prev,
+          buyer_name: prev.buyer_name || matching.name,
+          buyer_address: prev.buyer_address || matching.address || '',
+          buyer_gst: prev.buyer_gst || matching.gst || '',
+          buyer_email: prev.buyer_email !== undefined && prev.buyer_email !== '' ? prev.buyer_email : (matching.email || ''),
+          show_buyer_email: Boolean(prev.buyer_email || matching.email),
+          kind_att: prev.kind_att || matching.kind_att || '',
+          buyer_contact: prev.buyer_contact || matching.contact || '',
+          contacts: (Array.isArray(prev.contacts) && prev.contacts.length > 0) ? prev.contacts : (Array.isArray(matching.contacts) ? matching.contacts : []),
+          // Preserve quotation-specific custom rows; never overwrite with global directory on background sync
+          extra_fields: prev.extra_fields,
+        }))
       }
     }
     window.addEventListener('examcalc:clients-updated', handleUpdate)
@@ -1335,7 +1420,8 @@ export function OfficialQuotationDocument({
           email: clientInfo.buyer_email || '',
           subject: clientInfo.subject || '',
           contacts: clientInfo.contacts || [],
-          extra_fields: clientInfo.extra_fields || [],
+          // Custom rows added in a quotation belong strictly to that quotation & its revisions
+          extra_fields: existingClient?.extra_fields || [],
           include_full_proposal: includeFullProposal,
         },
         effectiveOrgId,
@@ -1359,6 +1445,7 @@ export function OfficialQuotationDocument({
     }
 
     try {
+      const existingDirClient = savedClients.find((c) => c.id === selectedClientId)
       const saved = await saveClientToDirectoryAsync(
         {
           id: selectedClientId,
@@ -1370,7 +1457,8 @@ export function OfficialQuotationDocument({
           email: clientInfo.buyer_email || '',
           subject: clientInfo.subject || '',
           contacts: clientInfo.contacts || [],
-          extra_fields: clientInfo.extra_fields || [],
+          // Preserve global directory extra_fields; quotation custom rows remain isolated per quotation
+          extra_fields: existingDirClient?.extra_fields || [],
           include_full_proposal: includeFullProposal,
         },
         effectiveOrgId,
@@ -1687,6 +1775,7 @@ export function OfficialQuotationDocument({
 
   // Quotation presentation mode: 'set_wise' or 'unit_wise' (staff can only use these two, admin can also use unit_breakdown)
   const [quotationMode, setQuotationMode] = useState<'set_wise' | 'unit_wise' | 'unit_breakdown'>(() => {
+    if (project.summary?.quotation_mode === 'unit_breakdown' && userIsAdmin) return 'unit_breakdown'
     const saved = initialQuotationMode || project.summary?.quotation_mode
     if (!userIsAdmin && saved === 'unit_breakdown') return 'set_wise'
     return saved || 'set_wise'
@@ -1704,29 +1793,20 @@ export function OfficialQuotationDocument({
 
   // 1c. Installation Body Items (per bay qty = model rows, bay = dfmuRows / 2)
   const defaultBodyItems = useMemo<InstallationBodyItem[]>(() => {
-    const a3 = Number(project.inputs?.['Total cal!A3'] ?? (wb ? wb.num('Total cal', 'A3') : undefined))
-    const d3 = Number(project.inputs?.['Total cal!D3'] ?? (wb ? wb.num('Total cal', 'D3') : undefined))
-    const currentBay = (initialSets && initialSets[0]?.bay) ||
-      (a3 > 0 ? Math.max(1, Math.round(a3 / 2)) : null) ||
-      (d3 > 0 ? Math.max(1, Math.round(d3 / 915)) : null) ||
-      detectSystemBayCount({ summary: project.summary }, project.inputs) ||
-      4
-
+    const activeSetsForValidation = (initialSets && initialSets.length > 0) ? initialSets : project.summary?.quotation_sets
     if (project.summary?.body_items && Array.isArray(project.summary.body_items) && project.summary.body_items.length > 0) {
       const saved = project.summary.body_items
-      const isOldHardcodedDummy = saved.some((it: any) => it.title?.includes('5 BAY') && (it.total_body === 90 || (currentBay && currentBay !== 5)))
-      const hasBayMismatch = currentBay && currentBay > 0 && saved.some((it: any) => {
-        const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
-        return m && Number(m[1]) !== currentBay
-      })
-      if (!isOldHardcodedDummy && !hasBayMismatch) {
+      if (areBodyItemsValidForSets(saved, activeSetsForValidation, project.inputs, wb, project.summary)) {
         return saved
       }
     }
     return generateDefaultBodyItems(summary, wb, project.inputs, (initialSets && initialSets.length > 0) ? initialSets : undefined)
-  }, [project, summary, wb, initialSets, isMultiSystem])
+  }, [project, summary, wb, initialSets])
 
   const [bodyItems, setBodyItems] = useState<InstallationBodyItem[]>(defaultBodyItems)
+  const hasEditedBodyItemsRef = useRef(false)
+  const hasEditedTermsRef = useRef(false)
+  const hasReorderedSetsRef = useRef(false)
 
   const totalBodies = useMemo(() => {
     return bodyItems.reduce((acc, it) => acc + (Number(it.total_body) || 0), 0)
@@ -1916,56 +1996,71 @@ export function OfficialQuotationDocument({
     }))
   }, [breakdownResult])
 
-  // Live update sets from initialSets (multi-system calculator sync)
+  // Live update sets from initialSets (multi-system calculator sync), preserving manual reorder in Edit Pad
   useEffect(() => {
     if (initialSets && initialSets.length > 0) {
-      setSets(
-        initialSets.map((s: any, idx: number) => ({
-          ...s,
-          system_title:
-            (s.system_title !== undefined && s.system_title !== '')
-              ? s.system_title
-              : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`),
-          set_label: s.set_label || (Number(s.quantity) > 1 ? `${s.quantity} ${s.unit || 'SET'}S` : `1 ${s.unit || 'SET'}`),
-          unit: s.unit || 'SET',
-          rate: Number(s.rate) || 0,
-          amount:
-            s.amount !== undefined
-              ? Number(s.amount)
-              : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0)),
-          pre_discount_rate: s.pre_discount_rate !== undefined ? Number(s.pre_discount_rate) : Number(s.rate) || 0,
-          pre_discount_amount: s.pre_discount_amount !== undefined ? Number(s.pre_discount_amount) : (s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0))),
-          items: s.items && s.items.length > 0 ? s.items : breakdownResult.rows.map((r, rIdx) => ({
-            id: String(rIdx + 1),
-            model_name: r.model_name,
-            model_code: r.model_code,
-            dimensions: r.dimensions,
-            unit_qty: r.qty,
-            rate: r.unit_rate_with_profit,
-            amount: r.total_price_with_profit,
-          })),
-        }))
-      )
+      const normalized = initialSets.map((s: any, idx: number) => ({
+        ...s,
+        system_title:
+          (s.system_title !== undefined && s.system_title !== '')
+            ? s.system_title
+            : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${String.fromCharCode(65 + idx)}`),
+        set_label: s.set_label || (Number(s.quantity) > 1 ? `${s.quantity} ${s.unit || 'SET'}S` : `1 ${s.unit || 'SET'}`),
+        unit: s.unit || 'SET',
+        rate: Number(s.rate) || 0,
+        amount:
+          s.amount !== undefined
+            ? Number(s.amount)
+            : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0)),
+        pre_discount_rate: s.pre_discount_rate !== undefined ? Number(s.pre_discount_rate) : Number(s.rate) || 0,
+        pre_discount_amount: s.pre_discount_amount !== undefined ? Number(s.pre_discount_amount) : (s.amount !== undefined ? Number(s.amount) : Math.round((Number(s.quantity) || 1) * (Number(s.rate) || 0))),
+        items: s.items && s.items.length > 0 ? s.items : breakdownResult.rows.map((r, rIdx) => ({
+          id: String(rIdx + 1),
+          model_name: r.model_name,
+          model_code: r.model_code,
+          dimensions: r.dimensions,
+          unit_qty: r.qty,
+          rate: r.unit_rate_with_profit,
+          amount: r.total_price_with_profit,
+        })),
+      }))
+      setSets((prev) => {
+        if (hasReorderedSetsRef.current && prev.length === normalized.length) {
+          const mapById = new Map(normalized.map((item: any) => [item.id, item]))
+          const reordered = prev.map((p) => mapById.get(p.id)).filter(Boolean) as QuotationSet[]
+          if (reordered.length === normalized.length) return reordered
+        }
+        return normalized
+      })
     }
   }, [initialSets, breakdownResult])
 
-  // Keep local state in sync when project/defaults update from server or parent
+  // Keep local state in sync when project/defaults update from server or parent (without clobbering active Edit Pad edits)
   useEffect(() => {
-    setBodyItems(defaultBodyItems)
+    if (!hasEditedBodyItemsRef.current) {
+      setBodyItems(defaultBodyItems)
+    }
   }, [defaultBodyItems])
 
   const lastLoadedProjectIdRef = useRef<string>(project.id)
   useEffect(() => {
     if (lastLoadedProjectIdRef.current !== project.id) {
       lastLoadedProjectIdRef.current = project.id
+      hasEditedBodyItemsRef.current = false
+      hasEditedTermsRef.current = false
+      hasReorderedSetsRef.current = false
       setClientInfo(initialClientInfo)
       setSelectedClientId(initialClientInfo.client_id || '')
       setClientSearchText(initialClientInfo.buyer_name || '')
+      setBodyItems(defaultBodyItems)
+      setTermsList(initialTermsList)
     }
-  }, [project.id, initialClientInfo])
+  }, [project.id, initialClientInfo, defaultBodyItems, initialTermsList])
 
   useEffect(() => {
-    setTermsList(initialTermsList)
+    if (!hasEditedTermsRef.current) {
+      setTermsList(initialTermsList)
+    }
   }, [initialTermsList])
 
   // Live update for single-system mode (fallback when initialSets is not present)
@@ -2048,24 +2143,40 @@ export function OfficialQuotationDocument({
   }, [effectiveQuotationMode, sets, lineItems, breakdownResult])
 
   const canFitOnPage1Naturally = totalCommercialRows <= 4
+  const [bodyPlacementManual, setBodyPlacementManual] = useState<boolean>(() => Boolean(project.summary?.body_placement_manual))
+
+  // Multiple systems: Bodies table is hidden by default unless explicitly enabled by user in Edit Pad
   const [showBodiesTable, setShowBodiesTable] = useState<boolean>(() => {
+    if (isMultiSystem) {
+      if (project.summary?.body_placement_manual && project.summary?.show_bodies_table !== undefined) {
+        return Boolean(project.summary.show_bodies_table)
+      }
+      return false
+    }
     if (project.summary?.show_bodies_table !== undefined) {
       return Boolean(project.summary.show_bodies_table)
     }
     return true
   })
   const [bodyPlacement, setBodyPlacement] = useState<'dedicated' | 'terms' | 'commercial' | 'none'>(() => {
+    if (isMultiSystem) {
+      if (project.summary?.body_placement_manual && project.summary?.body_placement) {
+        return project.summary.body_placement as any
+      }
+      return 'none'
+    }
     if (project.summary?.body_placement) {
       return project.summary.body_placement as any
     }
     if (project.summary?.show_bodies_table === false) return 'none'
-    // For multi-system quotations (2+ systems), default to dedicated page so terms & commercial never crowd
-    if (sets.length >= 2 || (initialSets && initialSets.length >= 2)) return 'dedicated'
     if (project.summary?.body_table_on_page_1) return 'commercial'
     return canFitOnPage1Naturally ? 'commercial' : 'terms'
   })
 
   const [placeBodyOnPage1, setPlaceBodyOnPage1] = useState<boolean>(() => {
+    if (isMultiSystem) {
+      return Boolean(project.summary?.body_placement_manual && project.summary?.body_placement === 'commercial')
+    }
     if (project.summary?.body_placement) {
       return project.summary.body_placement === 'commercial'
     }
@@ -2077,7 +2188,9 @@ export function OfficialQuotationDocument({
 
   // Full 5-Page Proposal toggle (Page 1: Commercial; Page 2: Terms; Page 3: Compactor Specs [merged p3+p4]; Page 4: Powder Coating [merged p5+p6]; Page 5: QC [merged p7+p8])
   const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(() => {
-    // 1. Check if active client has a saved client-wise preference
+    if (project.summary?.include_full_proposal !== undefined) {
+      return Boolean(project.summary.include_full_proposal)
+    }
     try {
       const freshClients = getSavedClients(effectiveOrgId)
       const activeClient = initialClientInfo.client_id
@@ -2087,10 +2200,6 @@ export function OfficialQuotationDocument({
         return Boolean(activeClient.include_full_proposal)
       }
     } catch {}
-    // 2. Check project summary
-    if (project.summary?.include_full_proposal !== undefined) {
-      return Boolean(project.summary.include_full_proposal)
-    }
     return true
   })
 
@@ -2121,11 +2230,20 @@ export function OfficialQuotationDocument({
     }
   }
 
-  // Table size, scaling, density and multi-system layout controls
-  const [tableScale, setTableScale] = useState<number>(100)
-  const [tableDensity, setTableDensity] = useState<'compact' | 'normal' | 'relaxed'>('normal')
+  // Table size, scaling, density and multi-system layout controls (persisted in project.summary)
+  const [tableScale, setTableScale] = useState<number>(() => {
+    const saved = Number(project.summary?.table_scale)
+    return (!isNaN(saved) && saved >= 70 && saved <= 150) ? saved : 100
+  })
+  const [tableDensity, setTableDensity] = useState<'compact' | 'normal' | 'relaxed'>(() => {
+    const d = project.summary?.table_density
+    return (d === 'compact' || d === 'normal' || d === 'relaxed') ? d : 'normal'
+  })
   // Systems per page: 'auto' (smart layout based on model row counts) or manual limit
-  const [systemsPerPageSetting, setSystemsPerPageSetting] = useState<'auto' | 2 | 3 | 4 | 5 | 999>('auto')
+  const [systemsPerPageSetting, setSystemsPerPageSetting] = useState<'auto' | 2 | 3 | 4 | 5 | 999>(() => {
+    const spp = project.summary?.systems_per_page
+    return spp !== undefined ? spp : 'auto'
+  })
 
   // Smart calculation: 5 models per system -> max 3 systems; 2-3 models -> 4 systems
   const effectiveSystemsPerPage = useMemo(() => {
@@ -2152,21 +2270,23 @@ export function OfficialQuotationDocument({
 
   const systemsPerPage = effectiveSystemsPerPage
 
-  // Word-style draggable column widths state (adjustable by dragging borders or +/-)
-  const [goodsColWidths, setGoodsColWidths] = useState({
+  // Word-style draggable column widths state (adjustable by dragging borders or +/-, persisted in project.summary)
+  const [goodsColWidths, setGoodsColWidths] = useState<{ sl: number; qty: number; set: number; rate: number; amount: number }>(() => ({
     sl: 34,
     qty: 55,
     set: 60,
     rate: 85,
     amount: 100,
-  })
+    ...(project.summary?.goods_col_widths || {}),
+  }))
 
-  const [bodyColWidths, setBodyColWidths] = useState({
+  const [bodyColWidths, setBodyColWidths] = useState<{ sr: number; per_bay: number; qty: number; body: number }>(() => ({
     sr: 40,
     per_bay: 75,
     qty: 55,
     body: 85,
-  })
+    ...(project.summary?.body_col_widths || {}),
+  }))
 
   const startColResize = (
     tableType: 'goods' | 'body',
@@ -2214,6 +2334,7 @@ export function OfficialQuotationDocument({
 
   const moveSystem = (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= sets.length) return
+    hasReorderedSetsRef.current = true
     setSets((prev) => {
       const updated = [...prev]
       const temp = updated[fromIdx]
@@ -2225,6 +2346,7 @@ export function OfficialQuotationDocument({
 
   const moveBodyItem = (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= bodyItems.length) return
+    hasEditedBodyItemsRef.current = true
     setBodyItems((prev) => {
       const updated = [...prev]
       const temp = updated[fromIdx]
@@ -2877,6 +2999,7 @@ export function OfficialQuotationDocument({
           quotation_mode: effectiveQuotationMode,
           body_table_on_page_1: placeBodyOnPage1,
           body_placement: bodyPlacement,
+          body_placement_manual: bodyPlacementManual,
           show_bodies_table: showBodiesTable,
           include_full_proposal: includeFullProposal,
           include_installation: includeInstallation,
@@ -2885,6 +3008,11 @@ export function OfficialQuotationDocument({
           proposal_specs: proposalSpecs,
           extra_amount: extraAmount,
           __profit_pct: profitPct,
+          table_scale: tableScale,
+          table_density: tableDensity,
+          systems_per_page: systemsPerPageSetting,
+          goods_col_widths: goodsColWidths,
+          body_col_widths: bodyColWidths,
         })
         toast('Quotation changes saved successfully!')
       } catch (err) {
@@ -2982,6 +3110,7 @@ export function OfficialQuotationDocument({
     interface BodyGroup {
       system_id: string
       system_name: string
+      bay: number
       set_qty: number
       items: InstallationBodyItem[]
       unitTotal: number
@@ -2991,17 +3120,25 @@ export function OfficialQuotationDocument({
     const groups: BodyGroup[] = []
     const groupMap = new Map<string, BodyGroup>()
 
-    bodyItems.forEach((b, idx) => {
-      const matchingSet = sets.find(s => s.id === b.system_id || (b.system_name && (s.system_title === b.system_name || s.set_label === b.system_name)))
-      const defaultName = sets.length > 1 ? `SYSTEM ${String.fromCharCode(65 + idx)}` : (sets[0]?.system_title || sets[0]?.set_label || 'SYSTEM A')
+    bodyItems.forEach((b) => {
+      let matchingIdx = sets.findIndex(
+        (s) =>
+          (b.system_id && String(s.id) === String(b.system_id)) ||
+          (b.system_name && (s.system_title === b.system_name || s.set_label === b.system_name)),
+      )
+      if (matchingIdx < 0 && sets.length === 1) matchingIdx = 0
+      const matchingSet = matchingIdx >= 0 ? sets[matchingIdx] : undefined
+      const defaultName = matchingSet?.system_title || matchingSet?.set_label || 'SYSTEM A'
       const sysName = b.system_name || defaultName
       const sysId = b.system_id || matchingSet?.id || sysName
       const setQty = b.set_qty || (matchingSet?.quantity ? Math.max(1, Number(matchingSet.quantity)) : 1)
+      const detectedBay = getSetBayCount(matchingSet || { summary }, matchingIdx >= 0 ? matchingIdx : 0, project.inputs, wb, summary)
 
       if (!groupMap.has(sysId)) {
         const newGroup: BodyGroup = {
           system_id: sysId,
           system_name: sysName,
+          bay: detectedBay,
           set_qty: setQty,
           items: [],
           unitTotal: 0,
@@ -3015,12 +3152,6 @@ export function OfficialQuotationDocument({
 
       // Auto-heal title and per_bay_qty if bay count was mismatched
       let item = b
-      const sysMatchingSet = matchingSet || (sets.length === 1 ? sets[0] : undefined)
-      const effectiveSetOverrides = { ...(project.inputs || {}), ...(sysMatchingSet?.overrides || {}) }
-      const detectedBay = detectSystemBayCount(sysMatchingSet || { summary }, effectiveSetOverrides) ||
-                          (effectiveSetOverrides['Total cal!A3'] ? Math.max(1, Math.round(Number(effectiveSetOverrides['Total cal!A3']) / 2)) : null) ||
-                          (wb ? Math.max(1, Math.round((wb.num('Total cal', 'A3') || 6) / 2)) : null)
-
       if (detectedBay && detectedBay > 0) {
         const isSingleFace = (item.title || '').toUpperCase().includes('SFMU') || (item.title || '').toUpperCase().includes('SFFU')
         const expectedPerBay = isSingleFace ? detectedBay : (detectedBay * 2)
@@ -3158,7 +3289,7 @@ export function OfficialQuotationDocument({
                       background: '#f8fafc',
                     }}
                   >
-                    {group.system_name} ({group.set_qty} {group.set_qty > 1 ? 'SETS' : 'SET'})
+                    {formatSystemTitleWithBay(group.system_name, group.bay)} ({group.set_qty} {group.set_qty > 1 ? 'SETS' : 'SET'})
                   </td>
                 </tr>
 
@@ -3462,6 +3593,7 @@ export function OfficialQuotationDocument({
                   {clientInfo.extra_fields && clientInfo.extra_fields.length > 0 && (
                     <div className="pdf-buyer-extra-fields">
                       {clientInfo.extra_fields.map((ef) => {
+                        if (ef.visible === false) return null
                         const label = ef.label?.trim()
                         const valText = ef.value?.trim()
                         if (!label && !valText) return null
@@ -3610,7 +3742,9 @@ export function OfficialQuotationDocument({
                           return chunkSets.map((s, relIdx) => {
                             const sIdx = chunk.startSetIndex + relIdx
                             const nextChar = String.fromCharCode(65 + sIdx)
-                            const sysTitle = (s.system_title || `SYSTEM ${nextChar}`).trim()
+                            const baseSysTitle = (s.system_title || `SYSTEM ${nextChar}`).trim()
+                            const sysBay = getSetBayCount(s, sIdx, project.inputs, wb, summary)
+                            const sysTitle = formatSystemTitleWithBay(baseSysTitle, sysBay)
                             const sysItems = s.items && s.items.length > 0 ? s.items : []
                             const sysQty = Number(s.quantity) || 1
 
@@ -3758,7 +3892,9 @@ export function OfficialQuotationDocument({
                       {chunkSets.map((s, relIdx) => {
                         const sIdx = chunk.startSetIndex + relIdx
                         const nextChar = String.fromCharCode(65 + sIdx)
-                        const systemTitle = ((s.system_title !== undefined && s.system_title !== '') ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)).trim()
+                        const baseSystemTitle = ((s.system_title !== undefined && s.system_title !== '') ? s.system_title : (s.set_label?.startsWith('SYSTEM') ? s.set_label : `SYSTEM ${nextChar}`)).trim()
+                        const sysBay = getSetBayCount(s, sIdx, project.inputs, wb, summary)
+                        const systemTitle = baseSystemTitle ? formatSystemTitleWithBay(baseSystemTitle, sysBay) : ''
                         const hasItems = s.items && s.items.length > 0
 
                         const sysDoubleDrive = systemHasDoubleDrive(s)
@@ -4100,7 +4236,7 @@ export function OfficialQuotationDocument({
           </div>
 
           <div className="pdf-footer">
-            {commercialPagesCount + 1} of {actualTotalPages}
+            {commercialPagesCount + bodiesPageCount + 1} of {actualTotalPages}
             {/* 2 of {totalPages} */}
           </div>
         </div>
@@ -5522,6 +5658,7 @@ export function OfficialQuotationDocument({
                             setBodyPlacement('dedicated')
                             setShowBodiesTable(true)
                             setPlaceBodyOnPage1(false)
+                            setBodyPlacementManual(true)
                           }}
                           style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
                           title="Best for multi-system quotations. Gives full space without crowding terms."
@@ -5535,6 +5672,7 @@ export function OfficialQuotationDocument({
                             setBodyPlacement('terms')
                             setShowBodiesTable(true)
                             setPlaceBodyOnPage1(false)
+                            setBodyPlacementManual(true)
                           }}
                           style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
                           title="Place installation bodies table on Page 2 above Terms & Conditions"
@@ -5548,6 +5686,7 @@ export function OfficialQuotationDocument({
                             setBodyPlacement('commercial')
                             setShowBodiesTable(true)
                             setPlaceBodyOnPage1(true)
+                            setBodyPlacementManual(true)
                           }}
                           style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
                           title="Fit on Commercial Page (under goods table)"
@@ -5561,6 +5700,7 @@ export function OfficialQuotationDocument({
                             setBodyPlacement('none')
                             setShowBodiesTable(false)
                             setPlaceBodyOnPage1(false)
+                            setBodyPlacementManual(true)
                           }}
                           style={{ fontSize: '10px', padding: '5px 4px', textAlign: 'center' }}
                           title="Do not show installation bodies table in PDF"
@@ -7123,6 +7263,7 @@ export function OfficialQuotationDocument({
                       type="button"
                       className="btn ghost sm"
                       onClick={() => {
+                        hasEditedTermsRef.current = true
                         const newId = String(Date.now())
                         setTermsList((prev) => [
                           ...prev,
@@ -7159,6 +7300,7 @@ export function OfficialQuotationDocument({
                             value={t.title}
                             placeholder="Clause Title (e.g. Payment :-)"
                             onChange={(e) => {
+                              hasEditedTermsRef.current = true
                               const val = e.target.value
                               setTermsList((prev) =>
                                 prev.map((item, i) => (i === idx ? { ...item, title: val } : item))
@@ -7179,6 +7321,7 @@ export function OfficialQuotationDocument({
                             type="button"
                             className="icon-btn sm"
                             onClick={() => {
+                              hasEditedTermsRef.current = true
                               setTermsList((prev) => prev.filter((_, i) => i !== idx))
                             }}
                             title="Delete this term"
@@ -7202,6 +7345,7 @@ export function OfficialQuotationDocument({
                               style={isLockedScope ? { backgroundColor: 'var(--bg-muted, #f1f5f9)', cursor: 'not-allowed', fontSize: '11px', lineHeight: 1.4 } : { fontSize: '11px', lineHeight: 1.4 }}
                               placeholder="Enter terms clause text..."
                               onChange={(e) => {
+                                hasEditedTermsRef.current = true
                                 const val = e.target.value
                                 setTermsList((prev) =>
                                   prev.map((item, i) => (i === idx ? { ...item, text: val } : item))
@@ -7223,6 +7367,7 @@ export function OfficialQuotationDocument({
                     type="button"
                     className="btn secondary sm"
                     onClick={() => {
+                      hasEditedTermsRef.current = true
                       const newId = String(Date.now())
                       setTermsList((prev) => [
                         ...prev,
@@ -7249,6 +7394,7 @@ export function OfficialQuotationDocument({
                       className="btn secondary"
                       style={{ fontSize: '11px', padding: '3px 8px' }}
                       onClick={() => {
+                        hasEditedBodyItemsRef.current = false
                         const fresh = generateDefaultBodyItems(summary, wb, project.inputs, (initialSets && initialSets.length > 0) ? initialSets : undefined)
                         setBodyItems(fresh)
                         toast('Bodies reset')
@@ -7266,6 +7412,7 @@ export function OfficialQuotationDocument({
                           type="text"
                           value={b.title}
                           onChange={(e) => {
+                            hasEditedBodyItemsRef.current = true
                             const updated = bodyItems.map((item, i) => i === idx ? { ...item, title: e.target.value } : item)
                             setBodyItems(updated)
                           }}
@@ -7310,7 +7457,10 @@ export function OfficialQuotationDocument({
                           {bodyItems.length > 1 && (
                             <button
                               type="button"
-                              onClick={() => setBodyItems(bodyItems.filter((_, i) => i !== idx))}
+                              onClick={() => {
+                                hasEditedBodyItemsRef.current = true
+                                setBodyItems(bodyItems.filter((_, i) => i !== idx))
+                              }}
                               style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 700, padding: '0 4px', fontSize: '12px' }}
                               title="Delete row"
                             >
@@ -7324,6 +7474,7 @@ export function OfficialQuotationDocument({
                           type="text"
                           value={b.sub_label}
                           onChange={(e) => {
+                            hasEditedBodyItemsRef.current = true
                             const updated = bodyItems.map((item, i) => i === idx ? { ...item, sub_label: e.target.value } : item)
                             setBodyItems(updated)
                           }}
@@ -7338,6 +7489,7 @@ export function OfficialQuotationDocument({
                             className="option-input-field"
                             value={b.per_bay_qty}
                             onChange={(e) => {
+                              hasEditedBodyItemsRef.current = true
                               const val = parseInt(e.target.value) || 0
                               const updated = bodyItems.map((item, i) => {
                                 if (i === idx) {
@@ -7358,6 +7510,7 @@ export function OfficialQuotationDocument({
                             className="option-input-field"
                             value={b.qty}
                             onChange={(e) => {
+                              hasEditedBodyItemsRef.current = true
                               const val = parseInt(e.target.value) || 0
                               const updated = bodyItems.map((item, i) => {
                                 if (i === idx) {
@@ -7380,6 +7533,7 @@ export function OfficialQuotationDocument({
                     className="btn secondary"
                     style={{ fontSize: '12px', justifyContent: 'center', padding: '6px' }}
                     onClick={() => {
+                      hasEditedBodyItemsRef.current = true
                       const newId = String(Date.now())
                       let dfmuRows = 6
                       if (wb) {

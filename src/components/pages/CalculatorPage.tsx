@@ -34,6 +34,12 @@ import {
 
   generateDefaultBodyItems,
 
+  areBodyItemsValidForSets,
+
+  formatSubjectBayPart,
+
+  getSetBayCount,
+
 } from '../quotation/OfficialQuotationDocument'
 
 import {
@@ -2435,30 +2441,31 @@ export function CalculatorPage({
 
       // ── Step 4: Build final summary with server-calculated values ──
 
+      const primaryInputs = effectiveSystems[0]?.overrides || serverCleanedOverrides
       const primaryBay = compiledSets[0]?.bay || (bayInput ? Number(bayInput) : 4)
       let cleanedBodyItems = project.summary?.body_items
       if (cleanedBodyItems && Array.isArray(cleanedBodyItems)) {
-        const hasBayMismatch = cleanedBodyItems.some((it: any) => {
-          const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
-          return m && Number(m[1]) !== primaryBay
-        })
-        if (hasBayMismatch) {
+        if (!areBodyItemsValidForSets(cleanedBodyItems, compiledSets, primaryInputs, wb, serverSummary)) {
           cleanedBodyItems = undefined
         }
       }
 
+      const allSystemBays = compiledSets.length > 0
+        ? compiledSets.map((s: any, idx: number) => getSetBayCount(s, idx, primaryInputs, wb, serverSummary))
+        : [primaryBay]
+      const expectedBayPart = formatSubjectBayPart(allSystemBays)
+
       let cleanedClientInfo = project.summary?.client_info
       if (cleanedClientInfo?.subject) {
-        const m = cleanedClientInfo.subject.match(/\b([1-9]\d?)\s*BAY\b/i)
-        if (m && Number(m[1]) !== primaryBay) {
+        const autoMatch = cleanedClientInfo.subject.trim().match(/^QUOTATION FOR SUPPLY\s+([\d,\s]+?)\s*BAYS?\s+MECHANICAL MOBILE COMPACTOR$/i)
+        if (autoMatch && autoMatch[1].replace(/\s+/g, '') !== expectedBayPart.replace(/\s+/g, '')) {
           cleanedClientInfo = {
             ...cleanedClientInfo,
-            subject: `QUOTATION FOR SUPPLY ${primaryBay} BAY MECHANICAL MOBILE COMPACTOR`,
+            subject: `QUOTATION FOR SUPPLY ${expectedBayPart} BAY MECHANICAL MOBILE COMPACTOR`,
           }
         }
       }
 
-      const primaryInputs = effectiveSystems[0]?.overrides || serverCleanedOverrides
       const primaryFO = effectiveSystems[0]?.formulaOverrides || formulaOverrides
 
       const updatedSummary = {
@@ -2680,41 +2687,50 @@ export function CalculatorPage({
     }
     setOverrides(nextOverrides)
 
-    if (sets && Array.isArray(sets)) {
-      setSystems((prev) =>
-        prev.map((sys, i) => {
-          const matchSet = sets[i]
-          if (matchSet) {
-            return {
-              ...sys,
-              name: matchSet.system_title || sys.name,
-              quantity: matchSet.quantity || sys.quantity,
-              unit: matchSet.unit || sys.unit,
-              bay: matchSet.bay || matchSet.bay_count || sys.bay,
-            }
-          }
-          return sys
-        })
-      )
+    if (extraSettings?.quotation_mode === 'set_wise' || extraSettings?.quotation_mode === 'unit_wise') {
+      setQuotationMode(extraSettings.quotation_mode)
     }
 
     const finalCleanOverrides = cleanOverrides(wb, nextOverrides)
-    const effectiveSets = (sets && Array.isArray(sets)) ? sets : []
-    const updatedSystemsList = systems.map((sys, i) => {
-      const matchSet = effectiveSets[i]
-      const isCur = i === activeSystemIdx
-      return {
-        ...sys,
-        name: matchSet?.system_title || sys.name,
-        quantity: matchSet?.quantity || sys.quantity,
-        unit: matchSet?.unit || sys.unit,
-        bay: matchSet?.bay || matchSet?.bay_count || sys.bay,
-        overrides: isCur ? finalCleanOverrides : (sys.overrides || {}),
-        extraAmount: isCur
-          ? (extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount)
-          : (sys.extraAmount ?? 0),
+    const effectiveSets = (sets && Array.isArray(sets) && sets.length > 0) ? sets : null
+    const updatedSystemsList = effectiveSets
+      ? effectiveSets.map((matchSet, i) => {
+          const origIdx = systems.findIndex((s) => String(s.id) === String(matchSet.id))
+          const resolvedIdx = origIdx >= 0 ? origIdx : i
+          const sys = systems[resolvedIdx] || systems[0]
+          const isCur = resolvedIdx === activeSystemIdx
+          return {
+            ...sys,
+            id: matchSet.id || sys?.id || String(i + 1),
+            name: matchSet.system_title || sys?.name || `SYSTEM ${String.fromCharCode(65 + i)}`,
+            quantity: matchSet.quantity || sys?.quantity || 1,
+            unit: matchSet.unit || sys?.unit || 'SET',
+            bay: matchSet.bay || matchSet.bay_count || sys?.bay,
+            overrides: isCur ? finalCleanOverrides : (sys?.overrides || {}),
+            extraAmount: isCur
+              ? (extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount)
+              : (sys?.extraAmount ?? 0),
+          }
+        })
+      : systems.map((sys, i) => {
+          const isCur = i === activeSystemIdx
+          return {
+            ...sys,
+            overrides: isCur ? finalCleanOverrides : (sys.overrides || {}),
+            extraAmount: isCur
+              ? (extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount)
+              : (sys.extraAmount ?? 0),
+          }
+        })
+
+    const activeSysId = systems[activeSystemIdx]?.id
+    setSystems(updatedSystemsList)
+    if (activeSysId) {
+      const nextActiveIdx = updatedSystemsList.findIndex((s) => String(s.id) === String(activeSysId))
+      if (nextActiveIdx >= 0 && nextActiveIdx !== activeSystemIdx) {
+        setActiveSystemIdx(nextActiveIdx)
       }
-    })
+    }
 
     const finalSales = Math.round(Number(allSystemsTotals.sales || (summary.sales * activeSysQty)) || 0)
 
@@ -6849,7 +6865,7 @@ export function CalculatorPage({
                     ...summary,
                     systems: liveSystems,
                     quotation_sets: compiledSets,
-                    quotation_mode: quotationMode,
+                    quotation_mode: project.summary?.quotation_mode === 'unit_breakdown' ? 'unit_breakdown' : quotationMode,
                     extra_amount: extraAmount,
                     include_installation: includeInstallation,
                     profit_pct: profitPct,
@@ -6951,7 +6967,7 @@ export function CalculatorPage({
                     ...summary,
                     systems: liveSystems,
                     quotation_sets: compiledSets,
-                    quotation_mode: quotationMode,
+                    quotation_mode: project.summary?.quotation_mode === 'unit_breakdown' ? 'unit_breakdown' : quotationMode,
                     extra_amount: extraAmount,
                     include_installation: includeInstallation,
                     profit_pct: profitPct,
@@ -7303,7 +7319,7 @@ export function CalculatorPage({
           summary: {
             ...project.summary,
             ...summary,
-            quotation_mode: quotationMode,
+            quotation_mode: project.summary?.quotation_mode === 'unit_breakdown' ? 'unit_breakdown' : quotationMode,
             systems: getEffectiveSystems(overrides, formulaOverrides),
             quotation_sets: compiledSets,
             include_installation: includeInstallation,
