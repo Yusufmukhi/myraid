@@ -29,6 +29,43 @@ export interface ExcelExportOptions {
 }
 
 /**
+ * Resolves named constants (e.g. CONST_STEEL_FACTOR, CONST_SURFACE_FACTOR) and fixes
+ * unquoted identifiers inside an Excel formula outside string literals so Excel never shows #NAME?.
+ * Returns null if any CONST_* constant remains unresolved (caller falls back to evaluated numeric value).
+ */
+export function resolveExcelFormula(
+  rawFormula: string,
+  namedConstants: Record<string, number>,
+): string | null {
+  const expr = rawFormula.startsWith('=') ? rawFormula.slice(1) : rawFormula
+  // Split preserving double-quoted string literals so text inside "..." is never modified
+  const parts = expr.split(/("(?:[^"]|"")*")/g)
+  const resolved = parts
+    .map((part, idx) => {
+      if (idx % 2 === 1) return part // inside quotes
+      let seg = part
+      for (const [key, val] of Object.entries(namedConstants)) {
+        if (val !== undefined && val !== null && !isNaN(Number(val))) {
+          const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          seg = seg.replace(new RegExp(`\\b${escapedKey}\\b`, 'g'), String(val))
+        }
+      }
+      // Fix legacy unquoted bare identifiers in workbook formulas that trigger #NAME? in Excel
+      seg = seg.replace(/\bNO\b(?!\s*[\(!])/g, '"NO"')
+      seg = seg.replace(/\bROW\b(?!\s*[\(!])/g, 'A3')
+      return seg
+    })
+    .join('')
+
+  // If any CONST_* identifier is still unresolved outside quotes, return null so cached value stays intact
+  const stripped = resolved.replace(/"(?:[^"]|"")*"/g, '')
+  if (/\bCONST_[A-Za-z0-9_]+\b/.test(stripped)) {
+    return null
+  }
+  return resolved
+}
+
+/**
  * Exports a full multi-sheet Workbook instance to a genuine styled .xlsx Excel spreadsheet file.
  * Preserves the exact color scheme, column widths, and merged cells from the original exam.xlsx file.
  * - Yellow (FFFF00): Specifications, dimensions, thicknesses, and price inputs
@@ -50,6 +87,7 @@ export function exportWorkbookToXLSX(
   options?: ExcelExportOptions
 ) {
   const book = XLSX.utils.book_new()
+  const namedConstants = wb.getNamedConstants ? wb.getNamedConstants() : {}
   const setsQty = Math.max(1, Number(options?.setsQty ?? c2cData?.setsQty) || 1)
   const subtotalBeforeGst = options?.subtotalBeforeGst ?? c2cData?.subtotalBeforeGst ?? 0
   const allocatedTransport = options?.sysTransport ?? c2cData?.sysTransport
@@ -240,11 +278,14 @@ export function exportWorkbookToXLSX(
           continue
         }
 
-        const raw = wb.raw(sheetName, r, c)
-        if (typeof raw === 'string' && raw.startsWith('=')) {
-          const cellRef = addr(r, c)
-          if (ws[cellRef]) {
-            ws[cellRef].f = raw.slice(1)
+        if (!wb.isOverridden?.(sheetName, r, c)) {
+          const raw = wb.raw(sheetName, r, c)
+          if (typeof raw === 'string' && raw.startsWith('=')) {
+            const resolvedFormula = resolveExcelFormula(raw, namedConstants)
+            const cellRef = addr(r, c)
+            if (ws[cellRef] && resolvedFormula !== null) {
+              ws[cellRef].f = resolvedFormula
+            }
           }
         }
       }

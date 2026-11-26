@@ -2905,7 +2905,8 @@ export function CalculatorPage({
     try {
       toast('Generating Actual Quotation Excel workbook…', 'ok')
       let targetWb = wb
-      if ((!targetWb || targetWb.sheets.size <= 1) && session?.token && org?.id) {
+      const hasNamedConstants = targetWb && Object.keys(targetWb.getNamedConstants()).length > 0
+      if ((!targetWb || targetWb.sheets.size <= 1 || !hasNamedConstants) && session?.token && org?.id) {
         try {
           const res = await api.getFullWorksheets(session.token, org.id)
           if (res?.actual_workbook) {
@@ -2917,7 +2918,7 @@ export function CalculatorPage({
       const wbToExport = targetWb || activeWb
       if (wbToExport) {
         // Apply actual quotation inputs & formula overrides
-        const actInputs = systems[activeSystemIdx]?.overrides || overrides
+        const actInputs = { ...(systems[activeSystemIdx]?.overrides || {}), ...overrides }
         const actCleaned = { ...actInputs }
 
         // Proportional transport & accommodation per body allocation
@@ -2999,7 +3000,8 @@ export function CalculatorPage({
     try {
       toast('Generating Cut-to-Cut Excel workbook…', 'ok')
       let targetWb = c2cWb
-      if ((!targetWb || targetWb.sheets.size <= 1) && session?.token && org?.id) {
+      const hasNamedConstants = targetWb && Object.keys(targetWb.getNamedConstants()).length > 0
+      if ((!targetWb || targetWb.sheets.size <= 1 || !hasNamedConstants) && session?.token && org?.id) {
         try {
           const res = await api.getFullWorksheets(session.token, org.id)
           if (res?.c2c_workbook) {
@@ -3011,7 +3013,7 @@ export function CalculatorPage({
       const wbToExport = targetWb || activeWb
       if (wbToExport) {
         // Apply cut-to-cut inputs & formula overrides
-        const actInputs = systems[activeSystemIdx]?.overrides || overrides
+        const actInputs = { ...(systems[activeSystemIdx]?.overrides || {}), ...overrides }
         const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
         const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
         const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
