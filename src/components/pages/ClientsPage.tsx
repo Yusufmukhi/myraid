@@ -19,34 +19,63 @@ interface Props {
   onNavigate?: (tab: string) => void
 }
 
+const CLIENTS_PER_PAGE = 9
+
+function getPageNumbers(current: number, total: number): (number | string)[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total]
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total]
+}
+
+function getInitials(name: string): string {
+  const words = (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (words.length === 0) return 'CL'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0][0] + words[1][0]).toUpperCase()
+}
+
 export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavigate }: Props) {
   const { toast, confirm } = useUI()
   const copy = useCopy()
 
-  const isOwnerOrAdmin = org.role === 'owner' || org.role === 'admin' || session.username === 'owner' || session.username === 'admin'
+  const isOwnerOrAdmin =
+    org.role === 'owner' ||
+    org.role === 'admin' ||
+    session.username === 'owner' ||
+    session.username === 'admin'
 
   const [clients, setClients] = useState<SavedClient[]>(() => getSavedClients(org.id))
   const [searchQuery, setSearchQuery] = useState('')
+  const [techFilter, setTechFilter] = useState<'all' | 'tech_yes' | 'tech_no' | 'shared'>('all')
+  const [currentPage, setCurrentPage] = useState(1)
   const [editingClient, setEditingClient] = useState<SavedClient | null>(null)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
   const [orgStaffMembers, setOrgStaffMembers] = useState<Member[]>([])
   const [customShareStaffInput, setCustomShareStaffInput] = useState('')
 
-  // Load org members for Owner/Admin so they can pick staff to share with
   useEffect(() => {
     if (isOwnerOrAdmin && session.token && org.id) {
-      api.orgMembers(session.token, org.id)
+      api
+        .orgMembers(session.token, org.id)
         .then((members) => {
           if (Array.isArray(members)) {
-            const staff = members.filter((m) => m.username !== session.username)
-            setOrgStaffMembers(staff)
+            setOrgStaffMembers(members.filter((m) => m.username !== session.username))
           }
         })
         .catch(() => {})
     }
   }, [isOwnerOrAdmin, session.token, org.id, session.username])
 
-  // Simple flat form state: label up, value down
   const [formData, setFormData] = useState<{
     name: string
     address: string
@@ -56,6 +85,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
     contact: string
     contacts: ClientContactPerson[]
     extra_fields: QuotationExtraField[]
+    include_full_proposal: boolean
     profit_margin_pct: number
     shared_with: string[]
   }>({
@@ -67,54 +97,80 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
     contact: '',
     contacts: [],
     extra_fields: [],
+    include_full_proposal: false,
     profit_margin_pct: 25,
     shared_with: [],
   })
 
-  // Synchronize client list across tabs/windows and fetch from Supabase
   useEffect(() => {
     fetchClientsFromSupabase(session.token, org.id)
     const handleUpdate = () => {
-      const updated = getSavedClients(org.id)
-      setClients(updated)
+      setClients(getSavedClients(org.id))
     }
     window.addEventListener('examcalc:clients-updated', handleUpdate)
     return () => window.removeEventListener('examcalc:clients-updated', handleUpdate)
   }, [session.token, org.id])
 
-  // Filter clients based on user role & ownership:
-  // - Owner and Admins see ALL clients
-  // - Staff only sees clients created by themselves
   const userVisibleClients = useMemo(() => {
-    return getVisibleClientsForUser(clients, session.username, org.role, session.user_id)
+    const visible = getVisibleClientsForUser(clients, session.username, org.role, session.user_id) || []
+    return [...visible].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
+    )
   }, [clients, session.username, org.role, session.user_id])
 
-  // Search filter across visible clients
   const filteredClients = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return userVisibleClients || []
-    return (userVisibleClients || []).filter(
-      (c) =>
+    return userVisibleClients.filter((c) => {
+      if (techFilter === 'tech_yes' && c.include_full_proposal !== true) return false
+      if (techFilter === 'tech_no' && c.include_full_proposal === true) return false
+      if (techFilter === 'shared') {
+        const isShared = Array.isArray(c.shared_with) && c.shared_with.length > 0
+        if (!isShared) return false
+      }
+      if (!q) return true
+      return (
         (c.name || '').toLowerCase().includes(q) ||
         (c.gst || '').toLowerCase().includes(q) ||
         (c.kind_att || '').toLowerCase().includes(q) ||
         (c.address || '').toLowerCase().includes(q) ||
         (c.contact || '').toLowerCase().includes(q) ||
         (c.email || '').toLowerCase().includes(q) ||
-        (c.contacts || []).some((cp) => cp.name.toLowerCase().includes(q) || cp.phone.toLowerCase().includes(q)) ||
-        (c.extra_fields || []).some((ef) => (ef.label || '').toLowerCase().includes(q) || (ef.value || '').toLowerCase().includes(q)),
-    )
-  }, [userVisibleClients, searchQuery])
+        (c.contacts || []).some(
+          (cp) => cp.name.toLowerCase().includes(q) || cp.phone.toLowerCase().includes(q),
+        ) ||
+        (c.extra_fields || []).some(
+          (ef) =>
+            (ef.label || '').toLowerCase().includes(q) ||
+            (ef.value || '').toLowerCase().includes(q),
+        )
+      )
+    })
+  }, [userVisibleClients, searchQuery, techFilter])
 
-  // Open existing client
+  // Reset to page 1 when search or filter changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, techFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / CLIENTS_PER_PAGE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginatedClients = useMemo(() => {
+    const start = (safePage - 1) * CLIENTS_PER_PAGE
+    return filteredClients.slice(start, start + CLIENTS_PER_PAGE)
+  }, [filteredClients, safePage])
+
+  const techYesCount = useMemo(
+    () => userVisibleClients.filter((c) => c.include_full_proposal === true).length,
+    [userVisibleClients],
+  )
+
   const handleOpenClient = (client: SavedClient) => {
     setIsCreatingNew(false)
     setEditingClient(client)
 
-    // Filter out contacts duplicating primary contact
     const rawContacts = Array.isArray(client.contacts) ? client.contacts : []
     const cleanContacts = rawContacts.filter(
-      (cp) => !(cp.name === client.kind_att && cp.phone === client.contact && cp.name.trim().length > 0)
+      (cp) => !(cp.name === client.kind_att && cp.phone === client.contact && cp.name.trim().length > 0),
     )
 
     const rawExtra = Array.isArray(client.extra_fields) ? client.extra_fields : []
@@ -130,14 +186,19 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
       extra_fields: rawExtra.map((ef) => {
         const val = ef.value || (Array.isArray(ef.values) && ef.values[0]) || ''
         return {
-          id: ef.id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? `ef_${crypto.randomUUID()}` : `ef_${Date.now()}`),
+          id:
+            ef.id ||
+            (typeof crypto !== 'undefined' && crypto.randomUUID
+              ? `ef_${crypto.randomUUID()}`
+              : `ef_${Date.now()}`),
           label: ef.label || '',
           value: val,
           values: [val],
           visible: ef.visible !== false,
-          visible_values: [true],
+          visible_values: [ef.visible !== false],
         }
       }),
+      include_full_proposal: client.include_full_proposal === true,
       profit_margin_pct: client.profit_margin_pct !== undefined ? client.profit_margin_pct : 25,
       shared_with: Array.isArray(client.shared_with) ? client.shared_with : [],
     })
@@ -155,6 +216,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
       contact: '',
       contacts: [],
       extra_fields: [],
+      include_full_proposal: false,
       profit_margin_pct: 25,
       shared_with: [],
     })
@@ -168,9 +230,13 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
 
   const handleAddContact = () => {
     const newCp: ClientContactPerson = {
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? `cp_${crypto.randomUUID()}` : `cp_${Date.now()}`,
+      id:
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? `cp_${crypto.randomUUID()}`
+          : `cp_${Date.now()}`,
       name: '',
       phone: '',
+      visible: true,
     }
     setFormData((prev) => ({
       ...prev,
@@ -194,7 +260,10 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
 
   const handleAddCustomRow = () => {
     const newEf: QuotationExtraField = {
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? `ef_${crypto.randomUUID()}` : `ef_${Date.now()}`,
+      id:
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? `ef_${crypto.randomUUID()}`
+          : `ef_${Date.now()}`,
       label: '',
       value: '',
       values: [''],
@@ -248,25 +317,27 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
           ...ef,
           value: ef.value.trim(),
           values: [ef.value.trim()],
-          visible: true,
-          visible_values: [true],
+          visible: ef.visible !== false,
+          visible_values: [ef.visible !== false],
         })),
+      include_full_proposal: Boolean(formData.include_full_proposal),
       profit_margin_pct: isOwnerOrAdmin
-        ? (formData.profit_margin_pct !== undefined ? formData.profit_margin_pct : 25)
-        : (editingClient?.profit_margin_pct !== undefined ? editingClient.profit_margin_pct : 25),
+        ? formData.profit_margin_pct !== undefined
+          ? formData.profit_margin_pct
+          : 25
+        : editingClient?.profit_margin_pct !== undefined
+        ? editingClient.profit_margin_pct
+        : 25,
       shared_with: isOwnerOrAdmin
-        ? (Array.isArray(formData.shared_with) ? formData.shared_with : [])
-        : (editingClient?.shared_with || []),
+        ? Array.isArray(formData.shared_with)
+          ? formData.shared_with
+          : []
+        : editingClient?.shared_with || [],
     }
 
     if (isCreatingNew) {
-      const saved = saveClientToDirectory(
-        payload,
-        org.id,
-        session.username,
-        org.role,
-      )
-      toast(`Client "${saved.name}" created successfully!`)
+      const saved = saveClientToDirectory(payload, org.id, session.username, org.role)
+      toast(`Client "${saved.name}" created!`)
       handleCloseModal()
     } else if (editingClient) {
       const saved = saveClientToDirectory(
@@ -278,7 +349,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
         session.username,
         org.role,
       )
-      toast(`Client "${saved.name}" updated successfully!`)
+      toast(`Client "${saved.name}" updated!`)
       handleCloseModal()
     }
   }
@@ -309,6 +380,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
       formData.email ? `Email: ${formData.email}` : null,
       formData.kind_att ? `Kind Att: ${formData.kind_att}` : null,
       formData.contact ? `Contact: ${formData.contact}` : null,
+      `Technical Pages (3–5): ${formData.include_full_proposal ? 'Yes' : 'No'}`,
       ...contactLines,
       ...customLines,
     ]
@@ -319,63 +391,56 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
   }
 
   const isModalOpen = isCreatingNew || editingClient !== null
+  const startItemNum = filteredClients.length === 0 ? 0 : (safePage - 1) * CLIENTS_PER_PAGE + 1
+  const endItemNum = Math.min(safePage * CLIENTS_PER_PAGE, filteredClients.length)
 
   return (
-    <div className="clients-page" style={{ padding: '20px 24px', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* Top Header Card */}
+    <div className="clients-page" style={{ padding: '16px 20px', maxWidth: '1320px', margin: '0 auto' }}>
+      {/* Clean Minimal Header */}
       <div
-        className="card"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
-          gap: '14px',
-          padding: '16px 20px',
-          marginBottom: '20px',
-          borderLeft: '4px solid #0f172a',
+          gap: '12px',
+          marginBottom: '14px',
         }}
       >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>🏢</span>
-            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
               Client Directory
             </h2>
             <span
               style={{
                 background: '#f1f5f9',
-                color: '#0f172a',
+                color: '#334155',
                 padding: '2px 8px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                border: '1px solid #cbd5e1',
+                borderRadius: '999px',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                border: '1px solid #e2e8f0',
               }}
             >
-              {userVisibleClients.length} {userVisibleClients.length === 1 ? 'Client' : 'Clients'}
+              {userVisibleClients.length}
             </span>
           </div>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>
-            Click on any client cell to view, edit, or launch quotations.
+          <p style={{ margin: '2px 0 0 0', fontSize: '12.5px', color: '#64748b' }}>
+            Manage buyer profiles, contacts, and default PDF technical pages preference.
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {onNavigate && (
             <button
               type="button"
               className="btn ghost sm"
               onClick={() => onNavigate('client_relations')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontWeight: 600,
-              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
               title="View Client and Staff Relations Matrix"
             >
-              {Icon.users} Client &amp; Staff Relations
+              {Icon.users} Relations
             </button>
           )}
           <button
@@ -390,298 +455,484 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               alignItems: 'center',
               gap: '6px',
               fontWeight: 700,
+              padding: '7px 14px',
             }}
           >
-            {Icon.plus} + Add New Client
+            {Icon.plus} New Client
           </button>
         </div>
       </div>
 
-      {/* Real-time Search Filter Bar */}
-      <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '460px' }}>
-        <input
-          type="text"
-          placeholder="Search client cells by company name, GST, contact person, or phone…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px 12px 8px 32px',
-            fontSize: '13px',
-            borderRadius: '6px',
-            border: '1px solid #cbd5e1',
-            outline: 'none',
-            background: '#ffffff',
-          }}
-        />
-        <span
-          style={{
-            position: 'absolute',
-            left: '10px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '13px',
-            color: '#94a3b8',
-            pointerEvents: 'none',
-          }}
-        >
-          🔍
-        </span>
-        {searchQuery && (
-          <button
-            type="button"
-            onClick={() => setSearchQuery('')}
+      {/* Minimal Search + Filter Toolbar */}
+      <div
+        className="card"
+        style={{
+          padding: '10px 14px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px',
+          border: '1px solid #e2e8f0',
+        }}
+      >
+        <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: '420px' }}>
+          <input
+            type="text"
+            placeholder="Search by company, GST, contact, phone, email…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '7px 28px 7px 30px',
+              fontSize: '12.5px',
+              borderRadius: '6px',
+              border: '1px solid #cbd5e1',
+              outline: 'none',
+              background: '#f8fafc',
+              color: '#0f172a',
+            }}
+          />
+          <span
             style={{
               position: 'absolute',
-              right: '8px',
+              left: '9px',
               top: '50%',
               transform: 'translateY(-50%)',
-              background: 'none',
-              border: 'none',
               fontSize: '12px',
               color: '#94a3b8',
-              cursor: 'pointer',
+              pointerEvents: 'none',
             }}
           >
-            ✕
-          </button>
-        )}
+            {Icon.search}
+          </span>
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                fontSize: '12px',
+                color: '#94a3b8',
+                cursor: 'pointer',
+              }}
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          {(
+            [
+              { id: 'all', label: `All (${userVisibleClients.length})` },
+              { id: 'tech_yes', label: `Tech Pages: Yes (${techYesCount})` },
+              { id: 'tech_no', label: `Tech Pages: No (${userVisibleClients.length - techYesCount})` },
+              ...(isOwnerOrAdmin ? [{ id: 'shared' as const, label: 'Shared' }] : []),
+            ] as const
+          ).map((f) => {
+            const active = techFilter === f.id
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setTechFilter(f.id)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '999px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: active ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                  background: active ? '#0f172a' : '#ffffff',
+                  color: active ? '#ffffff' : '#475569',
+                  transition: 'all 0.12s ease',
+                }}
+              >
+                {f.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Grid of Client Cells: 3*3 layout */}
-      {filteredClients.length === 0 ? (
+      {/* Empty State or Clean 3x3 Client Grid */}
+      {paginatedClients.length === 0 ? (
         <div
           className="card"
           style={{
             textAlign: 'center',
-            padding: '48px 16px',
+            padding: '44px 16px',
             color: '#64748b',
             border: '1px dashed #cbd5e1',
           }}
         >
-          <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏢</div>
-          <p style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#0f172a', fontSize: '15px' }}>
+          <p style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#0f172a', fontSize: '14.5px' }}>
             No client records found
           </p>
           <span className="tiny" style={{ display: 'block', marginBottom: '14px' }}>
             {userVisibleClients.length === 0
-              ? 'You have not created any clients yet. Click below to add your first client.'
-              : 'No clients match your search query.'}
+              ? 'You have not created any clients yet. Add your first client to prefill quotations.'
+              : 'No clients match your current search or filter.'}
           </span>
           <button
             type="button"
             className="btn ghost sm"
-            onClick={handleStartCreateNew}
-            style={{ border: '1px solid #0f172a', color: '#0f172a' }}
+            onClick={userVisibleClients.length === 0 ? handleStartCreateNew : () => { setSearchQuery(''); setTechFilter('all') }}
+            style={{ border: '1px solid #0f172a', color: '#0f172a', fontWeight: 600 }}
           >
-            + Add New Client
+            {userVisibleClients.length === 0 ? '+ New Client' : 'Reset Filters'}
           </button>
         </div>
       ) : (
-        <div
-          className="client-cards-grid"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            gap: '16px',
-          }}
-        >
-          {filteredClients.map((client) => {
-            const addressFirst = client.address ? client.address.split('\n')[0] : 'No address provided'
-            const extraContactsCount = (client.contacts || []).filter(
-              (cp) => !(cp.name === client.kind_att && cp.phone === client.contact)
-            ).length
-            const customRowsCount = (client.extra_fields || []).length
+        <>
+          <div className="client-cards-grid">
+            {paginatedClients.map((client) => {
+              const addressFirst = client.address ? client.address.split('\n')[0] : 'No address provided'
+              const extraContactsCount = (client.contacts || []).filter(
+                (cp) => !(cp.name === client.kind_att && cp.phone === client.contact),
+              ).length
+              const customRowsCount = (client.extra_fields || []).length
+              const techEnabled = client.include_full_proposal === true
 
-            return (
-              <div
-                key={client.id}
-                onClick={() => handleOpenClient(client)}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  cursor: 'pointer',
-                  transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#0f172a'
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1'
-                  e.currentTarget.style.boxShadow = 'none'
-                }}
-              >
-                {/* Cell Header: Name & GST & Margin (Margin is strictly Owner/Admin only) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                  <strong style={{ fontSize: '15px', color: '#0f172a', fontWeight: 800, lineHeight: 1.2 }}>
-                    {client.name}
-                  </strong>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {isOwnerOrAdmin && (
-                      <span
-                        title="Client Profit Margin % (strictly hidden from staff)"
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          background: '#f0fdf4',
-                          color: '#166534',
-                          borderRadius: '4px',
-                          border: '1px solid #bbf7d0',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {client.profit_margin_pct !== undefined ? `${client.profit_margin_pct}% Margin` : '25% Margin'}
-                      </span>
-                    )}
-                    {client.gst && (
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontFamily: 'monospace',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          background: '#f1f5f9',
-                          color: '#475569',
-                          borderRadius: '4px',
-                          border: '1px solid #cbd5e1',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {client.gst}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Address snippet */}
-                <span
-                  style={{
-                    fontSize: '12px',
-                    color: '#64748b',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  📍 {addressFirst}
-                </span>
-
-                {/* Company Email */}
-                {client.email && (
-                  <div style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    ✉️ {client.email}
-                  </div>
-                )}
-
-                {/* Primary Contact details */}
-                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  {(client.kind_att || client.contact) ? (
-                    <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
-                      👤 {client.kind_att || 'Contact'} {client.contact ? `· ${client.contact}` : ''}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                      No primary contact specified
-                    </div>
-                  )}
-                </div>
-
-                {/* Cell Footer: Extra items & Creator */}
+              return (
                 <div
+                  key={client.id}
+                  onClick={() => handleOpenClient(client)}
                   style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
+                    padding: '14px 16px',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease',
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: 'auto',
-                    paddingTop: '6px',
-                    fontSize: '11px',
-                    color: '#94a3b8',
-                    flexWrap: 'wrap',
-                    gap: '4px',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#94a3b8'
+                    e.currentTarget.style.boxShadow = '0 4px 14px rgba(15, 23, 42, 0.06)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e2e8f0'
+                    e.currentTarget.style.boxShadow = 'none'
                   }}
                 >
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {extraContactsCount > 0 && `+${extraContactsCount} contact${extraContactsCount > 1 ? 's' : ''}`}
-                    {extraContactsCount > 0 && customRowsCount > 0 && ' · '}
-                    {customRowsCount > 0 && `${customRowsCount} custom row${customRowsCount > 1 ? 's' : ''}`}
-                    {extraContactsCount === 0 && customRowsCount === 0 && 'Standard profile'}
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {isOwnerOrAdmin && (
-                      <span
-                        title="Staff sharing status"
+                  {/* Top Row: Monogram + Name + Compact Badges */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <div
                         style={{
-                          fontSize: '10px',
-                          color: client.shared_with?.includes('all') || (client.shared_with && client.shared_with.length > 0) ? '#1d4ed8' : '#64748b',
-                          background: client.shared_with?.includes('all') || (client.shared_with && client.shared_with.length > 0) ? '#eff6ff' : '#f8fafc',
-                          padding: '1px 5px',
-                          borderRadius: '3px',
-                          border: client.shared_with?.includes('all') || (client.shared_with && client.shared_with.length > 0) ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '8px',
+                          background: '#f1f5f9',
+                          border: '1px solid #e2e8f0',
+                          color: '#0f172a',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          display: 'grid',
+                          placeItems: 'center',
+                          flexShrink: 0,
                         }}
                       >
-                        {client.shared_with?.includes('all')
-                          ? '👥 All Staff'
-                          : client.shared_with && client.shared_with.length > 0
-                          ? `👥 ${client.shared_with.length} Staff`
-                          : '🔒 Private'}
-                      </span>
-                    )}
-                    {!isOwnerOrAdmin && client.created_by !== session.username && (
+                        {getInitials(client.name)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: '14px',
+                            color: '#0f172a',
+                            fontWeight: 700,
+                            lineHeight: 1.25,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={client.name}
+                        >
+                          {client.name}
+                        </div>
+                        {client.gst ? (
+                          <div style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#64748b', marginTop: '1px' }}>
+                            GST: {client.gst}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>No GSTIN</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
                       <span
+                        title="Default Technical Pages (Pages 3–5) in PDF"
                         style={{
                           fontSize: '10px',
-                          color: '#1d4ed8',
-                          background: '#eff6ff',
-                          padding: '1px 5px',
-                          borderRadius: '3px',
-                          border: '1px solid #bfdbfe',
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: '999px',
+                          background: techEnabled ? '#eff6ff' : '#f8fafc',
+                          color: techEnabled ? '#1d4ed8' : '#64748b',
+                          border: techEnabled ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                          whiteSpace: 'nowrap',
                         }}
                       >
-                        Shared by Owner
+                        Tech Pages: {techEnabled ? 'Yes' : 'No'}
                       </span>
+                      {isOwnerOrAdmin && (
+                        <span
+                          title="Client Profit Margin % (hidden from staff)"
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '1px 7px',
+                            borderRadius: '999px',
+                            background: '#f0fdf4',
+                            color: '#166534',
+                            border: '1px solid #bbf7d0',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {client.profit_margin_pct !== undefined ? `${client.profit_margin_pct}% Margin` : '25% Margin'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Address & Contact Summary */}
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#64748b',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                    title={client.address || ''}
+                  >
+                    {addressFirst}
+                  </div>
+
+                  <div
+                    style={{
+                      borderTop: '1px solid #f1f5f9',
+                      paddingTop: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
+                      {client.kind_att || client.contact ? (
+                        <>
+                          {client.kind_att || 'Primary Contact'}
+                          {client.contact ? (
+                            <span style={{ color: '#475569', fontWeight: 500 }}> · {client.contact}</span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: '11.5px' }}>
+                          No primary contact
+                        </span>
+                      )}
+                    </div>
+                    {client.email && (
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: '#64748b',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {client.email}
+                      </div>
                     )}
-                    <span style={{ fontSize: '10px', color: '#475569', background: '#f8fafc', padding: '1px 5px', borderRadius: '3px', border: '1px solid #e2e8f0' }}>
-                      {client.created_by === session.username ? 'Created by you' : (client.created_by || 'Directory')}
-                    </span>
+                  </div>
+
+                  {/* Footer Meta & Quick Quote */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: 'auto',
+                      paddingTop: '6px',
+                      borderTop: '1px solid #f8fafc',
+                      gap: '6px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        {extraContactsCount > 0 || customRowsCount > 0
+                          ? [
+                              extraContactsCount > 0
+                                ? `+${extraContactsCount} contact${extraContactsCount > 1 ? 's' : ''}`
+                                : null,
+                              customRowsCount > 0
+                                ? `${customRowsCount} row${customRowsCount > 1 ? 's' : ''}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')
+                          : 'Standard'}
+                      </span>
+                      {isOwnerOrAdmin && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            color:
+                              client.shared_with?.includes('all') ||
+                              (client.shared_with && client.shared_with.length > 0)
+                                ? '#1d4ed8'
+                                : '#64748b',
+                            background: '#f8fafc',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            border: '1px solid #e2e8f0',
+                          }}
+                        >
+                          {client.shared_with?.includes('all')
+                            ? 'All Staff'
+                            : client.shared_with && client.shared_with.length > 0
+                            ? `${client.shared_with.length} Staff`
+                            : 'Private'}
+                        </span>
+                      )}
+                    </div>
+
+                    {onCreateQuotationWithClient && (
+                      <button
+                        type="button"
+                        className="btn ghost xs"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onCreateQuotationWithClient(client)
+                        }}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: '#0f172a',
+                          border: '1px solid #cbd5e1',
+                          padding: '2px 8px',
+                        }}
+                        title={`Create new quotation for ${client.name}`}
+                      >
+                        + Quote
+                      </button>
+                    )}
                   </div>
                 </div>
+              )
+            })}
+          </div>
+
+          {/* Clean Numbered Pagination Bar */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px',
+              marginTop: '16px',
+              padding: '10px 14px',
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+            }}
+          >
+            <span style={{ fontSize: '12px', color: '#64748b' }}>
+              Showing <strong style={{ color: '#0f172a' }}>{startItemNum}–{endItemNum}</strong> of{' '}
+              <strong style={{ color: '#0f172a' }}>{filteredClients.length}</strong> client
+              {filteredClients.length === 1 ? '' : 's'}
+            </span>
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn ghost xs"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  style={{ fontSize: '11.5px', padding: '4px 9px' }}
+                >
+                  ‹ Prev
+                </button>
+                {getPageNumbers(safePage, totalPages).map((pg, idx) =>
+                  typeof pg === 'number' ? (
+                    <button
+                      key={`pg-${pg}`}
+                      type="button"
+                      onClick={() => setCurrentPage(pg)}
+                      style={{
+                        minWidth: '28px',
+                        height: '28px',
+                        padding: '0 6px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: safePage === pg ? 700 : 600,
+                        cursor: 'pointer',
+                        border: safePage === pg ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                        background: safePage === pg ? '#0f172a' : '#ffffff',
+                        color: safePage === pg ? '#ffffff' : '#334155',
+                      }}
+                    >
+                      {pg}
+                    </button>
+                  ) : (
+                    <span key={`ell-${idx}`} style={{ padding: '0 4px', color: '#94a3b8', fontSize: '12px' }}>
+                      …
+                    </span>
+                  ),
+                )}
+                <button
+                  type="button"
+                  className="btn ghost xs"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  style={{ fontSize: '11.5px', padding: '4px 9px' }}
+                >
+                  Next ›
+                </button>
               </div>
-            )
-          })}
-        </div>
+            )}
+          </div>
+        </>
       )}
 
-      {/* Simple Flat Client Form Modal (No widgets, label above, input below) */}
+      {/* Client Form Modal (zIndex cleanly below .overlay ConfirmDialog at 200000) */}
       {isModalOpen && (
         <div
           style={{
             position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(15, 23, 42, 0.6)',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 100000,
+            zIndex: 10000,
             padding: '16px',
+            backdropFilter: 'blur(2px)',
           }}
           onClick={handleCloseModal}
         >
           <div
             style={{
               background: '#ffffff',
-              borderRadius: '8px',
+              borderRadius: '10px',
               border: '1px solid #cbd5e1',
-              padding: '24px',
+              padding: '20px 22px',
               width: '640px',
               maxWidth: '96vw',
               maxHeight: '92vh',
@@ -689,7 +940,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '14px',
+              gap: '12px',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -704,7 +955,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               }}
             >
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
-                {isCreatingNew ? 'Add Client' : `Edit Client: ${formData.name || ''}`}
+                {isCreatingNew ? 'New Client' : `Edit Client: ${formData.name || ''}`}
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {!isCreatingNew && (
@@ -729,7 +980,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               </div>
             </div>
 
-            {/* Simple Form Fields: label on top, value below */}
+            {/* Company Name & Address */}
             <div>
               <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
                 Buyer / Company Name *
@@ -740,7 +991,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                 className="option-input-field font-bold"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                style={{ height: '36px', padding: '0 10px', width: '100%' }}
+                style={{ height: '35px', padding: '0 10px', width: '100%' }}
                 autoFocus={isCreatingNew}
               />
             </div>
@@ -750,7 +1001,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                 Site / Billing Address
               </label>
               <textarea
-                rows={3}
+                rows={2}
                 placeholder="Address..."
                 className="option-input-field"
                 value={formData.address}
@@ -759,46 +1010,109 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               />
             </div>
 
-            <div>
-              <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
-                GST Number
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 36AABCP1234F1Z5"
-                className="option-input-field font-mono"
-                value={formData.gst}
-                onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
-                style={{ height: '36px', padding: '0 10px', width: '100%' }}
-              />
+            {/* GST & Email in clean 2-col row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
+                  GST Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 36AABCP1234F1Z5"
+                  className="option-input-field font-mono"
+                  value={formData.gst}
+                  onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
+                  style={{ height: '34px', padding: '0 10px', width: '100%' }}
+                />
+              </div>
+              <div>
+                <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
+                  Buyer Email
+                </label>
+                <input
+                  type="email"
+                  placeholder="e.g. stores@company.com"
+                  className="option-input-field"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  style={{ height: '34px', padding: '0 10px', width: '100%' }}
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
-                Buyer Email
-              </label>
-              <input
-                type="email"
-                placeholder="e.g. stores@company.com"
-                className="option-input-field"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                style={{ height: '36px', padding: '0 10px', width: '100%' }}
-              />
+            {/* Default PDF Technical Pages (Pages 3-5) Yes / No */}
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a' }}>
+                  Technical Pages in PDF (Pages 3–5)
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
+                  If Yes, PDF shows technical specification pages (3–5) by default. If No, only Commercial &amp; Terms (1–2) show until toggled manually.
+                </div>
+              </div>
+              <div style={{ display: 'inline-flex', background: '#e2e8f0', padding: '3px', borderRadius: '7px', gap: '3px' }}>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, include_full_proposal: false })}
+                  style={{
+                    padding: '5px 14px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: !formData.include_full_proposal ? '#ffffff' : 'transparent',
+                    color: !formData.include_full_proposal ? '#0f172a' : '#475569',
+                    boxShadow: !formData.include_full_proposal ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                  }}
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, include_full_proposal: true })}
+                  style={{
+                    padding: '5px 14px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: formData.include_full_proposal ? '#1d4ed8' : 'transparent',
+                    color: formData.include_full_proposal ? '#ffffff' : '#475569',
+                    boxShadow: formData.include_full_proposal ? '0 1px 2px rgba(29,78,216,0.25)' : 'none',
+                  }}
+                >
+                  Yes
+                </button>
+              </div>
             </div>
 
+            {/* Primary Contact */}
             <div>
               <label className="tiny font-bold muted" style={{ display: 'block', marginBottom: '3px' }}>
                 Primary Contact (Name &amp; Mobile Number)
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <input
                   type="text"
                   placeholder="Person Name (e.g. Mr. Rajesh Sharma)"
                   className="option-input-field font-bold"
                   value={formData.kind_att}
                   onChange={(e) => setFormData({ ...formData, kind_att: e.target.value })}
-                  style={{ height: '36px', padding: '0 10px', width: '100%' }}
+                  style={{ height: '34px', padding: '0 10px', width: '100%' }}
                 />
                 <input
                   type="text"
@@ -806,12 +1120,12 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                   className="option-input-field"
                   value={formData.contact}
                   onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-                  style={{ height: '36px', padding: '0 10px', width: '100%' }}
+                  style={{ height: '34px', padding: '0 10px', width: '100%' }}
                 />
               </div>
             </div>
 
-            {/* Additional Contacts: simple inputs, label up, value down with Show on PDF */}
+            {/* Additional Contacts */}
             {formData.contacts.map((cp, idx) => (
               <div
                 key={cp.id}
@@ -866,7 +1180,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                     checked={cp.visible !== false}
                     onChange={(e) => {
                       const next = formData.contacts.map((c, i) =>
-                        i === idx ? { ...c, visible: e.target.checked } : c
+                        i === idx ? { ...c, visible: e.target.checked } : c,
                       )
                       setFormData({ ...formData, contacts: next })
                     }}
@@ -885,7 +1199,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               </div>
             ))}
 
-            {/* Custom Rows: user can edit both label and value, and choose Share in PDF */}
+            {/* Custom Rows */}
             {formData.extra_fields.map((ef, idx) => (
               <div
                 key={ef.id}
@@ -902,7 +1216,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. xyz"
+                    placeholder="e.g. PO Ref"
                     className="option-input-field"
                     value={ef.label}
                     onChange={(e) => handleUpdateCustomRow(idx, 'label', e.target.value)}
@@ -915,7 +1229,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. xyz"
+                    placeholder="e.g. Value"
                     className="option-input-field"
                     value={ef.value}
                     onChange={(e) => handleUpdateCustomRow(idx, 'value', e.target.value)}
@@ -954,13 +1268,13 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               </div>
             ))}
 
-            {/* Buttons for add contact and custom rows at the very last */}
-            <div style={{ display: 'flex', gap: '8px', paddingTop: '4px' }}>
+            {/* Buttons for add contact & custom rows */}
+            <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 type="button"
                 className="btn ghost sm"
                 onClick={handleAddContact}
-                style={{ border: '1px solid #0f172a', color: '#0f172a', fontWeight: 600, fontSize: '12px' }}
+                style={{ border: '1px solid #cbd5e1', color: '#0f172a', fontWeight: 600, fontSize: '12px' }}
               >
                 + Add Contact
               </button>
@@ -968,24 +1282,23 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                 type="button"
                 className="btn ghost sm"
                 onClick={handleAddCustomRow}
-                style={{ border: '1px solid #0f172a', color: '#0f172a', fontWeight: 600, fontSize: '12px' }}
+                style={{ border: '1px solid #cbd5e1', color: '#0f172a', fontWeight: 600, fontSize: '12px' }}
               >
                 + Add Custom Row
               </button>
             </div>
 
-            {/* Owner & Admin Confidential Controls: Profit Margin & Staff Access Sharing */}
+            {/* Owner & Admin Confidential Controls */}
             {isOwnerOrAdmin && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
-                {/* 1. Custom Profit Margin (%) */}
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                     <div>
-                      <label className="tiny font-bold" style={{ color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, fontSize: '12px' }}>
-                        <span>💰</span> Client Profit Margin (%)
+                      <label className="tiny font-bold" style={{ color: '#166534', display: 'block', margin: 0, fontSize: '12px' }}>
+                        Client Profit Margin (%)
                       </label>
                       <span className="tiny" style={{ color: '#15803d', display: 'block', marginTop: '2px', fontSize: '11px' }}>
-                        Sets the profit margin for this client (default 25%). Future quotations for this client will automatically use this value. <strong>Strictly hidden from staff.</strong>
+                        Default 25%. Future quotations for this client use this value. Strictly hidden from staff.
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -996,21 +1309,33 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                         step={1}
                         className="option-input-field font-mono font-bold"
                         value={formData.profit_margin_pct}
-                        onChange={(e) => setFormData({ ...formData, profit_margin_pct: Math.max(0, parseFloat(e.target.value) || 0) })}
-                        style={{ width: '75px', height: '34px', textAlign: 'right', color: '#166534', background: '#ffffff', borderColor: '#86efac', fontSize: '14px' }}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            profit_margin_pct: Math.max(0, parseFloat(e.target.value) || 0),
+                          })
+                        }
+                        style={{
+                          width: '72px',
+                          height: '34px',
+                          textAlign: 'right',
+                          color: '#166534',
+                          background: '#ffffff',
+                          borderColor: '#86efac',
+                          fontSize: '14px',
+                        }}
                       />
                       <span style={{ fontWeight: 700, color: '#166534', fontSize: '13px' }}>%</span>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. Share Client Access with Staff */}
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px 14px' }}>
-                  <label className="tiny font-bold" style={{ color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', fontSize: '12px' }}>
-                    <span>👥</span> Share Client Access with Staff
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px' }}>
+                  <label className="tiny font-bold" style={{ color: '#0f172a', display: 'block', marginBottom: '2px', fontSize: '12px' }}>
+                    Share Client Access with Staff
                   </label>
-                  <span className="tiny muted" style={{ display: 'block', marginBottom: '10px', fontSize: '11px' }}>
-                    Choose which staff members can view this client and create quotations. (Staff cannot see profit margin).
+                  <span className="tiny muted" style={{ display: 'block', marginBottom: '8px', fontSize: '11px' }}>
+                    Choose which staff members can view this client and create quotations.
                   </span>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1019,33 +1344,37 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                         type="checkbox"
                         checked={formData.shared_with.includes('all')}
                         onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData({ ...formData, shared_with: ['all'] })
-                          } else {
-                            setFormData({ ...formData, shared_with: [] })
-                          }
+                          setFormData({
+                            ...formData,
+                            shared_with: e.target.checked ? ['all'] : [],
+                          })
                         }}
                       />
                       <span>Share with All Staff Members</span>
                     </label>
 
                     {!formData.shared_with.includes('all') && (
-                      <div style={{ marginTop: '4px' }}>
-                        <span className="tiny font-bold muted" style={{ display: 'block', marginBottom: '6px' }}>
-                          Or select specific staff members:
-                        </span>
+                      <div>
                         {orgStaffMembers.length > 0 ? (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                             {orgStaffMembers.map((m) => {
-                              const isSelected = formData.shared_with.includes(m.username) || (m.user_id && formData.shared_with.includes(m.user_id))
+                              const isSelected =
+                                formData.shared_with.includes(m.username) ||
+                                Boolean(m.user_id && formData.shared_with.includes(m.user_id))
                               return (
                                 <button
                                   key={m.username}
                                   type="button"
                                   onClick={() => {
                                     const next = isSelected
-                                      ? formData.shared_with.filter((u) => u !== m.username && (!m.user_id || u !== m.user_id))
-                                      : [...formData.shared_with, m.username, ...(m.user_id ? [m.user_id] : [])]
+                                      ? formData.shared_with.filter(
+                                          (u) => u !== m.username && (!m.user_id || u !== m.user_id),
+                                        )
+                                      : [
+                                          ...formData.shared_with,
+                                          m.username,
+                                          ...(m.user_id ? [m.user_id] : []),
+                                        ]
                                     setFormData({ ...formData, shared_with: next })
                                   }}
                                   style={{
@@ -1095,25 +1424,6 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                             </button>
                           </div>
                         )}
-                        {formData.shared_with.length > 0 && !formData.shared_with.includes('all') && (
-                          <div className="row gap mt-2" style={{ flexWrap: 'wrap' }}>
-                            {formData.shared_with.map((u) => (
-                              <span
-                                key={u}
-                                className="chip primary sm font-mono"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}
-                              >
-                                @{u}
-                                <span
-                                  onClick={() => setFormData({ ...formData, shared_with: formData.shared_with.filter((x) => x !== u) })}
-                                  style={{ cursor: 'pointer', fontWeight: 800, marginLeft: '2px' }}
-                                >
-                                  ✕
-                                </span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1128,8 +1438,8 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 borderTop: '1px solid #e2e8f0',
-                paddingTop: '14px',
-                marginTop: '8px',
+                paddingTop: '12px',
+                marginTop: '4px',
                 gap: '10px',
               }}
             >
@@ -1139,7 +1449,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                     type="button"
                     className="btn ghost xs"
                     onClick={handleDelete}
-                    style={{ color: '#dc2626', border: '1px solid #cbd5e1' }}
+                    style={{ color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
                   >
                     {Icon.trash} Delete Client
                   </button>
@@ -1161,11 +1471,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  onClick={handleCloseModal}
-                >
+                <button type="button" className="btn ghost sm" onClick={handleCloseModal}>
                   Cancel
                 </button>
 

@@ -1428,9 +1428,7 @@ export function OfficialQuotationDocument({
       setProfitPct(cl.profit_margin_pct)
     }
 
-    if (cl.include_full_proposal !== undefined) {
-      setIncludeFullProposal(Boolean(cl.include_full_proposal))
-    }
+    setIncludeFullProposal(cl.include_full_proposal !== undefined ? Boolean(cl.include_full_proposal) : false)
 
     toast(`Loaded details for ${cl.name}`)
   }, [savedClients, toast])
@@ -2381,7 +2379,7 @@ export function OfficialQuotationDocument({
     return canFitOnPage1Naturally
   })
 
-  // Full 5-Page Proposal toggle (Page 1: Commercial; Page 2: Terms; Page 3: Compactor Specs [merged p3+p4]; Page 4: Powder Coating [merged p5+p6]; Page 5: QC [merged p7+p8])
+  // Technical Pages 3-5 toggle (defaults to Yes only if client has include_full_proposal === true; otherwise No until user selects)
   const [includeFullProposal, setIncludeFullProposal] = useState<boolean>(() => {
     if (project.summary?.include_full_proposal !== undefined) {
       return Boolean(project.summary.include_full_proposal)
@@ -2395,34 +2393,11 @@ export function OfficialQuotationDocument({
         return Boolean(activeClient.include_full_proposal)
       }
     } catch {}
-    return true
+    return false
   })
 
   const handleToggleIncludeFullProposal = (checked: boolean) => {
     setIncludeFullProposal(checked)
-    // Persist per-client preference immediately for future quotations
-    const clientId = selectedClientId || initialClientInfo.client_id
-    const clientName = clientInfo.buyer_name || initialClientInfo.buyer_name
-    const freshList = getSavedClients(effectiveOrgId)
-    const targetClient = clientId
-      ? freshList.find((c) => c.id === clientId)
-      : clientName
-      ? freshList.find((c) => fuzzyTextMatch(c.name, clientName))
-      : undefined
-
-    if (targetClient) {
-      try {
-        saveClientToDirectory({
-          ...targetClient,
-          include_full_proposal: checked,
-        }, effectiveOrgId, username, role)
-        saveClientToDirectoryAsync({
-          ...targetClient,
-          include_full_proposal: checked,
-        }, effectiveOrgId, tokenStore.get() || undefined).catch(() => {})
-        toast(checked ? `Full 5-page proposal enabled for ${targetClient.name}` : `5-page technical proposal excluded for ${targetClient.name}`, 'ok')
-      } catch {}
-    }
   }
 
   // Table size, scaling, density and multi-system layout controls (persisted in project.summary)
@@ -4471,7 +4446,7 @@ export function OfficialQuotationDocument({
         {includeFullProposal && (
           <>
             {/* Page 3: Deluxe Model Compactor Technical Specification & Mechanical Assembly (Merged 3 & 4) */}
-            <div className="official-pdf-page">
+            <div className="official-pdf-page pdf-spec-page">
               {renderPdfWatermark()}
               {renderOfficialHeader()}
 
@@ -4810,7 +4785,7 @@ export function OfficialQuotationDocument({
             </div>
 
             {/* Page 4: Powder Coating Specification & Methods of Instruction (Merged 5 & 6) */}
-            <div className="official-pdf-page">
+            <div className="official-pdf-page pdf-spec-page">
               {renderPdfWatermark()}
               {renderOfficialHeader()}
 
@@ -5106,7 +5081,7 @@ export function OfficialQuotationDocument({
             </div>
 
             {/* Page 5: Activation, Phosphating, Passivation & Quality Control (Merged 7 & 8) */}
-            <div className="official-pdf-page">
+            <div className="official-pdf-page pdf-spec-page">
               {renderPdfWatermark()}
               {renderOfficialHeader()}
 
@@ -5941,7 +5916,7 @@ export function OfficialQuotationDocument({
                       )}
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px' }}>
                       <input
                         type="checkbox"
                         checked={includeFullProposal}
@@ -5949,7 +5924,7 @@ export function OfficialQuotationDocument({
                           handleToggleIncludeFullProposal(e.target.checked)
                         }}
                       />
-                      <span style={{ fontSize: '12px' }}>Include Full 5-Page Technical Proposal</span>
+                      <span style={{ fontSize: '12px', fontWeight: 600 }}>Include Technical Pages (Pages 3–5)</span>
                     </label>
 
 

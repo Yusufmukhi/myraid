@@ -457,7 +457,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           initialSummary = {
             client_id: cl.id,
             profit_pct: clientMargin,
-            include_full_proposal: cl.include_full_proposal !== undefined ? cl.include_full_proposal : true,
+            include_full_proposal: cl.include_full_proposal !== undefined ? Boolean(cl.include_full_proposal) : false,
             client_info: {
               buyer_name: cl.name,
               buyer_address: cl.address,
@@ -475,7 +475,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         const matched = savedClients.find((c) => fuzzyTextMatch(c.name, cleanedSearchTerm))
         const clientMargin = matched && matched.profit_margin_pct !== undefined ? matched.profit_margin_pct : 25
         initialSummary = {
-          ...(matched ? { client_id: matched.id, profit_pct: clientMargin, include_full_proposal: matched.include_full_proposal !== undefined ? matched.include_full_proposal : true } : {}),
+          ...(matched ? { client_id: matched.id, profit_pct: clientMargin, include_full_proposal: matched.include_full_proposal !== undefined ? Boolean(matched.include_full_proposal) : false } : {}),
           client_info: {
             buyer_name: matched ? matched.name : cleanedSearchTerm,
           },

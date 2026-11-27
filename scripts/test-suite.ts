@@ -3699,6 +3699,47 @@ async function runAllTests() {
     logResult(64, 'PDF Discount Math Consistency (Set-Wise & Unit-Wise) & Valid Table Format', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 65: Pages 3-5 Layout Fit, Client Technical Pages Yes/No Default, Pagination & Delete Modal Layering
+  // -------------------------------------------------------------------------
+  try {
+    const cssSrc = fs.readFileSync('src/styles.css', 'utf8')
+    const clientsSrc = fs.readFileSync('src/components/pages/ClientsPage.tsx', 'utf8')
+    const pdfSrc = fs.readFileSync('src/components/quotation/OfficialQuotationDocument.tsx', 'utf8')
+    const wsSrc = fs.readFileSync('src/components/Workspace.tsx', 'utf8')
+
+    // 1. Delete client ConfirmDialog z-index sits cleanly ABOVE Client modal
+    const zIndexOk = cssSrc.includes('.overlay, .modal-backdrop') && cssSrc.includes('z-index: 200000') && clientsSrc.includes('zIndex: 10000')
+
+    // 2. Technical Pages (Pages 3-5) Yes/No in Client Directory, default false until selected or client Yes
+    const techDefaultFalseOk =
+      clientsSrc.includes('Technical Pages in PDF (Pages 3–5)') &&
+      clientsSrc.includes('include_full_proposal: Boolean(formData.include_full_proposal)') &&
+      wsSrc.includes('cl.include_full_proposal !== undefined ? Boolean(cl.include_full_proposal) : false') &&
+      pdfSrc.includes('setIncludeFullProposal(cl.include_full_proposal !== undefined ? Boolean(cl.include_full_proposal) : false)') &&
+      pdfSrc.includes('return false\n  })')
+
+    // 3. Client Directory Pagination & Minimal UI
+    const clientPaginationOk =
+      clientsSrc.includes('CLIENTS_PER_PAGE = 9') &&
+      clientsSrc.includes('getPageNumbers(safePage, totalPages)') &&
+      clientsSrc.includes('paginatedClients.map')
+
+    // 4. Pages 3-5 executive zero-overflow CSS & pdf-spec-page class
+    const pages3to5MatchCount = (pdfSrc.match(/className="official-pdf-page pdf-spec-page"/g) || []).length
+    const pages3to5Ok = pages3to5MatchCount === 3 && cssSrc.includes('.official-pdf-page.pdf-spec-page')
+
+    if (zIndexOk && techDefaultFalseOk && clientPaginationOk && pages3to5Ok) {
+      logResult(65, 'Pages 3-5 Layout Fit, Client Technical Pages Yes/No Default, Pagination & Delete Modal Layering', 'PASSED',
+        'Pages 3-5 framed A4 layout applied cleanly; Client Directory adds Technical Pages Yes/No (default No until selected or enabled), 9-per-page pagination, and z-index layering fixes delete confirm modal.')
+    } else {
+      logResult(65, 'Pages 3-5 Layout Fit, Client Technical Pages Yes/No Default, Pagination & Delete Modal Layering', 'FAILED',
+        `zIndexOk=${zIndexOk}, techDefaultFalseOk=${techDefaultFalseOk}, clientPaginationOk=${clientPaginationOk}, pages3to5Ok=${pages3to5Ok} (matches=${pages3to5MatchCount})`)
+    }
+  } catch (e) {
+    logResult(65, 'Pages 3-5 Layout Fit, Client Technical Pages Yes/No Default, Pagination & Delete Modal Layering', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length
