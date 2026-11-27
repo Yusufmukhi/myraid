@@ -7,6 +7,7 @@ import { BusinessProfile, getBusinessProfile, fetchBusinessProfileFromSupabase }
 import { Project, api, tokenStore } from '../../lib/api'
 import { inr } from '../../lib/format'
 import { Workbook } from '../../lib/engine'
+import { detectPdfEditChanges, PdfEditSnapshot } from '../../lib/auditDiff'
 import { Summary, getWidthExtra } from '../../lib/model'
 import {
   buildOfficialQtnNo,
@@ -2643,6 +2644,37 @@ export function OfficialQuotationDocument({
     setRedSpecs(defaultRedSpecs)
   }, [defaultRedSpecs])
 
+  const buildPdfAuditSnapshot = (): PdfEditSnapshot =>
+    JSON.parse(
+      JSON.stringify({
+        clientInfo,
+        quotationMode: effectiveQuotationMode,
+        profitPct,
+        includeInstallation,
+        extraAmount,
+        includeFullProposal,
+        showBodiesTable,
+        bodyPlacement,
+        placeBodyOnPage1,
+        tableScale,
+        tableDensity,
+        systemsPerPageSetting,
+        goodsColWidths,
+        bodyColWidths,
+        sets,
+        lineItems,
+        bodyItems,
+        termsList,
+        redSpecs,
+        proposalSpecs,
+      }),
+    )
+
+  const lastSavedPdfSnapshotRef = useRef<PdfEditSnapshot | null>(null)
+  useEffect(() => {
+    lastSavedPdfSnapshotRef.current = buildPdfAuditSnapshot()
+  }, [project.id])
+
   // Quotation download file name builder (sanitized for Windows/Mac/Linux OS file save dialogs)
   const getQuotationFileName = () => {
     const qtnNo = clientInfo.qtn_no?.trim()
@@ -3039,6 +3071,35 @@ export function OfficialQuotationDocument({
         freight_terms: isTransportZero ? 'At your scope.' : clientInfo.freight_terms,
         lodging_terms: (clientInfo.lodging_terms && clientInfo.lodging_terms !== 'At your scope.') ? clientInfo.lodging_terms : 'At our scope.',
       }
+      const nextSnap: PdfEditSnapshot = JSON.parse(
+        JSON.stringify({
+          clientInfo: cleanClientInfo,
+          quotationMode: effectiveQuotationMode,
+          profitPct,
+          includeInstallation,
+          extraAmount,
+          includeFullProposal,
+          showBodiesTable,
+          bodyPlacement,
+          placeBodyOnPage1,
+          tableScale,
+          tableDensity,
+          systemsPerPageSetting,
+          goodsColWidths,
+          bodyColWidths,
+          sets,
+          lineItems,
+          bodyItems,
+          termsList: cleanTerms,
+          redSpecs,
+          proposalSpecs,
+        }),
+      )
+      const pdfChanges = lastSavedPdfSnapshotRef.current
+        ? detectPdfEditChanges(lastSavedPdfSnapshotRef.current, nextSnap)
+        : []
+      const changeStrings = pdfChanges.map((c) => c.diff)
+
       setJustSaved(true)
       try {
         await onSaveClientInfo(cleanClientInfo, lineItems, bodyItems, sets, {
@@ -3059,21 +3120,25 @@ export function OfficialQuotationDocument({
           systems_per_page: systemsPerPageSetting,
           goods_col_widths: goodsColWidths,
           body_col_widths: bodyColWidths,
+          audit_changes: changeStrings,
         })
-        toast('Quotation changes saved successfully!')
+        lastSavedPdfSnapshotRef.current = nextSnap
+        toast(changeStrings.length > 0 ? `Saved ${changeStrings.length} PDF change${changeStrings.length > 1 ? 's' : ''}` : 'Quotation changes saved successfully!')
       } catch (err) {
         toast((err as Error).message, 'err')
       }
 
-      // Record in Activity Log
+      // Record full Edit PDF change breakdown in Activity Log
       const token = tokenStore.get()
       if (token && effectiveOrgId) {
         api.logActivity(token, effectiveOrgId, 'pdf_saved', {
           name: project.name,
-          buyer_name: clientInfo.buyer_name || 'Direct Buyer',
-          qtn_no: clientInfo.qtn_no || '',
+          buyer_name: cleanClientInfo.buyer_name || 'Direct Buyer',
+          qtn_no: cleanClientInfo.qtn_no || '',
           total: grandTotal,
           mode: effectiveQuotationMode,
+          changes: changeStrings,
+          note: changeStrings.length > 0 ? changeStrings.join('; ') : 'Saved Edit PDF settings',
         }, project.id).catch(() => {})
       }
     }

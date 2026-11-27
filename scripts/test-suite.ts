@@ -3447,6 +3447,137 @@ async function runAllTests() {
     logResult(62, 'Minimal UI (Projects/Dashboard/Activity), Won-vs-Loss Conversion (75%/25%) & Plain-English Activity Log', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 63: Exhaustive Audit Trail — Multi-System Diffs & Edit PDF Fine-Grained Diffs
+  // -------------------------------------------------------------------------
+  try {
+    const { detectMultiSystemChanges, detectPdfEditChanges } = await import('../src/lib/auditDiff')
+
+    // 1. Multi-system calculator & sheets diffs (smallest to largest: formula, cell on SYSTEM B, sets qty, new system, profit %, total)
+    const oldProj = {
+      name: 'QTN NO 500',
+      status: 'quoted',
+      total: 450000,
+      inputs: { 'Total cal!A3': 8, 'Total cal!D3': 1830 },
+      formula_overrides: {},
+      summary: {
+        quotation_mode: 'set_wise',
+        profit_pct: 25,
+        discount_pct: 0,
+        include_installation: true,
+        extra_amount: 0,
+        notes: 'Initial note',
+        systems: [
+          { id: '1', name: 'SYSTEM A', quantity: 1, unit: 'SET', bay: 4, overrides: { 'Total cal!A3': 8, 'Total cal!D3': 1830 }, formulaOverrides: {} },
+          { id: '2', name: 'SYSTEM B', quantity: 2, unit: 'SET', bay: 3, overrides: { 'Total cal!A3': 6, 'Total cal!D3': 1830 }, formulaOverrides: {} },
+        ],
+      },
+    }
+
+    const sysChanges = detectMultiSystemChanges(oldProj, {
+      name: 'QTN NO 500',
+      status: 'negotiating',
+      quotationMode: 'unit_wise',
+      profitPct: 18,
+      discountPct: 5,
+      includeInstallation: false,
+      extraAmount: 250,
+      notes: 'Urgent delivery',
+      total: 615000,
+      systems: [
+        { id: '1', name: 'SYSTEM A', quantity: 1, unit: 'SET', bay: 4, overrides: { 'Total cal!A3': 8, 'Total cal!D3': 1830 }, formulaOverrides: {} },
+        { id: '2', name: 'SYSTEM B - ARCHIVE', quantity: 3, unit: 'SET', bay: 3, includeInstallation: false, overrides: { 'Total cal!A3': 6, 'Total cal!D3': 3660 }, formulaOverrides: { 'Total cal!C3': '=2400' } },
+        { id: '3', name: 'SYSTEM C', quantity: 1, unit: 'SET', bay: 2, overrides: { 'Total cal!A3': 4 } },
+      ],
+    })
+    const sysDiffStrings = sysChanges.map((c) => c.diff)
+    const multiSysAuditOk =
+      sysDiffStrings.some((s) => s.includes('Status:') && s.includes('NEGOTIATING')) &&
+      sysDiffStrings.some((s) => s.includes('Quotation Format:')) &&
+      sysDiffStrings.some((s) => s.includes('Profit Margin %:') && s.includes('18%')) &&
+      sysDiffStrings.some((s) => s.includes('[SYSTEM B - ARCHIVE] System Name:') && s.includes('SYSTEM B → SYSTEM B - ARCHIVE')) &&
+      sysDiffStrings.some((s) => s.includes('[SYSTEM B - ARCHIVE] Sets Quantity:') && s.includes('2 → 3')) &&
+      sysDiffStrings.some((s) => s.includes('[SYSTEM B - ARCHIVE] DFMU Width (mm):') && s.includes('1830 → 3660')) &&
+      sysDiffStrings.some((s) => s.includes('[SYSTEM B - ARCHIVE] Formula (Total cal!C3):') && s.includes('=2400')) &&
+      sysDiffStrings.some((s) => s.includes('System Added: SYSTEM C')) &&
+      sysDiffStrings.some((s) => s.includes('Quotation Total:'))
+
+    // 2. Edit PDF fine-grained diffs (custom row, checkbox toggle, scale %, body row, terms, red spec, proposal page 3)
+    const oldPdfSnap = {
+      clientInfo: {
+        buyer_name: 'ACME LTD',
+        buyer_contact: '9876543210',
+        show_buyer_gst: true,
+        extra_fields: [{ id: '1', label: 'PO Ref', value: 'OLD-1', visible: true }],
+      },
+      quotationMode: 'set_wise',
+      profitPct: 20,
+      includeInstallation: true,
+      extraAmount: 0,
+      includeFullProposal: true,
+      showBodiesTable: true,
+      bodyPlacement: 'page1',
+      tableScale: 100,
+      tableDensity: 'normal',
+      systemsPerPageSetting: 3,
+      sets: [{ id: '1', system_title: 'SYSTEM A', quantity: 1, rate: 100000 }],
+      lineItems: [{ model_code: 'DFMU', description: 'Main Unit', dimensions: '2200x1830x610', qty: 4, rate: 25000 }],
+      bodyItems: [{ title: 'DFMU 3 BAY', sub_label: 'BODY', per_bay_qty: 6, qty: 4, total_body: 24 }],
+      termsList: [{ id: '1', title: 'Payment', text: '50% Advance' }],
+      redSpecs: ['STANDARD SINGLE DRIVE'],
+      proposalSpecs: { page3: { shelves: '1.0mm CRCA' }, page4: {}, page5: {} },
+    }
+    const newPdfSnap = {
+      clientInfo: {
+        buyer_name: 'ACME INDIA PVT LTD',
+        buyer_contact: '9999988888',
+        show_buyer_gst: false,
+        extra_fields: [
+          { id: '1', label: 'PO Ref', value: 'NEW-99', visible: false },
+          { id: '2', label: 'Site Code', value: 'MUM-01', visible: true },
+        ],
+      },
+      quotationMode: 'set_wise',
+      profitPct: 18,
+      includeInstallation: true,
+      extraAmount: 0,
+      includeFullProposal: true,
+      showBodiesTable: false,
+      bodyPlacement: 'terms',
+      tableScale: 90,
+      tableDensity: 'compact',
+      systemsPerPageSetting: 4,
+      sets: [{ id: '1', system_title: 'SYSTEM A (UPDATED)', quantity: 2, rate: 105000 }],
+      lineItems: [{ model_code: 'DFMU', description: 'Heavy Main Unit', dimensions: '2200x1830x610', qty: 4, rate: 26250 }],
+      bodyItems: [{ title: 'DFMU 3 BAY', sub_label: 'BODY', per_bay_qty: 6, qty: 6, total_body: 36 }],
+      termsList: [{ id: '1', title: 'Payment', text: '100% Against Delivery' }],
+      redSpecs: ['DOUBLE DRIVE WITH REDUCTION WHEEL'],
+      proposalSpecs: { page3: { shelves: '1.2mm CRCA' }, page4: {}, page5: {} },
+    }
+    const pdfChanges = detectPdfEditChanges(oldPdfSnap, newPdfSnap).map((c) => c.diff)
+    const pdfAuditOk =
+      pdfChanges.some((s) => s.includes('Buyer / Company Name:') && s.includes('ACME INDIA PVT LTD')) &&
+      pdfChanges.some((s) => s.includes('Buyer Phone:') && s.includes('9999988888')) &&
+      pdfChanges.some((s) => s.includes('Show GSTIN on PDF:') && s.includes('Visible → Hidden')) &&
+      pdfChanges.some((s) => s.includes('Custom Row (PO Ref):') && s.includes('NEW-99')) &&
+      pdfChanges.some((s) => s.includes('Custom Row Added:') && s.includes('MUM-01')) &&
+      pdfChanges.some((s) => s.includes('PDF Table Scale %:') && s.includes('100% → 90%')) &&
+      pdfChanges.some((s) => s.includes('Body Row (DFMU 3 BAY):') && s.includes('6×6=36')) &&
+      pdfChanges.some((s) => s.includes('Term (Payment):') && s.includes('100% Against Delivery')) &&
+      pdfChanges.some((s) => s.includes('Highlight Spec #1:') && s.includes('DOUBLE DRIVE WITH REDUCTION WHEEL')) &&
+      pdfChanges.some((s) => s.includes('Proposal Page 3 (shelves):') && s.includes('1.2mm CRCA'))
+
+    if (multiSysAuditOk && pdfAuditOk) {
+      logResult(63, 'Exhaustive Audit Trail (Multi-System Diffs & Smallest-to-Largest Edit PDF Diffs)', 'PASSED',
+        `Captured ${sysDiffStrings.length} multi-system/cell/formula changes (incl. [SYSTEM B - ARCHIVE] & SYSTEM C) and ${pdfChanges.length} granular Edit PDF changes (custom rows, toggles, scale, bodies, terms, highlights, and proposal specs).`)
+    } else {
+      logResult(63, 'Exhaustive Audit Trail (Multi-System Diffs & Smallest-to-Largest Edit PDF Diffs)', 'FAILED',
+        `multiSysAuditOk=${multiSysAuditOk} (${sysDiffStrings.length}), pdfAuditOk=${pdfAuditOk} (${pdfChanges.length})`)
+    }
+  } catch (e) {
+    logResult(63, 'Exhaustive Audit Trail (Multi-System Diffs & Smallest-to-Largest Edit PDF Diffs)', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

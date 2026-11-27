@@ -19,6 +19,7 @@ import { DEFAULT_NAMED_CONSTANTS, Overrides, SheetData, Workbook } from '../lib/
 import { inr, timeAgo } from '../lib/format'
 import { cleanOverrides, extractTemplateDefaults, summarize, filterCutToCutOverrides } from '../lib/model'
 import { buildOfficialQtnNo, formatInitialProjectName, formatPdfDate, getFiscalYear, parseRevision } from '../lib/revision'
+import { detectMultiSystemChanges } from '../lib/auditDiff'
 import { cleanCopiedText, fuzzyTextMatch } from '../lib/cleanText'
 import { getSavedClients, fetchClientsFromSupabase, SavedClient } from '../lib/clientDirectory'
 import { Navigation, NavTab } from './Navigation'
@@ -815,13 +816,21 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isSavingProject, setIsSavingProject] = useState(false)
   const [detailsSystemIdx, setDetailsSystemIdx] = useState<number>(0)
+  const lastSavedProjectSnapshotRef = useRef<Project | null>(null)
 
-  // Sync detailsSystemIdx when project changes
+  // Sync detailsSystemIdx and last saved snapshot when loaded project changes
   useEffect(() => {
     if (currentProject?.summary?.active_system_idx !== undefined) {
       setDetailsSystemIdx(Number(currentProject.summary.active_system_idx) || 0)
     } else {
       setDetailsSystemIdx(0)
+    }
+    if (currentProject && !hasUnsavedChanges) {
+      try {
+        lastSavedProjectSnapshotRef.current = JSON.parse(JSON.stringify(currentProject))
+      } catch {
+        lastSavedProjectSnapshotRef.current = currentProject
+      }
     }
   }, [currentProject?.id])
 
@@ -937,6 +946,35 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           ? (calcRes.summary.sales || (calcRes.computed_total ? Math.round(calcRes.computed_total * 1.18) : 0))
           : (calcRes.computed_total ?? calcRes.summary.sales)
 
+        const sheetDiffs = lastSavedProjectSnapshotRef.current
+          ? detectMultiSystemChanges(
+              lastSavedProjectSnapshotRef.current,
+              {
+                name: proj.name,
+                status: proj.status,
+                profitPct: profitSetting,
+                discountPct: discountSetting,
+                includeInstallation: incSetting,
+                extraAmount: extraSetting,
+                total: serverTotal,
+                inputs: proj.inputs,
+                formulaOverrides: proj.formula_overrides,
+                c2cOverrides: summary.c2c_overrides,
+                c2cFormulaOverrides: summary.c2c_formula_overrides,
+                systems: cleanSystems || summary.systems,
+              },
+              baseWb,
+            )
+          : []
+        const formattedSheetDiffs = sheetDiffs.map((d) => d.diff)
+        const finalSummaryWithChanges = {
+          ...serverSummary,
+          ...(formattedSheetDiffs.length > 0 ? { changes: formattedSheetDiffs } : {}),
+        }
+        const sheetAuditNote = formattedSheetDiffs.length > 0
+          ? formattedSheetDiffs.join('; ')
+          : 'Updated worksheet cells/formulas'
+
         await api.projectUpdate(
           session.token,
           proj.id,
@@ -945,10 +983,17 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           proj.inputs,
           proj.formula_overrides,
           serverTotal,
-          serverSummary,
+          finalSummaryWithChanges,
+          sheetAuditNote,
         )
 
-        setCurrentProject((prev) => (prev ? { ...prev, total: serverTotal, summary: serverSummary } : null))
+        const nextSavedProj = { ...proj, total: serverTotal, summary: finalSummaryWithChanges }
+        try {
+          lastSavedProjectSnapshotRef.current = JSON.parse(JSON.stringify(nextSavedProj))
+        } catch {
+          lastSavedProjectSnapshotRef.current = nextSavedProj
+        }
+        setCurrentProject((prev) => (prev ? { ...prev, total: serverTotal, summary: finalSummaryWithChanges } : null))
         setHasUnsavedChanges(false)
         if (showToast) toast('Saved & synced with server')
       } catch (calcErr: any) {
@@ -1443,6 +1488,11 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
                 c2cWb={c2cWb}
                 isNewlyCreated={justCreatedProjectId === currentProject.id}
                 onProjectUpdated={async (p) => {
+                  try {
+                    lastSavedProjectSnapshotRef.current = JSON.parse(JSON.stringify(p))
+                  } catch {
+                    lastSavedProjectSnapshotRef.current = p
+                  }
                   setCurrentProject(p)
                   await loadProjects(p.id)
                 }}

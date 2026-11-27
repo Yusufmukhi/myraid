@@ -10,7 +10,8 @@ import { cleanOverrides, extractTemplateDefaults, summarize, Summary, filterCutT
 
 import { exportWorkbookToXLSX, exportMultiSystemWorkbookToXLSX, MultiSystemExcelEntry } from '../../lib/excelExport'
 import { cleanCopiedNumber, cleanCopiedText } from '../../lib/cleanText'
-import { detectValueChanges, parseRevision } from '../../lib/revision'
+import { parseRevision } from '../../lib/revision'
+import { detectMultiSystemChanges } from '../../lib/auditDiff'
 
 import { fetchClientIp, getCachedClientIp } from '../../lib/clientInfo'
 
@@ -2338,28 +2339,33 @@ export function CalculatorPage({
 
 
 
-      // ── Step 2: Detect changes for audit ──
+      // ── Step 2: Detect granular multi-system, cell, formula, & commercial changes for audit ──
 
-      const detectedChanges = detectValueChanges(
-
-        project.inputs || {},
-
-        serverCleanedOverrides,
-
-        project.status,
-
-        status,
-
-        project.name,
-
-        nm,
-
-        project.total,
-
-        serverTotal,
-
+      const detectedChanges = detectMultiSystemChanges(
+        project,
+        {
+          name: nm,
+          status,
+          quotationMode,
+          profitPct,
+          discountPct,
+          includeInstallation,
+          extraAmount,
+          notes: projectNotes,
+          description: projectDescription,
+          reminder,
+          total: serverTotal,
+          inputs: serverCleanedOverrides,
+          formulaOverrides: formulaOverrides,
+          c2cOverrides: mergedC2COv,
+          c2cFormulaOverrides: mergedC2CFO,
+          systems: systemsPayload.map((sp, i) => ({
+            ...sp,
+            id: liveEffSystems[i]?.id,
+            bay: compiledSets[i]?.bay ?? liveEffSystems[i]?.bay,
+          })),
+        },
         wb,
-
       )
 
       const formattedDiffs = detectedChanges.map((c) => c.diff)
@@ -2670,6 +2676,12 @@ export function CalculatorPage({
     sets?: any[],
     extraSettings?: Record<string, any>
   ) => {
+    const { audit_changes: rawAuditChanges, ...cleanExtraSettings } = extraSettings || {}
+    const pdfAuditChanges: string[] = Array.isArray(rawAuditChanges) ? rawAuditChanges : []
+    const pdfAuditNote = pdfAuditChanges.length > 0
+      ? pdfAuditChanges.join('; ')
+      : 'Updated official quotation PDF details'
+
     if (dirty) {
       // Preserve last saved calculator specs/inputs when calculator has unsaved changes;
       // only persist PDF client info, line items, body items, and PDF settings.
@@ -2683,10 +2695,11 @@ export function CalculatorPage({
         client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
         quotation_items: items,
         body_items: bodyItems,
-        quotation_mode: extraSettings?.quotation_mode || savedBaseSummary.quotation_mode || quotationMode,
-        extra_amount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : (savedBaseSummary.extra_amount ?? extraAmount),
+        quotation_mode: cleanExtraSettings.quotation_mode || savedBaseSummary.quotation_mode || quotationMode,
+        extra_amount: cleanExtraSettings.extra_amount !== undefined ? cleanExtraSettings.extra_amount : (savedBaseSummary.extra_amount ?? extraAmount),
         ...(sets ? { quotation_sets: sets } : {}),
-        ...(extraSettings || {}),
+        ...cleanExtraSettings,
+        ...(pdfAuditChanges.length > 0 ? { changes: pdfAuditChanges } : {}),
       }
       const savedTotal = Number(project.total ?? savedBaseSummary.sales ?? 0)
       const updatedProject: Project = {
@@ -2703,7 +2716,7 @@ export function CalculatorPage({
           project.formula_overrides || {},
           savedTotal,
           updatedSummary,
-          'Updated official quotation client details'
+          pdfAuditNote,
         )
         toast('Quotation PDF details saved (unsaved calculator changes kept local until Save is clicked)')
         if (onProjectUpdated) {
@@ -2786,11 +2799,12 @@ export function CalculatorPage({
       client_id: targetClientId,
       quotation_items: items,
       body_items: bodyItems,
-      quotation_mode: extraSettings?.quotation_mode || quotationMode,
-      extra_amount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : extraAmount,
+      quotation_mode: cleanExtraSettings.quotation_mode || quotationMode,
+      extra_amount: cleanExtraSettings.extra_amount !== undefined ? cleanExtraSettings.extra_amount : extraAmount,
       systems: updatedSystemsList,
       ...(sets ? { quotation_sets: sets } : {}),
-      ...(extraSettings || {}),
+      ...cleanExtraSettings,
+      ...(pdfAuditChanges.length > 0 ? { changes: pdfAuditChanges } : {}),
     }
 
     const updatedProject: Project = {
@@ -2826,7 +2840,7 @@ export function CalculatorPage({
         formulaOverrides,
         finalSales,
         updatedSummary,
-        'Updated official quotation client details'
+        pdfAuditNote,
       )
       toast('Quotation changes saved successfully!')
       if (onProjectUpdated) {
