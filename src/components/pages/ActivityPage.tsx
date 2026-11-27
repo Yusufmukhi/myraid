@@ -267,6 +267,34 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
     return filteredLogs.slice(start, start + PAGE_SIZE)
   }, [filteredLogs, activePage])
 
+  const groupedPaginatedLogs = useMemo(() => {
+    const groups: Array<{ dateKey: string; dateTitle: string; items: Array<{ item: ActivityItem; flatIdx: number }> }> = []
+    const now = new Date()
+    const todayStr = now.toDateString()
+    const yest = new Date(now)
+    yest.setDate(yest.getDate() - 1)
+    const yestStr = yest.toDateString()
+
+    paginatedLogs.forEach((item, flatIdx) => {
+      const d = new Date(item.created_at)
+      const dKey = isNaN(d.getTime()) ? 'Unknown' : d.toDateString()
+      let title = dKey
+      if (!isNaN(d.getTime())) {
+        const niceDate = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        if (dKey === todayStr) title = `Today · ${niceDate}`
+        else if (dKey === yestStr) title = `Yesterday · ${niceDate}`
+        else title = d.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+      }
+      let grp = groups.find((g) => g.dateKey === dKey)
+      if (!grp) {
+        grp = { dateKey: dKey, dateTitle: title, items: [] }
+        groups.push(grp)
+      }
+      grp.items.push({ item, flatIdx })
+    })
+    return groups
+  }, [paginatedLogs])
+
   const toggleExpand = (id: string) => {
     setExpandedLogIds((prev) => {
       const next = new Set(prev)
@@ -513,268 +541,230 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
         )}
       </div>
 
-      {/* Activity Timeline List */}
-      <div className="card activity-audit-card">
+      {/* Activity Timeline List (Grouped by Day) */}
+      <div className="card activity-audit-card clean-audit-shell">
         {loading ? (
           <div className="page-loading">
             <Spinner size={28} />
-            <p className="muted">Loading audit records…</p>
+            <p className="muted">Loading activity log…</p>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="empty">
-            <p>No activity records match your criteria</p>
+            <p>No activity records match your filters</p>
           </div>
         ) : (
-          <div className="activity-audit-list">
-            {paginatedLogs.map((item, index) => {
-              const { badgeClass, label } = getActionMeta(item.action)
-              const proj = item.project_id
-                ? projectMap.get(item.project_id)
-                : item.details?.name
-                ? projectMap.get(item.details.name.toLowerCase().trim())
-                : null
+          <div className="clean-audit-feed">
+            {groupedPaginatedLogs.map((group) => (
+              <div key={group.dateKey} className="clean-day-group">
+                <div className="clean-day-header">
+                  <span className="clean-day-title">{group.dateTitle}</span>
+                  <span className="clean-day-count">{group.items.length} event{group.items.length > 1 ? 's' : ''}</span>
+                </div>
 
-              // Network & IP resolution
-              const rawIp = item.details?.ip || proj?.summary?.ip || proj?.summary?.client_info?.ip || clientIp
-              const netInfo = formatAuditNetwork(rawIp)
+                {group.items.map(({ item, flatIdx }) => {
+                  const { badgeClass, label } = getActionMeta(item.action)
+                  const shortTag = getActionShortTag(item.action)
+                  const proj = item.project_id
+                    ? projectMap.get(item.project_id)
+                    : item.details?.name
+                    ? projectMap.get(item.details.name.toLowerCase().trim())
+                    : null
 
-              // Device resolution
-              const rawDevice = item.details?.device || proj?.summary?.device || proj?.summary?.client_info?.device
-              const devInfo = formatAuditDevice(rawDevice)
+                  const rawIp = item.details?.ip || proj?.summary?.ip || proj?.summary?.client_info?.ip || clientIp
+                  const netInfo = formatAuditNetwork(rawIp)
+                  const rawDevice = item.details?.device || proj?.summary?.device || proj?.summary?.client_info?.device
+                  const devInfo = formatAuditDevice(rawDevice)
 
-              // Extract changes
-              const extracted = extractLogChanges(
-                item,
-                index,
-                paginatedLogs,
-                projectMap,
-                projectRevisionsMap
-              )
-              const isExpanded = expandedLogIds.has(item.id)
-              const changeCount = extracted?.changes?.length || 0
-              const plainSummaryText = changeCount > 0
-                ? extracted.changes
-                    .slice(0, 2)
-                    .map((c: any) => cleanDiffText(typeof c === 'string' ? c : (c?.diff || `${c?.label || ''}: ${c?.oldVal || ''} → ${c?.newVal || ''}`)))
-                    .join(' · ')
-                : ''
-              const exactDateShort = new Date(item.created_at).toLocaleString('en-IN', {
-                day: '2-digit',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
+                  const extracted = extractLogChanges(
+                    item,
+                    flatIdx,
+                    paginatedLogs,
+                    projectMap,
+                    projectRevisionsMap
+                  )
+                  const isExpanded = expandedLogIds.has(item.id)
+                  const changeCount = extracted?.changes?.length || 0
+                  const plainSummaryText = changeCount > 0
+                    ? extracted.changes
+                        .slice(0, 2)
+                        .map((c: any) => cleanDiffText(typeof c === 'string' ? c : (c?.diff || `${c?.label || ''}: ${c?.oldVal || ''} → ${c?.newVal || ''}`)))
+                        .join(' · ')
+                    : ''
+                  const exactClockTime = new Date(item.created_at).toLocaleTimeString('en-IN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
 
-              return (
-                <div
-                  key={item.id}
-                  className={`audit-row-container minimal-audit-row ${isExpanded ? 'is-expanded' : ''}`}
-                >
-                  {/* Minimal, Plain-English Summary Row with Full Info */}
-                  <div
-                    className="audit-summary-row"
-                    style={{ padding: '10px 14px' }}
-                    onClick={() => toggleExpand(item.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        toggleExpand(item.id)
-                      }
-                    }}
-                  >
-                    <div className="audit-icon-col">
-                      <span className={`audit-badge ${badgeClass}`} style={{ width: 28, height: 28 }}>{getActionIcon(item.action)}</span>
-                    </div>
-
-                    <div className="audit-middle-col" style={{ gap: 3 }}>
-                      <div className="audit-actor-line" style={{ fontSize: '13px', color: '#0f172a', gap: 5 }}>
-                        <strong className="audit-user">{item.user_name}</strong>
-                        <span className="audit-action-label" style={{ color: '#475569' }}>{label}</span>
-                        {item.details?.client_name && (
-                          <strong style={{ color: '#b45309' }}>“{item.details.client_name}”</strong>
-                        )}
-                        {item.details?.name && !item.details?.client_name && (
-                          <button
-                            type="button"
-                            className="link-inline"
-                            style={{ fontSize: '13px', fontWeight: 700 }}
-                            onClick={(e) => {
-                              if (item.project_id && onOpenProject) {
-                                e.stopPropagation()
-                                onOpenProject(item.project_id)
-                              }
-                            }}
-                            title={item.project_id ? 'Open quotation in calculator' : undefined}
-                          >
-                            {item.details.name}
-                          </button>
-                        )}
-                        {item.action === 'client_conflict' && item.details?.existing_owner && (
-                          <span className="tiny" style={{ color: '#b45309', fontWeight: 600 }}>
-                            (Owner: @{item.details.existing_owner}{item.details?.gst ? ` · GST ${item.details.gst}` : ''})
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="tiny muted" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: '11.5px' }}>
-                        {plainSummaryText && (
-                          <span style={{ color: '#334155', fontWeight: 500, maxWidth: '520px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {plainSummaryText}{changeCount > 2 ? ` (+${changeCount - 2} more)` : ''}
-                          </span>
-                        )}
-                        {plainSummaryText && <span>·</span>}
-                        <span>{exactDateShort}</span>
-                        {item.details?.template_version && <span>· v{item.details.template_version}</span>}
-                        {item.details?.new_role && <span>· Role: {item.details.new_role}</span>}
-                        <span>· {devInfo.label}</span>
-                        <span title={netInfo.tooltip}>· {netInfo.ip || netInfo.label}</span>
-                      </div>
-                    </div>
-
-                    <div className="audit-right-col" onClick={(e) => e.stopPropagation()} style={{ gap: 10 }}>
-                      {item.details?.total !== undefined && Number(item.details.total) > 0 && (
-                        <strong style={{ fontSize: '12.5px', color: '#15803d', whiteSpace: 'nowrap' }}>
-                          {inr(Number(item.details.total))}
-                        </strong>
-                      )}
-                      <span
-                        className="audit-time-label"
-                        style={{ fontSize: '11px', color: '#64748b' }}
-                        title={new Date(item.created_at).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'medium' })}
-                      >
-                        {timeAgo(item.created_at)}
-                      </span>
-                      <button
-                        className={`btn sm ${isExpanded ? 'primary' : 'ghost'} minimal-pill-btn`}
-                        style={{ height: '26px !important', padding: '0 8px !important', fontSize: '11.5px !important' }}
+                  return (
+                    <div
+                      key={item.id}
+                      className={`clean-audit-row-wrap ${isExpanded ? 'is-open' : ''}`}
+                    >
+                      <div
+                        className="clean-audit-row"
                         onClick={() => toggleExpand(item.id)}
-                        aria-expanded={isExpanded}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            toggleExpand(item.id)
+                          }
+                        }}
                       >
-                        {isExpanded ? 'Hide ▴' : 'Details ▾'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* =========================================================================
-                      DETAILED MODIFIED CHANGES & AUDIT CONTEXT (OPENS ON CLICK)
-                      ========================================================================= */}
-                  {isExpanded && (
-                    <div className="audit-details-accordion">
-                      <div className="audit-drawer-inner">
-                        {/* 1. What Changes Have Been Made (Field-by-Field Diff) */}
-                        <div className="audit-section-box">
-                          <div className="audit-section-head">
-                            <div className="row gap" style={{ alignItems: 'center' }}>
-                              <span style={{ fontSize: '15px' }}>📝</span>
-                              <strong style={{ fontSize: '13px' }}>
-                                What has been changed ({extracted.changes.length} recorded update{extracted.changes.length > 1 ? 's' : ''})
-                              </strong>
-                            </div>
-                            <span className="tiny muted">{extracted.sectionTitle}</span>
-                          </div>
-
-                          <div className="audit-diff-grid">
-                            {extracted.changes.map((ch: any, idx: number) => (
-                              <DiffItemRenderer key={idx} item={ch} />
-                            ))}
-                          </div>
+                        {/* 1. Time Column */}
+                        <div className="clean-time-col" title={new Date(item.created_at).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'medium' })}>
+                          <span className="clean-clock">{exactClockTime}</span>
+                          <span className="clean-ago">{timeAgo(item.created_at)}</span>
                         </div>
 
-                        {/* 2. And Other Changes Also (Comprehensive Event & Technical Context) */}
-                        <div className="audit-section-box mt-2">
-                          <div className="audit-section-head">
-                            <div className="row gap" style={{ alignItems: 'center' }}>
-                              <span style={{ fontSize: '15px' }}>ℹ️</span>
-                              <strong style={{ fontSize: '13px' }}>
-                                Other changes & technical audit details
-                              </strong>
-                            </div>
-                            <button
-                              className="btn ghost sm py-0 px-2 tiny"
-                              onClick={() => setModalLog(item)}
-                              title="Inspect full raw JSON & snapshot in modal"
-                            >
-                              🔍 Full Inspector
-                            </button>
-                          </div>
+                        {/* 2. Status Icon + Category Tag */}
+                        <div className="clean-type-col">
+                          <span className={`audit-badge clean-icon-badge ${badgeClass}`}>{getActionIcon(item.action)}</span>
+                          <span className={`clean-event-tag ${badgeClass}`}>{shortTag}</span>
+                        </div>
 
-                          <div className="audit-context-grid">
-                            <div className="context-card">
-                              <span className="context-label">ACTOR & PERMISSIONS</span>
-                              <div className="context-value">
-                                <strong>{item.user_name}</strong>
-                                <span className="chip sm ml-2">
-                                  {item.user_name.toLowerCase() === session.username.toLowerCase()
-                                    ? org.role
-                                    : 'Staff'}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="context-card">
-                              <span className="context-label">AUDITED NETWORK & IP</span>
-                              <div className="context-value">
-                                <span className="font-mono">{netInfo.ip}</span>
-                                <span className="tiny muted ml-2">({netInfo.label})</span>
-                              </div>
-                            </div>
-
-                            <div className="context-card">
-                              <span className="context-label">EXACT TIMESTAMP</span>
-                              <div className="context-value font-mono">
-                                {new Date(item.created_at).toLocaleString('en-IN', {
-                                  dateStyle: 'medium',
-                                  timeStyle: 'medium',
-                                })}
-                              </div>
-                            </div>
-
-                            <div className="context-card">
-                              <span className="context-label">DEVICE & OS PLATFORM</span>
-                              <div className="context-value">
-                                <span>{devInfo.icon}</span> {devInfo.label}
-                              </div>
-                            </div>
-
-                            <div className="context-card">
-                              <span className="context-label">EVENT TYPE & ACTION</span>
-                              <div className="context-value font-mono tiny">
-                                {item.action}
-                              </div>
-                            </div>
-
-                            <div className="context-card">
-                              <span className="context-label">TARGET RESOURCE</span>
-                              <div className="context-value">
-                                {item.details?.name ? (
-                                  <span>“{item.details.name}”</span>
-                                ) : (
-                                  <span className="tiny muted">Organisation Level Event</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Action Footer */}
-                          {item.project_id && onOpenProject && (
-                            <div className="row end gap mt-3">
+                        {/* 3. Plain-English Event & Changes Preview */}
+                        <div className="clean-main-col">
+                          <div className="clean-headline">
+                            <strong className="clean-actor">{item.user_name}</strong>
+                            <span className="clean-verb">{label}</span>
+                            {item.details?.client_name && (
+                              <strong className="clean-target-client">“{item.details.client_name}”</strong>
+                            )}
+                            {item.details?.name && !item.details?.client_name && (
                               <button
-                                className="btn primary sm"
-                                onClick={() => onOpenProject(item.project_id!)}
+                                type="button"
+                                className="clean-target-link"
+                                onClick={(e) => {
+                                  if (item.project_id && onOpenProject) {
+                                    e.stopPropagation()
+                                    onOpenProject(item.project_id)
+                                  }
+                                }}
+                                title={item.project_id ? 'Open quotation in calculator' : undefined}
                               >
-                                {Icon.fileText} Open This Quotation in Calculator →
+                                {item.details.name}
                               </button>
+                            )}
+                            {changeCount > 0 && (
+                              <span className="clean-change-count">
+                                {changeCount} change{changeCount > 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {item.action === 'client_conflict' && item.details?.existing_owner && (
+                              <span className="clean-warn-note">
+                                (Handled by @{item.details.existing_owner}{item.details?.gst ? ` · GST ${item.details.gst}` : ''})
+                              </span>
+                            )}
+                          </div>
+
+                          {plainSummaryText && (
+                            <div className="clean-preview-chips">
+                              {extracted.changes.slice(0, 3).map((ch: any, cIdx: number) => {
+                                const parsed = parseDiffItem(ch)
+                                return (
+                                  <span key={cIdx} className="clean-preview-chip">
+                                    {parsed.scope && <strong className="clean-chip-scope">{parsed.scope}</strong>}
+                                    <span>{parsed.label || parsed.rawText}</span>
+                                    {parsed.newVal !== undefined && (
+                                      <strong className="clean-chip-val">→ {parsed.newVal}</strong>
+                                    )}
+                                  </span>
+                                )
+                              })}
+                              {changeCount > 3 && (
+                                <span className="clean-more-chip">+{changeCount - 3} more</span>
+                              )}
                             </div>
                           )}
                         </div>
+
+                        {/* 4. Right Amount & Expand Button */}
+                        <div className="clean-right-col" onClick={(e) => e.stopPropagation()}>
+                          <div className="clean-right-meta">
+                            {item.details?.total !== undefined && Number(item.details.total) > 0 && (
+                              <strong className="clean-amount">{inr(Number(item.details.total))}</strong>
+                            )}
+                            <span className="clean-device-ip" title={`${devInfo.label} · ${netInfo.tooltip}`}>
+                              {devInfo.label} · {netInfo.ip || netInfo.label}
+                            </span>
+                          </div>
+                          <button
+                            className={`btn sm ${isExpanded ? 'primary' : 'ghost'} minimal-pill-btn clean-toggle-btn`}
+                            onClick={() => toggleExpand(item.id)}
+                            aria-expanded={isExpanded}
+                          >
+                            {isExpanded ? 'Hide ▴' : 'Details ▾'}
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Expanded Clean Structured Change Table & Metadata Footer */}
+                      {isExpanded && (
+                        <div className="clean-drawer">
+                          <div className="clean-diff-table-wrap">
+                            <div className="clean-diff-table-head">
+                              <span>{extracted.sectionTitle} ({changeCount} item{changeCount === 1 ? '' : 's'})</span>
+                              {item.details?.buyer_name && (
+                                <span className="tiny muted">Buyer: <strong>{item.details.buyer_name}</strong></span>
+                              )}
+                            </div>
+                            <table className="clean-diff-table">
+                              <thead>
+                                <tr>
+                                  <th style={{ width: '110px' }}>Section</th>
+                                  <th style={{ width: '28%' }}>Field</th>
+                                  <th>Before</th>
+                                  <th style={{ width: '24px' }}></th>
+                                  <th>After</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {extracted.changes.map((ch: any, idx: number) => (
+                                  <DiffItemRenderer key={idx} item={ch} />
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="clean-meta-strip">
+                            <div className="clean-meta-items">
+                              <span><strong>Actor:</strong> {item.user_name} ({item.user_name.toLowerCase() === session.username.toLowerCase() ? org.role : 'Staff'})</span>
+                              <span><strong>Time:</strong> {new Date(item.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                              <span><strong>Device:</strong> {devInfo.icon} {devInfo.label}</span>
+                              <span><strong>Network:</strong> {netInfo.ip} ({netInfo.label})</span>
+                              <span><strong>Event:</strong> <code>{item.action}</code></span>
+                            </div>
+                            <div className="clean-meta-actions">
+                              {item.project_id && onOpenProject && (
+                                <button
+                                  type="button"
+                                  className="btn primary sm"
+                                  style={{ height: '26px', padding: '0 10px', fontSize: '11.5px' }}
+                                  onClick={() => onOpenProject(item.project_id!)}
+                                >
+                                  Open Quotation →
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                style={{ height: '26px', padding: '0 9px', fontSize: '11.5px' }}
+                                onClick={() => setModalLog(item)}
+                                title="Inspect raw JSON event payload"
+                              >
+                                🔍 Full Inspector
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )
-            })}
+                  )
+                })}
+              </div>
+            ))}
           </div>
         )}
 
@@ -937,6 +927,27 @@ function getActionIcon(action: string) {
       return Icon.shield
     default:
       return Icon.info
+  }
+}
+
+function getActionShortTag(action: string): string {
+  switch (action) {
+    case 'project_created': return 'Created'
+    case 'pdf_downloaded': return 'PDF Download'
+    case 'pdf_saved': return 'Edit PDF'
+    case 'project_updated': return 'Saved'
+    case 'project_duplicated': return 'Revised'
+    case 'project_recalculated': return 'Recalc'
+    case 'template_published': return 'Template'
+    case 'project_archived': return 'Archived'
+    case 'project_deleted': return 'Deleted'
+    case 'member_joined': return 'Joined'
+    case 'member_role_changed': return 'Role'
+    case 'join_requested': return 'Access Req'
+    case 'member_rejected': return 'Rejected'
+    case 'join_code_rotated': return 'Security'
+    case 'client_conflict': return 'Conflict'
+    default: return action.replace(/_/g, ' ')
   }
 }
 
@@ -1308,8 +1319,15 @@ function parseDiffItem(raw: any) {
   }
 
   if (oldVal && newVal) {
+    let scope = ''
+    let cleanLabel = label
+    const scopeMatch = label.match(/^\[([^\]]+)\]\s*(.+)$/)
+    if (scopeMatch) {
+      scope = scopeMatch[1].trim()
+      cleanLabel = scopeMatch[2].trim()
+    }
     let delta = undefined
-    if (isTotal || /total/i.test(label) || (oldVal.startsWith('₹') && newVal.startsWith('₹'))) {
+    if (isTotal || /total/i.test(cleanLabel) || (oldVal.startsWith('₹') && newVal.startsWith('₹'))) {
       const oNum = Number(oldVal.replace(/[^0-9.-]+/g, ''))
       const nNum = Number(newVal.replace(/[^0-9.-]+/g, ''))
       if (!isNaN(oNum) && !isNaN(nNum) && oNum !== nNum) {
@@ -1321,10 +1339,10 @@ function parseDiffItem(raw: any) {
         }
       }
     }
-    return { label, oldVal, newVal, isTotal, delta }
+    return { scope, label: cleanLabel, oldVal, newVal, isTotal, delta }
   }
 
-  return { rawText: rawText || String(raw) }
+  return { scope: '', rawText: rawText || String(raw) }
 }
 
 function DiffItemRenderer({ item }: { item: any }) {
@@ -1332,35 +1350,37 @@ function DiffItemRenderer({ item }: { item: any }) {
 
   if (parsed.oldVal !== undefined && parsed.newVal !== undefined) {
     return (
-      <div className={`audit-diff-card ${parsed.isTotal ? 'diff-total' : ''}`}>
-        <div className="diff-field">{parsed.label}</div>
-        <div className="diff-values">
-          <span className={`diff-val-old ${parsed.isTotal ? 'strike' : ''}`} title="Previous value">
-            {parsed.oldVal}
+      <tr className={parsed.isTotal ? 'clean-diff-total-row' : ''}>
+        <td>
+          <span className={`clean-scope-pill ${parsed.scope === 'Edit PDF' ? 'pdf' : parsed.scope ? 'sys' : 'gen'}`}>
+            {parsed.scope || 'General'}
           </span>
-          <span className="diff-arrow" aria-hidden="true">
-            →
-          </span>
-          <span className={`diff-val-new ${parsed.isTotal ? 'highlight' : ''}`} title="Updated value">
-            {parsed.newVal}
-          </span>
+        </td>
+        <td className="clean-diff-field">{parsed.label}</td>
+        <td>
+          <span className="clean-val-old" title="Previous value">{parsed.oldVal}</span>
+        </td>
+        <td className="clean-arrow-cell">→</td>
+        <td>
+          <span className="clean-val-new" title="New value">{parsed.newVal}</span>
           {parsed.delta && (
-            <span
-              className={`diff-delta ${parsed.delta.isIncrease ? 'pos' : 'neg'}`}
-              title={parsed.delta.isIncrease ? 'Price Increase' : 'Price Decrease'}
-            >
+            <span className={`clean-delta-badge ${parsed.delta.isIncrease ? 'pos' : 'neg'}`}>
               {parsed.delta.formatted}
             </span>
           )}
-        </div>
-      </div>
+        </td>
+      </tr>
     )
   }
 
   return (
-    <div className="audit-diff-card diff-action-info">
-      <span className="diff-bullet">✓</span>
-      <span className="diff-text">{parsed.rawText}</span>
-    </div>
+    <tr>
+      <td>
+        <span className="clean-scope-pill gen">Info</span>
+      </td>
+      <td colSpan={4} style={{ color: '#334155', fontSize: '12px' }}>
+        {parsed.rawText}
+      </td>
+    </tr>
   )
 }
