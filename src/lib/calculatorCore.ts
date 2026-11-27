@@ -47,21 +47,37 @@ export interface SystemBodiesResult {
   tooltipText: string
 }
 
+/** Returns true strictly for single-face compactor models (1 body per bay). */
+export function isSingleFaceModel(codeOrText?: string): boolean {
+  const s = (codeOrText || '').trim().toUpperCase()
+  if (!s) return false
+  if (s.includes('DFMU-D') || s.includes('DFFU-D') || s.includes('DFMU') || s.includes('DFFU')) return false
+  return s.includes('SFMU') || s.includes('SFFU')
+}
+
+/** Extracts normalized compactor model code, checking `-D` variants before base codes. */
+export function extractBodyModelCode(codeOrText?: string): string {
+  const s = (codeOrText || '').trim().toUpperCase()
+  if (!s) return ''
+  if (s.includes('DFMU-D')) return 'DFMU-D'
+  if (s.includes('DFFU-D')) return 'DFFU-D'
+  if (s.includes('DFMU')) return 'DFMU'
+  if (s.includes('SFMU')) return 'SFMU'
+  if (s.includes('SFFU')) return 'SFFU'
+  if (s.includes('DFFU')) return 'DFFU'
+  return s
+}
+
 /**
  * Detects the system's compactor bay count (e.g. 1, 2, 3, 4, 5 BAY) from:
- * 1. Explicit bay field (sys.bay, sys.bay_count, sys.breakdown?.bay_count, overrides.bayInput)
- * 2. System title, label, or name (e.g. "2 BAY", "SYSTEM A - 4 BAY", "4 BAY (1 SET)", "4-BAY")
- * 3. Live overrides Total cal!A3 (DFMU rows / 2: 2 rows -> 1 bay, 4 -> 2, 6 -> 3, 8 -> 4, 10 -> 5)
- * 4. Live overrides width Total cal!D3 (915 mm -> 1 bay, 1830 -> 2, 2745 -> 3, 3660 -> 4, 4575 -> 5)
- * 5. Breakdown or items dimension width (e.g. "3660 (W)")
- * 6. Items or breakdown rows per unit / descriptions
+ * 1. Explicit live overrides Total cal!A3 (DFMU rows / 2: 2->1 bay, 4->2, 6->3, 8->4, 10->5)
+ * 2. Explicit bay field (sys.bay, sys.bay_count, sys.breakdown?.bay_count, overrides.bayInput)
+ * 3. Explicit live overrides width Total cal!D3 (915->1 bay, 1830->2, 2745->3, 3660->4, 4575->5)
+ * 4. System title, label, or name (e.g. "2 BAY", "SYSTEM A - 4 BAY", "4-BAY")
+ * 5. Breakdown or items dimension width / per-unit rows
  */
 export function detectSystemBayCount(sys: any, overrides: Overrides = {}): number | null {
   if (!sys && !overrides) return null
-
-  // 1. Explicit bay field
-  const explicitBay = Number(sys?.bay ?? sys?.bay_count ?? sys?.breakdown?.bay_count ?? overrides?.bayInput ?? overrides?.bay ?? overrides?.bay_count ?? sys?.bayInput)
-  if (!isNaN(explicitBay) && explicitBay > 0 && explicitBay <= 20) return explicitBay
 
   // Helper regex to extract bay from text string
   const extractBayRegex = (text?: string): number | null => {
@@ -95,20 +111,17 @@ export function detectSystemBayCount(sys: any, overrides: Overrides = {}): numbe
     return null
   }
 
-  // 2. Scan system title, set_label, name, label
-  const titleBay = extractBayRegex(sys?.system_title) ||
-                   extractBayRegex(sys?.set_label) ||
-                   extractBayRegex(sys?.name) ||
-                   extractBayRegex(sys?.label)
-  if (titleBay) return titleBay
-
-  // 3. Check live overrides Total cal!A3 (DFMU rows / 2: 2 rows -> 1 bay, 4 -> 2, 6 -> 3, 8 -> 4, 10 -> 5)
+  // 1. Live overrides Total cal!A3 (authoritative row count input — beats stale sys.bay or title)
   const a3 = Number(overrides?.['Total cal!A3'] ?? sys?.overrides?.['Total cal!A3'])
   if (a3 && !isNaN(a3) && a3 > 0) {
     return Math.max(1, Math.round(a3 / 2))
   }
 
-  // 4. Check overrides width Total cal!D3 (standard 915 mm per bay: 1830 -> 2, 2745 -> 3, 3660 -> 4, 4575 -> 5)
+  // 2. Explicit bay field
+  const explicitBay = Number(sys?.bay ?? sys?.bay_count ?? sys?.breakdown?.bay_count ?? overrides?.bayInput ?? overrides?.bay ?? overrides?.bay_count ?? sys?.bayInput)
+  if (!isNaN(explicitBay) && explicitBay > 0 && explicitBay <= 20) return explicitBay
+
+  // 3. Explicit live overrides width Total cal!D3
   const d3 = Number(overrides?.['Total cal!D3'] ?? sys?.overrides?.['Total cal!D3'])
   if (d3 && !isNaN(d3) && d3 > 0) {
     if (d3 >= 800 && d3 <= 1100) return 1      // 915 mm
@@ -119,6 +132,13 @@ export function detectSystemBayCount(sys: any, overrides: Overrides = {}): numbe
     const approx = Math.round(d3 / 915)
     if (approx >= 1 && approx <= 20) return approx
   }
+
+  // 4. Scan system title, set_label, name, label
+  const titleBay = extractBayRegex(sys?.system_title) ||
+                   extractBayRegex(sys?.set_label) ||
+                   extractBayRegex(sys?.name) ||
+                   extractBayRegex(sys?.label)
+  if (titleBay) return titleBay
 
   // 5. Scan items if present
   if (Array.isArray(sys?.items)) {

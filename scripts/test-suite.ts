@@ -3740,6 +3740,153 @@ async function runAllTests() {
     logResult(65, 'Pages 3-5 Layout Fit, Client Technical Pages Yes/No Default, Pagination & Delete Modal Layering', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 66: Bulletproof Installation / Unit Bodies Stress Matrix (Zero-Drift Guarantee)
+  // -------------------------------------------------------------------------
+  try {
+    const { detectSystemBayCount, calculateSystemBodies } = await import('../src/lib/calculatorCore')
+    const {
+      generateDefaultBodyItems,
+      areBodyItemsValidForSets,
+      buildNormalizedBodyGroups,
+      getSetBayCount,
+    } = await import('../src/components/quotation/OfficialQuotationDocument')
+
+    // 1. Live Excel Workbook Total cal!B48 parity across bays 1..6 & all 5 models & set multipliers
+    const stressCases = [
+      { bay: 1, dfmu: 2, sfmu: 1, sffu: 1, dffu: 0, dfmud: 0, sets: 1 },
+      { bay: 2, dfmu: 10, sfmu: 1, sffu: 1, dffu: 0, dfmud: 0, sets: 2 },
+      { bay: 3, dfmu: 8, sfmu: 2, sffu: 2, dffu: 1, dfmud: 1, sets: 3 },
+      { bay: 4, dfmu: 6, sfmu: 1, sffu: 1, dffu: 2, dfmud: 1, sets: 2 },
+      { bay: 5, dfmu: 4, sfmu: 3, sffu: 0, dffu: 1, dfmud: 2, sets: 4 },
+      { bay: 6, dfmu: 3, sfmu: 1, sffu: 1, dffu: 1, dfmud: 1, sets: 1 },
+      { bay: 3, dfmu: 0, sfmu: 2, sffu: 2, dffu: 0, dfmud: 1, sets: 5 },
+      { bay: 4, dfmu: 5, sfmu: 0, sffu: 0, dffu: 0, dfmud: 0, sets: 3 },
+    ]
+    const bodyWb = new Workbook(rawWb, SERVER_CONSTANTS)
+    let wbMatrixMismatches = 0
+    for (const sc of stressCases) {
+      const ov = {
+        'Total cal!A3': sc.bay * 2,
+        'Total cal!D3': sc.bay * 915,
+        'Total cal!G4': sc.dfmu,
+        'Total cal!G8': sc.sfmu,
+        'Total cal!G12': sc.sffu,
+        'Total cal!G16': sc.dffu,
+        'Total cal!G20': sc.dfmud,
+      }
+      bodyWb.setOverrides(ov)
+      const wbB48 = bodyWb.num('Total cal', 'B48')
+      const sum = summarize(bodyWb, 25, 0, true, 0)
+      const sysObj = { id: 's1', system_title: `SYSTEM A (${sc.bay} BAY)`, quantity: sc.sets, overrides: ov, summary: sum }
+      const calc = calculateSystemBodies(sysObj, ov, bodyWb, true, sum.bodies)
+      const items = generateDefaultBodyItems(sum, bodyWb, ov, [sysObj as any])
+      const grpRes = buildNormalizedBodyGroups(items, [sysObj as any], ov, bodyWb, sum)
+      const expectedSingle = sc.bay * (2 * sc.dfmu + sc.sfmu + sc.sffu + 2 * sc.dffu + 2 * sc.dfmud)
+      const expectedTotal = expectedSingle * sc.sets
+      if (
+        wbB48 !== expectedSingle ||
+        sum.bodies !== expectedSingle ||
+        calc.singleSetBodies !== expectedSingle ||
+        calc.totalBodies !== expectedTotal ||
+        grpRes.totalBodies !== expectedTotal ||
+        !areBodyItemsValidForSets(items, [sysObj], ov, bodyWb, sum)
+      ) {
+        wbMatrixMismatches++
+      }
+    }
+
+    // 2. Stale title / stale explicit bay overridden strictly by live Total cal!A3 override
+    const bayOverrideWins =
+      detectSystemBayCount({ bay: 2, system_title: 'SYSTEM A (2 BAY)' }, { 'Total cal!A3': 10 }) === 5 &&
+      getSetBayCount({ bay: 2, system_title: 'SYSTEM A (2 BAY)', overrides: { 'Total cal!A3': 10 } }, 0) === 5
+
+    // 3. Stale body_items rejection matrix (bay change, unit qty change, set qty change, added model, removed model, corrupted total)
+    const liveSets: any[] = [
+      {
+        id: 'sysA',
+        system_title: 'SYSTEM A',
+        bay: 3,
+        quantity: 2,
+        items: [
+          { model_code: 'DFMU', unit_qty: 6 },
+          { model_code: 'SFMU', unit_qty: 2 },
+        ],
+      },
+      {
+        id: 'sysB',
+        system_title: 'SYSTEM B',
+        bay: 4,
+        quantity: 1,
+        items: [
+          { model_code: 'DFMU-D', unit_qty: 2 },
+          { model_code: 'SFFU', unit_qty: 1 },
+        ],
+      },
+    ]
+    const validMultiBodies = generateDefaultBodyItems({} as any, null, {}, liveSets)
+    const validPasses = areBodyItemsValidForSets(validMultiBodies, liveSets)
+    const rejectsBayChange = !areBodyItemsValidForSets(
+      validMultiBodies.map((b, i) => (i === 0 ? { ...b, title: 'DFMU 2 BAY' } : b)),
+      liveSets,
+    )
+    const rejectsQtyChange = !areBodyItemsValidForSets(
+      validMultiBodies.map((b, i) => (i === 0 ? { ...b, qty: 4 } : b)),
+      liveSets,
+    )
+    const rejectsSetQtyChange = !areBodyItemsValidForSets(
+      validMultiBodies.map((b) => (b.system_id === 'sysA' ? { ...b, set_qty: 1, total_body: (b.unit_body || 0) } : b)),
+      liveSets,
+    )
+    const rejectsAddedModel = !areBodyItemsValidForSets(
+      validMultiBodies,
+      liveSets.map((s, idx) =>
+        idx === 0 ? { ...s, items: [...s.items, { model_code: 'DFFU', unit_qty: 1 }] } : s,
+      ),
+    )
+    const rejectsDeletedSystem = !areBodyItemsValidForSets(validMultiBodies, [liveSets[0]])
+    const rejectsCorruptedTotal = !areBodyItemsValidForSets(
+      validMultiBodies.map((b, i) => (i === 0 ? { ...b, total_body: 999 } : b)),
+      liveSets,
+    )
+
+    // 4. buildNormalizedBodyGroups self-heals corrupted rows & guarantees Grand Total === sum(systemTotal)
+    const corruptedBodies = validMultiBodies.map((b, i) =>
+      i === 0 ? { ...b, per_bay_qty: 99, unit_body: 99, total_body: 99, title: 'DFMU 5 BAY' } : b,
+    )
+    const healed = buildNormalizedBodyGroups(corruptedBodies, liveSets)
+    // sysA: (6*6 + 3*2)*2 = (36+6)*2 = 84; sysB: (8*2 + 4*1)*1 = 20; Total = 104
+    const groupSum = healed.groups.reduce((acc, g) => acc + g.systemTotal, 0)
+    const healedOk =
+      healed.totalBodies === 104 &&
+      groupSum === 104 &&
+      healed.groups[0].items[0].title === 'DFMU 3 BAY' &&
+      healed.groups[0].items[0].per_bay_qty === 6 &&
+      healed.groups[0].items[0].unit_body === 36 &&
+      healed.groups[0].items[0].total_body === 72
+
+    if (
+      wbMatrixMismatches === 0 &&
+      bayOverrideWins &&
+      validPasses &&
+      rejectsBayChange &&
+      rejectsQtyChange &&
+      rejectsSetQtyChange &&
+      rejectsAddedModel &&
+      rejectsDeletedSystem &&
+      rejectsCorruptedTotal &&
+      healedOk
+    ) {
+      logResult(66, 'Bulletproof Installation / Unit Bodies Stress Matrix (Zero-Drift Guarantee)', 'PASSED',
+        'Verified exact Total cal!B48 parity across all 5 models & 1-6 bays; A3 beats stale titles; stale bay/qty/sets/added-model/deleted-system/corrupted-total all rejected; normalized group sum === grand total (104).')
+    } else {
+      logResult(66, 'Bulletproof Installation / Unit Bodies Stress Matrix (Zero-Drift Guarantee)', 'FAILED',
+        `wbMatrixMismatches=${wbMatrixMismatches}, bayOverrideWins=${bayOverrideWins}, validPasses=${validPasses}, rejectsBayChange=${rejectsBayChange}, rejectsQtyChange=${rejectsQtyChange}, rejectsSetQtyChange=${rejectsSetQtyChange}, rejectsAddedModel=${rejectsAddedModel}, rejectsDeletedSystem=${rejectsDeletedSystem}, rejectsCorruptedTotal=${rejectsCorruptedTotal}, healedOk=${healedOk} (total=${healed.totalBodies})`)
+    }
+  } catch (e) {
+    logResult(66, 'Bulletproof Installation / Unit Bodies Stress Matrix (Zero-Drift Guarantee)', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

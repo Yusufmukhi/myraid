@@ -30,7 +30,12 @@ import {
   getVisibleFieldValues,
 } from '../../lib/clientDirectory'
 import { Icon, useUI, Spinner } from '../ui'
-import { calculateSystemBodies, detectSystemBayCount } from '../../lib/calculatorCore'
+import {
+  calculateSystemBodies,
+  detectSystemBayCount,
+  extractBodyModelCode,
+  isSingleFaceModel,
+} from '../../lib/calculatorCore'
 import { cleanCopiedText, fuzzyTextMatch } from '../../lib/cleanText'
 
 export type { QuotationExtraField, ClientContactPerson }
@@ -863,24 +868,16 @@ export function generateDefaultBodyItems(
       const bayFromD3 = (sysD3 && sysD3 > 0) ? Math.max(1, Math.round(sysD3 / 915)) : null
       const explicitBay = Number(s.bay ?? s.bay_count) || null
       const sysBodies = calculateSystemBodies(s, sysOv, wb, false, sysSummary?.bodies)
-      const detectedBay = explicitBay || bayFromA3 || detectSystemBayCount(s, sysOv) || bayFromD3 || (sysBodies.dfmuRows > 0 ? Math.max(1, Math.round(sysBodies.dfmuRows / 2)) : 4)
+      const detectedBay = bayFromA3 || explicitBay || detectSystemBayCount(s, sysOv) || bayFromD3 || (sysBodies.dfmuRows > 0 ? Math.max(1, Math.round(sysBodies.dfmuRows / 2)) : 4)
       const bayCount = detectedBay
 
       // Prioritize items directly from this system so each system's bodies match its commercial rows
       if (s.items && s.items.length > 0) {
         s.items.forEach((it: any) => {
-          const code = (it.model_code || (
-            it.model_name?.includes('DFMU-D') ? 'DFMU-D' :
-            it.model_name?.includes('DFFU-D') ? 'DFFU-D' :
-            it.model_name?.includes('DFMU') ? 'DFMU' :
-            it.model_name?.includes('SFMU') ? 'SFMU' :
-            it.model_name?.includes('SFFU') ? 'SFFU' :
-            it.model_name?.includes('DFFU') ? 'DFFU' : 'DFMU'
-          )).trim()
-
-          const expectedRows = (code === 'SFMU' || code === 'SFFU') ? bayCount : (bayCount * 2)
-          const rowsPerUnit = expectedRows
+          const code = extractBodyModelCode(it.model_code || it.model_name || it.title) || 'DFMU'
+          const rowsPerUnit = isSingleFaceModel(code) ? bayCount : (bayCount * 2)
           const unitCount = Number(it.unit_qty !== undefined ? it.unit_qty : it.quantity) || 0
+          if (unitCount <= 0) return
           const unitBody = rowsPerUnit * unitCount
           const total_body = unitBody * sysQty
 
@@ -900,18 +897,19 @@ export function generateDefaultBodyItems(
       } else {
         const modelsToUse = sysBodies.models.length > 0
           ? sysBodies.models
-          : (sysSummary?.models || []).filter((m: any) => m.qty > 0)
+          : (sysSummary?.models || []).filter((m: any) => Number(m.qty) > 0)
 
         modelsToUse.forEach((m: any) => {
-          const expectedRows = (m.code === 'SFMU' || m.code === 'SFFU') ? bayCount : (bayCount * 2)
-          const rowsPerUnit = expectedRows
+          const code = extractBodyModelCode(m.code) || 'DFMU'
+          const rowsPerUnit = isSingleFaceModel(code) ? bayCount : (bayCount * 2)
           const unitCount = Number(m.qty) || 0
+          if (unitCount <= 0) return
           const unitBody = rowsPerUnit * unitCount
           const total_body = unitBody * sysQty
           allItems.push({
-            id: `${s.id || sIdx}-${m.code}-${counter++}`,
-            title: `${m.code} ${bayCount} BAY`,
-            sub_label: `BODY IN ${m.code}`,
+            id: `${s.id || sIdx}-${code}-${counter++}`,
+            title: `${code} ${bayCount} BAY`,
+            sub_label: `BODY IN ${code}`,
             per_bay_qty: rowsPerUnit,
             qty: unitCount,
             total_body,
@@ -935,22 +933,26 @@ export function generateDefaultBodyItems(
   const detectedBay = bayFromA3 || detectSystemBayCount({ summary }, sysOv) || bayFromD3 || (sysBodies.dfmuRows > 0 ? Math.max(1, Math.round(sysBodies.dfmuRows / 2)) : 4)
   const bayCount = detectedBay
 
-  const activeModels = (summary?.models || []).filter((m) => m.qty > 0)
+  const hasExplicitModelsArray = Array.isArray(summary?.models)
+  const activeModels = hasExplicitModelsArray ? summary.models.filter((m) => Number(m.qty) > 0) : []
   const modelsToUse = activeModels.length > 0
     ? activeModels
-    : (sysBodies.models.length > 0 ? sysBodies.models : [
-        { code: 'DFMU', qty: 8 },
-        { code: 'SFMU', qty: 2 },
-        { code: 'SFFU', qty: 2 },
-      ])
+    : (sysBodies.models.length > 0
+        ? sysBodies.models
+        : (hasExplicitModelsArray
+            ? []
+            : [
+                { code: 'DFMU', qty: 8 },
+                { code: 'SFMU', qty: 2 },
+                { code: 'SFFU', qty: 2 },
+              ]))
 
   return modelsToUse.map((m: any, idx: number) => {
-    const expectedRows = (m.code === 'SFMU' || m.code === 'SFFU') ? bayCount : (bayCount * 2)
-    const rowsPerUnit = expectedRows
-    const codeLabel = m.code
+    const codeLabel = extractBodyModelCode(m.code) || m.code
+    const rowsPerUnit = isSingleFaceModel(codeLabel) ? bayCount : (bayCount * 2)
     const title = `${codeLabel} ${bayCount} BAY`
     const sub_label = `BODY IN ${codeLabel}`
-    const qty = m.qty
+    const qty = Number(m.qty) || 0
     const unitBody = rowsPerUnit * qty
 
     return {
@@ -1041,17 +1043,20 @@ export function getSetBayCount(
   wb?: Workbook | null,
   fallbackSummary?: any,
 ): number {
-  const explicitBay = Number(s?.bay ?? s?.bay_count)
-  if (explicitBay > 0) return explicitBay
-
   const sysOv = s?.overrides || (sIdx === 0 ? projectInputs : undefined) || {}
   const a3 = Number(sysOv['Total cal!A3'] ?? (sIdx === 0 && wb ? wb.num('Total cal', 'A3') : undefined))
   if (a3 > 0) return Math.max(1, Math.round(a3 / 2))
 
+  const explicitBay = Number(s?.bay ?? s?.bay_count)
+  if (explicitBay > 0) return explicitBay
+
+  const d3Override = Number(sysOv['Total cal!D3'])
+  if (d3Override > 0) return Math.max(1, Math.round(d3Override / 915))
+
   const detected = detectSystemBayCount(s, sysOv)
   if (detected && detected > 0) return detected
 
-  const d3 = Number(sysOv['Total cal!D3'] ?? (sIdx === 0 && wb ? wb.num('Total cal', 'D3') : undefined))
+  const d3 = sIdx === 0 && wb ? wb.num('Total cal', 'D3') : 0
   if (d3 > 0) return Math.max(1, Math.round(d3 / 915))
 
   if (sIdx === 0 && fallbackSummary) {
@@ -1082,6 +1087,15 @@ export function formatSystemTitleWithBay(title: string, bay: number): string {
   return `${clean} (${bay} BAY)`
 }
 
+function getBodyItemModelCode(it: Pick<InstallationBodyItem, 'title' | 'sub_label' | 'id'>): string {
+  return (
+    extractBodyModelCode(it.sub_label) ||
+    extractBodyModelCode(it.title) ||
+    extractBodyModelCode(it.id) ||
+    'DFMU'
+  )
+}
+
 export function areBodyItemsValidForSets(
   savedBodies: InstallationBodyItem[],
   currentSets: any[] | undefined,
@@ -1093,10 +1107,24 @@ export function areBodyItemsValidForSets(
   const singleBay = getSetBayCount(currentSets?.[0] || {}, 0, projectInputs, wb, fallbackSummary)
 
   if (Array.isArray(currentSets) && currentSets.length > 0) {
-    // Check that every system in currentSets is represented in savedBodies with its own accurate bay
+    const expectedTotalItems = currentSets.reduce((acc, s, sIdx) => {
+      if (Array.isArray(s.items) && s.items.length > 0) {
+        return acc + s.items.filter((it: any) => (Number(it.unit_qty ?? it.quantity) || 0) > 0).length
+      }
+      const sysOv = s.overrides || (sIdx === 0 ? projectInputs : undefined) || {}
+      const calc = calculateSystemBodies(s, sysOv, wb, false, (s.summary || fallbackSummary)?.bodies)
+      return acc + calc.models.filter((m) => m.qty > 0).length
+    }, 0)
+
+    if (expectedTotalItems > 0 && savedBodies.length !== expectedTotalItems) {
+      return false
+    }
+
+    // Check that every system in currentSets is represented accurately (bay, models, unit qty, set qty, total_body)
     for (let sIdx = 0; sIdx < currentSets.length; sIdx++) {
       const s = currentSets[sIdx]
       const expectedBay = getSetBayCount(s, sIdx, projectInputs, wb, fallbackSummary)
+      const expectedSetQty = Math.max(1, Number(s.quantity) || 1)
       const sysId = String(s.id || sIdx)
       const sysName = (s.system_title || s.name || `SYSTEM ${String.fromCharCode(65 + sIdx)}`).trim()
 
@@ -1111,21 +1139,183 @@ export function areBodyItemsValidForSets(
         return false
       }
 
-      const bayMismatch = sysItems.some((it) => {
+      // Verify bay, per_bay_qty, set_qty, and arithmetic integrity on every row
+      const hasIntegrityMismatch = sysItems.some((it) => {
         if (it.title?.includes('5 BAY') && (it.total_body === 90 || expectedBay !== 5)) return true
         const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
-        return m && Number(m[1]) !== expectedBay
+        if (m && Number(m[1]) !== expectedBay) return true
+        const code = getBodyItemModelCode(it)
+        const expectedPerBay = isSingleFaceModel(code) ? expectedBay : expectedBay * 2
+        if (Number(it.per_bay_qty) !== expectedPerBay) return true
+        if (it.set_qty !== undefined && Number(it.set_qty) !== expectedSetQty) return true
+        const expectedUnitBody = expectedPerBay * Number(it.qty)
+        if (it.unit_body !== undefined && Number(it.unit_body) !== expectedUnitBody) return true
+        if (Number(it.total_body) !== expectedUnitBody * expectedSetQty) return true
+        return false
       })
-      if (bayMismatch) return false
+      if (hasIntegrityMismatch) return false
+
+      // Verify model codes & quantities match live calculator items/models for this system
+      const expectedModels: Array<{ code: string; qty: number }> =
+        Array.isArray(s.items) && s.items.length > 0
+          ? s.items
+              .filter((it: any) => (Number(it.unit_qty ?? it.quantity) || 0) > 0)
+              .map((it: any) => ({
+                code: extractBodyModelCode(it.model_code || it.model_name || it.title) || 'DFMU',
+                qty: Number(it.unit_qty ?? it.quantity) || 0,
+              }))
+          : calculateSystemBodies(
+              s,
+              s.overrides || (sIdx === 0 ? projectInputs : undefined) || {},
+              wb,
+              false,
+              (s.summary || fallbackSummary)?.bodies,
+            ).models.map((m) => ({ code: m.code, qty: m.qty }))
+
+      if (expectedModels.length > 0) {
+        if (sysItems.length !== expectedModels.length) return false
+        for (const em of expectedModels) {
+          const expectedPerBay = isSingleFaceModel(em.code) ? expectedBay : expectedBay * 2
+          const matchedRow = sysItems.find(
+            (it) => getBodyItemModelCode(it) === em.code && Number(it.qty) === em.qty,
+          )
+          if (!matchedRow) return false
+          if (Number(matchedRow.total_body) !== expectedPerBay * em.qty * expectedSetQty) return false
+        }
+      }
     }
     return true
   }
 
-  return !savedBodies.some((it: any) => {
+  // Fallback when sets is absent (single-system summary)
+  const expectedModels: Array<{ code: string; qty: number }> =
+    Array.isArray(fallbackSummary?.models)
+      ? fallbackSummary.models
+          .filter((m: any) => Number(m.qty) > 0)
+          .map((m: any) => ({ code: extractBodyModelCode(m.code) || m.code, qty: Number(m.qty) || 0 }))
+      : []
+
+  if (expectedModels.length > 0 && savedBodies.length !== expectedModels.length) {
+    return false
+  }
+
+  const basicInvalid = savedBodies.some((it: any) => {
     if (it.title?.includes('5 BAY') && (it.total_body === 90 || (singleBay && singleBay !== 5))) return true
     const m = (it.title || '').match(/\b([1-9]\d?)\s*BAY\b/i)
-    return m && Number(m[1]) !== singleBay
+    if (m && Number(m[1]) !== singleBay) return true
+    const code = getBodyItemModelCode(it)
+    const expectedPerBay = isSingleFaceModel(code) ? singleBay : singleBay * 2
+    if (Number(it.per_bay_qty) !== expectedPerBay) return true
+    const expectedTotal = expectedPerBay * Number(it.qty) * Math.max(1, Number(it.set_qty) || 1)
+    if (Number(it.total_body) !== expectedTotal) return true
+    return false
   })
+  if (basicInvalid) return false
+
+  for (const em of expectedModels) {
+    if (!savedBodies.some((it) => getBodyItemModelCode(it) === em.code && Number(it.qty) === em.qty)) {
+      return false
+    }
+  }
+  return true
+}
+
+export interface NormalizedBodyGroup {
+  system_id: string
+  system_name: string
+  bay: number
+  set_qty: number
+  items: InstallationBodyItem[]
+  unitTotal: number
+  systemTotal: number
+}
+
+/**
+ * Pure single-source normalizer that groups installation body items by system,
+ * heals bay titles/per_bay_qty/unit_body/total_body invariants, and guarantees
+ * Grand Total === sum(systemTotal) === sum(unitTotal * set_qty).
+ */
+export function buildNormalizedBodyGroups(
+  bodyItems: InstallationBodyItem[],
+  sets: QuotationSet[],
+  projectInputs?: Record<string, any>,
+  wb?: Workbook | null,
+  summary?: any,
+): { groups: NormalizedBodyGroup[]; totalBodies: number; totalSetsCount: number } {
+  const groups: NormalizedBodyGroup[] = []
+  const groupMap = new Map<string, NormalizedBodyGroup>()
+
+  bodyItems.forEach((b) => {
+    let matchingIdx = sets.findIndex(
+      (s) =>
+        (b.system_id && String(s.id) === String(b.system_id)) ||
+        (b.system_name && (s.system_title === b.system_name || s.set_label === b.system_name)),
+    )
+    if (matchingIdx < 0 && sets.length === 1) matchingIdx = 0
+    const matchingSet = matchingIdx >= 0 ? sets[matchingIdx] : undefined
+    const defaultName = matchingSet?.system_title || matchingSet?.set_label || 'SYSTEM A'
+    const sysName = b.system_name || defaultName
+    const sysId = b.system_id || matchingSet?.id || sysName
+    const setQty = matchingSet?.quantity
+      ? Math.max(1, Number(matchingSet.quantity) || 1)
+      : Math.max(1, Number(b.set_qty) || 1)
+    const detectedBay = getSetBayCount(matchingSet || { summary }, matchingIdx >= 0 ? matchingIdx : 0, projectInputs, wb, summary)
+
+    if (!groupMap.has(sysId)) {
+      const newGroup: NormalizedBodyGroup = {
+        system_id: sysId,
+        system_name: sysName,
+        bay: detectedBay,
+        set_qty: setQty,
+        items: [],
+        unitTotal: 0,
+        systemTotal: 0,
+      }
+      groupMap.set(sysId, newGroup)
+      groups.push(newGroup)
+    }
+
+    const grp = groupMap.get(sysId)!
+    const code = getBodyItemModelCode(b)
+    const singleFace = isSingleFaceModel(code)
+    const isCustom = (b.sub_label || '').toUpperCase().includes('CUSTOM') || (b.title || '').toUpperCase().includes('CUSTOM')
+    const per_bay_qty = isCustom
+      ? (Number(b.per_bay_qty) || 0)
+      : (detectedBay > 0 ? (singleFace ? detectedBay : detectedBay * 2) : (Number(b.per_bay_qty) || 0))
+    const qty = Number(b.qty) || 0
+    const unit_body = per_bay_qty * qty
+    const total_body = unit_body * grp.set_qty
+
+    let title = b.title
+    if (detectedBay > 0 && title) {
+      const expectedTitleBay = `${detectedBay} BAY`
+      if (!title.includes(expectedTitleBay) && /\b\d+\s*BAY\b/i.test(title)) {
+        title = title.replace(/\b\d+\s*BAY\b/i, expectedTitleBay)
+      }
+    }
+
+    const normalizedItem: InstallationBodyItem = {
+      ...b,
+      title,
+      per_bay_qty,
+      qty,
+      unit_body,
+      total_body,
+      set_qty: grp.set_qty,
+    }
+
+    grp.items.push(normalizedItem)
+    grp.unitTotal += unit_body
+    grp.systemTotal += total_body
+  })
+
+  const totalBodies = groups.reduce((acc, g) => acc + g.systemTotal, 0)
+  const totalSetsCount =
+    groups.length > 0
+      ? groups.reduce((acc, g) => acc + g.set_qty, 0)
+      : (sets.reduce((acc, s) => acc + Math.max(1, Number(s.quantity) || 1), 0) || 1)
+
+  return { groups, totalBodies, totalSetsCount }
 }
 
 export function OfficialQuotationDocument({
@@ -2000,7 +2190,7 @@ export function OfficialQuotationDocument({
   const hasEditedTermsRef = useRef(false)
   const hasReorderedSetsRef = useRef(false)
 
-  const totalBodies = useMemo(() => {
+  const totalBodiesRaw = useMemo(() => {
     return bodyItems.reduce((acc, it) => acc + (Number(it.total_body) || 0), 0)
   }, [bodyItems])
 
@@ -2011,14 +2201,14 @@ export function OfficialQuotationDocument({
     }
     if (initialSets && initialSets.length > 0) {
       const sum = initialSets.reduce((acc, s) => {
-        const sysBodies = s.summary?.bodies || s.breakdown?.totalBodies || 36
+        const calcBodies = s.summary?.bodies || s.breakdown?.totalBodies || calculateSystemBodies(s, s.overrides || project.inputs || {}, wb, false).singleSetBodies
         const qty = Math.max(1, Number(s.quantity) || 1)
-        return acc + (sysBodies * qty)
+        return acc + (calcBodies * qty)
       }, 0)
       if (sum > 0) return sum
     }
-    return totalBodies > 0 ? totalBodies : 1
-  }, [propTotalCombinedBodies, initialSets, totalBodies])
+    return totalBodiesRaw > 0 ? totalBodiesRaw : 1
+  }, [propTotalCombinedBodies, initialSets, totalBodiesRaw, project.inputs, wb])
 
   // Other Extra Amount (editable and initialized from calculator or project summary)
   const [extraAmount, setExtraAmount] = useState<number>(() => {
@@ -2050,8 +2240,8 @@ export function OfficialQuotationDocument({
 
   // Dynamic unit-wise rate breakdown (Transport + Installation + Accommodation distributed by bodies + extra amount + dynamic profit)
   const breakdownResult = useMemo(
-    () => computeUnitWiseBreakdown(summary, wb, includeInstallation, profitPct, docDiscountPct, summary?.bodies || totalBodies, extraAmount),
-    [summary, wb, includeInstallation, profitPct, docDiscountPct, summary?.bodies, totalBodies, extraAmount],
+    () => computeUnitWiseBreakdown(summary, wb, includeInstallation, profitPct, docDiscountPct, summary?.bodies || totalBodiesRaw, extraAmount),
+    [summary, wb, includeInstallation, profitPct, docDiscountPct, summary?.bodies, totalBodiesRaw, extraAmount],
   )
 
   // Auto-derived destination from address for Freight Clause
@@ -2228,9 +2418,10 @@ export function OfficialQuotationDocument({
     }
   }, [initialSets, breakdownResult])
 
-  // Keep local state in sync when project/defaults update from server or parent (without clobbering active Edit Pad edits)
+  // Keep local state in sync when project/defaults update from server or calculator changes
   useEffect(() => {
-    if (!hasEditedBodyItemsRef.current) {
+    if (!hasEditedBodyItemsRef.current || !areBodyItemsValidForSets(bodyItems, sets, project.inputs, wb, summary)) {
+      hasEditedBodyItemsRef.current = false
       setBodyItems(defaultBodyItems)
     }
   }, [defaultBodyItems])
@@ -3292,85 +3483,14 @@ export function OfficialQuotationDocument({
   }
 
   // Group installation body items by system
-  const systemBodyGroups = useMemo(() => {
-    interface BodyGroup {
-      system_id: string
-      system_name: string
-      bay: number
-      set_qty: number
-      items: InstallationBodyItem[]
-      unitTotal: number
-      systemTotal: number
-    }
-
-    const groups: BodyGroup[] = []
-    const groupMap = new Map<string, BodyGroup>()
-
-    bodyItems.forEach((b) => {
-      let matchingIdx = sets.findIndex(
-        (s) =>
-          (b.system_id && String(s.id) === String(b.system_id)) ||
-          (b.system_name && (s.system_title === b.system_name || s.set_label === b.system_name)),
-      )
-      if (matchingIdx < 0 && sets.length === 1) matchingIdx = 0
-      const matchingSet = matchingIdx >= 0 ? sets[matchingIdx] : undefined
-      const defaultName = matchingSet?.system_title || matchingSet?.set_label || 'SYSTEM A'
-      const sysName = b.system_name || defaultName
-      const sysId = b.system_id || matchingSet?.id || sysName
-      const setQty = b.set_qty || (matchingSet?.quantity ? Math.max(1, Number(matchingSet.quantity)) : 1)
-      const detectedBay = getSetBayCount(matchingSet || { summary }, matchingIdx >= 0 ? matchingIdx : 0, project.inputs, wb, summary)
-
-      if (!groupMap.has(sysId)) {
-        const newGroup: BodyGroup = {
-          system_id: sysId,
-          system_name: sysName,
-          bay: detectedBay,
-          set_qty: setQty,
-          items: [],
-          unitTotal: 0,
-          systemTotal: 0,
-        }
-        groupMap.set(sysId, newGroup)
-        groups.push(newGroup)
-      }
-
-      const grp = groupMap.get(sysId)!
-
-      // Auto-heal title and per_bay_qty if bay count was mismatched
-      let item = b
-      if (detectedBay && detectedBay > 0) {
-        const isSingleFace = (item.title || '').toUpperCase().includes('SFMU') || (item.title || '').toUpperCase().includes('SFFU')
-        const expectedPerBay = isSingleFace ? detectedBay : (detectedBay * 2)
-        const expectedTitleBay = `${detectedBay} BAY`
-
-        let title = item.title
-        if (title && !title.includes(expectedTitleBay) && /\b\d+\s*BAY\b/i.test(title)) {
-          title = title.replace(/\b\d+\s*BAY\b/i, expectedTitleBay)
-        }
-
-        if (title !== item.title || item.per_bay_qty !== expectedPerBay) {
-          const per_bay_qty = expectedPerBay
-          const unit_body = per_bay_qty * item.qty
-          const total_body = unit_body * grp.set_qty
-          item = { ...item, title, per_bay_qty, unit_body, total_body }
-        }
-      }
-
-      grp.items.push(item)
-      const itemUnitBody = item.unit_body !== undefined ? item.unit_body : (item.per_bay_qty * item.qty)
-      grp.unitTotal += itemUnitBody
-      grp.systemTotal += (item.total_body || (itemUnitBody * grp.set_qty))
-    })
-
-    return groups
-  }, [bodyItems, sets, project.inputs, summary, wb])
-
-  const totalSetsCount = useMemo(() => {
-    if (systemBodyGroups.length > 0) {
-      return systemBodyGroups.reduce((acc, g) => acc + g.set_qty, 0)
-    }
-    return sets.reduce((acc, s) => acc + (Math.max(1, Number(s.quantity) || 1)), 0) || 1
-  }, [systemBodyGroups, sets])
+  const {
+    groups: systemBodyGroups,
+    totalBodies,
+    totalSetsCount,
+  } = useMemo(
+    () => buildNormalizedBodyGroups(bodyItems, sets, project.inputs, wb, summary),
+    [bodyItems, sets, project.inputs, wb, summary],
+  )
 
   // Bodies table pagination chunks matching systemsPerPage (e.g. 3/p or 4/p applies to bodies as well!)
   const bodiesChunks = useMemo(() => {
@@ -7736,22 +7856,23 @@ export function OfficialQuotationDocument({
                     onClick={() => {
                       hasEditedBodyItemsRef.current = true
                       const newId = String(Date.now())
-                      let dfmuRows = 6
-                      if (wb) {
-                        dfmuRows = wb.num('Total cal', 'A3') || 6
-                      } else if (project.inputs?.['Total cal!A3']) {
-                        dfmuRows = Number(project.inputs['Total cal!A3']) || 6
-                      }
-                      const bay = Math.max(1, Math.round(dfmuRows / 2))
+                      const bay = getSetBayCount(sets[0] || {}, 0, project.inputs, wb, summary)
+                      const rowsPerUnit = bay * 2
+                      const targetSet = sets[0]
+                      const targetSetQty = Math.max(1, Number(targetSet?.quantity) || 1)
                       setBodyItems([
                         ...bodyItems,
                         {
                           id: newId,
                           title: `CUSTOM ${bay} BAY`,
                           sub_label: 'BODY IN CUSTOM',
-                          per_bay_qty: dfmuRows,
+                          per_bay_qty: rowsPerUnit,
                           qty: 1,
-                          total_body: dfmuRows,
+                          unit_body: rowsPerUnit,
+                          total_body: rowsPerUnit * targetSetQty,
+                          system_id: targetSet?.id || 'default',
+                          system_name: targetSet?.system_title || 'SYSTEM A',
+                          set_qty: targetSetQty,
                         },
                       ])
                     }}
