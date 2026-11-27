@@ -3887,6 +3887,285 @@ async function runAllTests() {
     logResult(66, 'Bulletproof Installation / Unit Bodies Stress Matrix (Zero-Drift Guarantee)', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 67: Comprehensive End-to-End Multi-Quotation Stress Simulation (8 Real Quotes)
+  // -------------------------------------------------------------------------
+  try {
+    const {
+      calculateSystemBodies,
+      calculateProjectCombinedBodies,
+      calculateAllocatedLogistics,
+    } = await import('../src/lib/calculatorCore')
+    const {
+      computeUnitWiseBreakdown,
+      computeQuotationDiscountDisplay,
+      generateDefaultBodyItems,
+      areBodyItemsValidForSets,
+      buildNormalizedBodyGroups,
+      formatSubjectBayPart,
+      formatSystemTitleWithBay,
+      getSetBayCount,
+      numberToIndianWords,
+    } = await import('../src/components/quotation/OfficialQuotationDocument')
+    const { exportMultiSystemWorkbookToXLSX } = await import('../src/lib/excelExport')
+    const { detectMultiSystemChanges } = await import('../src/lib/auditDiff')
+
+    const failures: string[] = []
+    const buildCompiledSet = (
+      wbInst: Workbook,
+      id: string,
+      title: string,
+      ov: Record<string, number>,
+      qty: number,
+      profitPct: number,
+      discountPct: number,
+      incInst: boolean,
+      extraAmt: number,
+      allocatedTrans?: number,
+      allocatedAcc?: number,
+    ) => {
+      const effOv = { ...ov }
+      if (allocatedTrans !== undefined) effOv['Total cal!N24'] = allocatedTrans
+      if (allocatedAcc !== undefined) effOv['Total cal!N25'] = allocatedAcc
+      wbInst.setOverrides(effOv)
+      const s = summarize(wbInst, profitPct, discountPct, incInst, extraAmt)
+      const bd = computeUnitWiseBreakdown(s, wbInst, incInst, profitPct, discountPct, s.bodies, extraAmt)
+      const rate = Math.round(bd.finalBeforeGst || s.beforeGst || 0)
+      const amount = Math.round(rate * qty)
+      const preDiscRate = Math.round(bd.totalPriceWithProfit || s.subtotalWithProfit || rate)
+      const preDiscAmount = Math.round(preDiscRate * qty)
+      return {
+        set: {
+          id,
+          system_title: title,
+          set_label: qty > 1 ? `${qty} SETS` : '1 SET',
+          quantity: qty,
+          unit: 'SET',
+          rate,
+          amount,
+          pre_discount_rate: preDiscRate,
+          pre_discount_amount: preDiscAmount,
+          bay: Math.max(1, Math.round((ov['Total cal!A3'] || 6) / 2)),
+          overrides: effOv,
+          summary: s,
+          breakdown: bd,
+          items: bd.rows.map((r, rIdx) => ({
+            id: String(rIdx + 1),
+            model_code: r.model_code,
+            model_name: r.model_name,
+            dimensions: r.dimensions,
+            unit_qty: r.qty,
+            rows_per_unit: r.rows_per_unit,
+            rate: r.unit_rate_with_profit,
+            amount: r.total_price_with_profit,
+            final_unit_rate: r.final_unit_rate,
+            final_amount: r.final_amount,
+          })),
+        },
+        summary: s,
+        breakdown: bd,
+      }
+    }
+
+    // Q1: Minimal 1-Bay Single Model (2 SFFU only), Steel Rs 95, 25% Profit, 0% Discount
+    const q1Wb = new Workbook(rawWb, SERVER_CONSTANTS)
+    const q1Ov = { 'Total cal!A3': 2, 'Total cal!D3': 915, 'Total cal!G4': 0, 'Total cal!G8': 0, 'Total cal!G12': 2, 'Total cal!G16': 0, 'Total cal!G20': 0, 'Total cal!H3': 95 }
+    const q1 = buildCompiledSet(q1Wb, 'q1', 'SYSTEM A', q1Ov, 1, 25, 0, true, 0)
+    const q1Bodies = generateDefaultBodyItems(q1.summary, q1Wb, q1Ov, [q1.set as any])
+    const q1Grp = buildNormalizedBodyGroups(q1Bodies, [q1.set as any], q1Ov, q1Wb, q1.summary)
+    if (q1.summary.bodies !== 2 || q1Grp.totalBodies !== 2 || q1.set.items.length !== 1 || !isFinite(q1.set.amount) || q1.set.amount <= 0) {
+      failures.push(`Q1 failed: bodies=${q1.summary.bodies}/${q1Grp.totalBodies}, items=${q1.set.items.length}`)
+    }
+
+    // Q2: Wide 5-Bay Double-Drive (W=4800mm) x 2 Sets, 15% Profit, 5% Discount, width extra
+    const q2Wb = new Workbook(rawWb, SERVER_CONSTANTS)
+    const q2Ov = { 'Total cal!A3': 10, 'Total cal!D3': 4800, 'Total cal!G4': 6, 'Total cal!G8': 2, 'Total cal!G12': 2, 'Total cal!G16': 0, 'Total cal!G20': 0, 'Total cal!N24': 20000, 'Total cal!N25': 10000 }
+    const q2 = buildCompiledSet(q2Wb, 'q2', 'SYSTEM A', q2Ov, 2, 15, 5, true, 0)
+    const q2Bodies = generateDefaultBodyItems(q2.summary, q2Wb, q2Ov, [q2.set as any])
+    const q2Grp = buildNormalizedBodyGroups(q2Bodies, [q2.set as any], q2Ov, q2Wb, q2.summary)
+    // Expected single-set bodies: 6*10 + 2*5 + 2*5 = 80; 2 sets = 160
+    const q2LineItems = q2.breakdown.rows.map((r) => ({
+      quantity: r.qty * 2,
+      rate: Number(r.final_unit_rate.toFixed(2)),
+      amount: Number((r.final_amount * 2).toFixed(2)),
+    }))
+    const q2Disc = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'unit_wise',
+      effectiveDiscountPct: 5,
+      isMultiSystem: false,
+      subtotal: q2.set.amount,
+      sets: [q2.set as any],
+      lineItems: q2LineItems,
+      breakdownResult: q2.breakdown,
+    })
+    const q2RowSum = Number(q2Disc.lineItemDisplayAmounts.reduce((a, r) => a + r.amount, 0).toFixed(2))
+    if (q2.summary.bodies !== 80 || q2Grp.totalBodies !== 160 || Math.abs(q2RowSum - q2Disc.totalBeforeDiscount) > 0.02 || !numberToIndianWords(Math.round(q2.set.amount * 1.18))) {
+      failures.push(`Q2 failed: single=${q2.summary.bodies}, grp=${q2Grp.totalBodies}, rowSum=${q2RowSum}, preDisc=${q2Disc.totalBeforeDiscount}`)
+    }
+
+    // Q3: All 5 Models Mixed (3 BAY), Doors + Extra Rs 1500/unit, Inst OFF, 17.5% Profit, 12% Discount
+    const q3Wb = new Workbook(rawWb, SERVER_CONSTANTS)
+    const q3Ov = { 'Total cal!A3': 6, 'Total cal!D3': 2745, 'Total cal!G4': 6, 'Total cal!G8': 2, 'Total cal!G12': 2, 'Total cal!G16': 2, 'Total cal!G20': 2, 'Total cal!N24': 18000, 'Total cal!N25': 9000 }
+    const q3 = buildCompiledSet(q3Wb, 'q3', 'SYSTEM A', q3Ov, 1, 17.5, 12, false, 1500)
+    const q3Bodies = generateDefaultBodyItems(q3.summary, q3Wb, q3Ov, [q3.set as any])
+    const q3Grp = buildNormalizedBodyGroups(q3Bodies, [q3.set as any], q3Ov, q3Wb, q3.summary)
+    // 6*6 + 2*3 + 2*3 + 2*6 + 2*6 = 36+6+6+12+12 = 72 bodies; installation = 0 since Inst OFF
+    const q3SetDisc = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'set_wise',
+      effectiveDiscountPct: 12,
+      isMultiSystem: false,
+      subtotal: q3.set.amount,
+      sets: [q3.set as any],
+      lineItems: [],
+      breakdownResult: q3.breakdown,
+    })
+    if (q3.summary.installation !== 0 || q3.summary.bodies !== 72 || q3Grp.totalBodies !== 72 || q3SetDisc.totalDiscountAmount <= 0) {
+      failures.push(`Q3 failed: inst=${q3.summary.installation}, bodies=${q3.summary.bodies}/${q3Grp.totalBodies}`)
+    }
+
+    // Q4: 4-System Heterogeneous Multi-System (Bays 2/3/4/5, Sets 2/3/1/1 = 234 Bodies) + Shared Logistics + 13-Sheet Excel + Unit-Wise PDF Discount
+    const q4Wb = new Workbook(rawWb, SERVER_CONSTANTS)
+    const rawSystems = [
+      { id: 's1', name: 'SYSTEM A', quantity: 2, ov: { 'Total cal!A3': 4, 'Total cal!D3': 1830, 'Total cal!G4': 4, 'Total cal!G8': 1, 'Total cal!G12': 0, 'Total cal!G16': 0, 'Total cal!G20': 0 } }, // (16+2)*2 = 36
+      { id: 's2', name: 'SYSTEM B', quantity: 3, ov: { 'Total cal!A3': 6, 'Total cal!D3': 2745, 'Total cal!G4': 6, 'Total cal!G8': 0, 'Total cal!G12': 2, 'Total cal!G16': 0, 'Total cal!G20': 0 } }, // (36+6)*3 = 126
+      { id: 's3', name: 'SYSTEM C', quantity: 1, ov: { 'Total cal!A3': 8, 'Total cal!D3': 3660, 'Total cal!G4': 0, 'Total cal!G8': 0, 'Total cal!G12': 0, 'Total cal!G16': 1, 'Total cal!G20': 3 } }, // (8+24)*1 = 32
+      { id: 's4', name: 'SYSTEM D', quantity: 1, ov: { 'Total cal!A3': 10, 'Total cal!D3': 4575, 'Total cal!G4': 0, 'Total cal!G8': 4, 'Total cal!G12': 4, 'Total cal!G16': 0, 'Total cal!G20': 0 } }, // (20+20)*1 = 40
+    ]
+    const combQ4 = calculateProjectCombinedBodies(rawSystems.map((r) => ({ ...r, overrides: r.ov })), 0, rawSystems[0].ov, q4Wb)
+    const q4Sets: any[] = []
+    const q4ExcelInputs: any[] = []
+    let allocTransSum = 0
+    for (let i = 0; i < rawSystems.length; i++) {
+      const rs = rawSystems[i]
+      const sb = combQ4.systemBreakdowns[i]
+      const alloc = calculateAllocatedLogistics(40000, 12000, sb.singleSetBodies, combQ4.totalCombinedBodies, true, rs.quantity)
+      allocTransSum += alloc.allocatedTransport * rs.quantity
+      const built = buildCompiledSet(q4Wb, rs.id, rs.name, rs.ov, rs.quantity, 20, 8, true, 0, alloc.allocatedTransport, alloc.allocatedAccommodation)
+      q4Sets.push(built.set)
+      q4ExcelInputs.push({
+        name: rs.name,
+        bay: built.set.bay,
+        setsQty: rs.quantity,
+        overrides: built.set.overrides,
+        formulaOverrides: {},
+        profitPct: 20,
+        discountPct: 8,
+        includeInstallation: true,
+        extraAmount: 0,
+        allocatedTransport: alloc.allocatedTransport,
+        allocatedAccommodation: alloc.allocatedAccommodation,
+        subtotalBeforeGst: built.set.amount,
+        preDiscountTotal: built.set.pre_discount_amount,
+        profitAmount: Math.round(built.summary.profitAmount * rs.quantity),
+        summary: built.summary,
+      })
+    }
+    const q4Subtotal = q4Sets.reduce((a, s) => a + s.amount, 0)
+    const q4UnitDisc = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'unit_wise',
+      effectiveDiscountPct: 8,
+      isMultiSystem: true,
+      subtotal: q4Subtotal,
+      sets: q4Sets,
+      lineItems: [],
+      breakdownResult: q4Sets[0].breakdown,
+    })
+    const q4UnitRowSum = Number(q4UnitDisc.multiSystemUnitDisplayRows.flat().reduce((a, r) => a + r.amount, 0).toFixed(2))
+    const q4Bodies = generateDefaultBodyItems(q4Sets[0].summary, q4Wb, q4Sets[0].overrides, q4Sets)
+    const q4Grp = buildNormalizedBodyGroups(q4Bodies, q4Sets)
+    const q4SubjectBays = formatSubjectBayPart(q4Sets.map((s, idx) => getSetBayCount(s, idx)))
+
+    let capturedMulti4: any = null
+    const origWriteMulti = XLSX.writeFile
+    XLSX.writeFile = (book: any) => { capturedMulti4 = book }
+    try {
+      exportMultiSystemWorkbookToXLSX(q4Wb, q4ExcelInputs, 'Test_4Sys_Quote.xlsx', { title: '4Sys', qtnNo: '2001', isActual: true, profitPct: 20, discountPct: 8, includeInstallation: true })
+    } finally {
+      XLSX.writeFile = origWriteMulti
+    }
+    const q4SheetCount = capturedMulti4?.SheetNames?.length || 0
+    if (
+      combQ4.totalCombinedBodies !== 234 ||
+      q4Grp.totalBodies !== 234 ||
+      Math.abs(allocTransSum - 40000) > 10 ||
+      q4SubjectBays !== '2, 3, 4, 5' ||
+      Math.abs(q4UnitRowSum - q4UnitDisc.totalBeforeDiscount) > 0.02 ||
+      q4SheetCount !== 13 ||
+      !areBodyItemsValidForSets(q4Bodies, q4Sets)
+    ) {
+      failures.push(`Q4 failed: combined=${combQ4.totalCombinedBodies}, grp=${q4Grp.totalBodies}, transSum=${allocTransSum}, bays=${q4SubjectBays}, rowSum=${q4UnitRowSum}, preDisc=${q4UnitDisc.totalBeforeDiscount}, sheets=${q4SheetCount}`)
+    }
+
+    // Q5: Copied Quote Mutation + Stale Recovery + Granular Audit Diff
+    const mutatedSet = buildCompiledSet(q4Wb, 's1', formatSystemTitleWithBay('SYSTEM A (2 BAY)', 4), { 'Total cal!A3': 8, 'Total cal!D3': 3660, 'Total cal!G4': 5, 'Total cal!G8': 2, 'Total cal!G12': 0, 'Total cal!G16': 2, 'Total cal!G20': 0 }, 3, 22, 10, true, 0).set
+    const stalePrevBodiesSys1 = q4Bodies.filter((b) => b.system_id === 's1')
+    const rejectsOldCopy = !areBodyItemsValidForSets(stalePrevBodiesSys1, [mutatedSet as any])
+    const regenMutatedBodies = generateDefaultBodyItems(mutatedSet.summary, q4Wb, mutatedSet.overrides, [mutatedSet as any])
+    // 4 BAY * 3 SETS: DFMU (8*5=40), SFMU (4*2=8), DFFU (8*2=16) -> 64/set * 3 = 192
+    const mutatedGrp = buildNormalizedBodyGroups(regenMutatedBodies, [mutatedSet as any])
+    const q5Diffs = detectMultiSystemChanges(
+      { name: 'QTN 1', status: 'quoted', total: 500000, inputs: rawSystems[0].ov, formula_overrides: {}, summary: { profit_pct: 20, discount_pct: 0, quotation_mode: 'set_wise', systems: [{ id: 's1', name: 'SYSTEM A', quantity: 2, bay: 2, overrides: rawSystems[0].ov }] } },
+      { name: 'QTN 1', status: 'quoted', total: mutatedSet.amount, quotationMode: 'unit_wise', profitPct: 22, discountPct: 10, includeInstallation: true, extraAmount: 0, systems: [{ id: 's1', name: mutatedSet.system_title, quantity: 3, bay: 4, overrides: mutatedSet.overrides }] },
+    )
+    if (!rejectsOldCopy || mutatedGrp.totalBodies !== 192 || q5Diffs.length < 4) {
+      failures.push(`Q5 failed: rejects=${rejectsOldCopy}, bodies=${mutatedGrp.totalBodies}, diffs=${q5Diffs.length}`)
+    }
+
+    // Q6: Legacy Stale Pre-Discount Recovery in Set-Wise Mode (pre_discount_amount missing/equal to amount while discountPct=15)
+    const legacySets = [{ ...q2.set, pre_discount_amount: q2.set.amount, pre_discount_rate: q2.set.rate }]
+    const q6Disc = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'set_wise',
+      effectiveDiscountPct: 15,
+      isMultiSystem: false,
+      subtotal: q2.set.amount,
+      sets: legacySets as any,
+      lineItems: [],
+      breakdownResult: { ...q2.breakdown, totalPriceWithProfit: 0 },
+    })
+    if (Math.abs(q6Disc.totalBeforeDiscount - Number((q2.set.amount / 0.85).toFixed(2))) > 0.02 || q6Disc.totalDiscountAmount <= 0) {
+      failures.push(`Q6 legacy pre-discount failed: pre=${q6Disc.totalBeforeDiscount}, sub=${q2.set.amount}`)
+    }
+
+    // Q7: Zero Logistics (Transport=0, Accom=0, Inst=OFF) + Custom Steel/Trolley Rates + DFMU-D Door Extra + 25% Discount
+    const q7Wb = new Workbook(rawWb, SERVER_CONSTANTS)
+    const q7Ov = { 'Total cal!A3': 6, 'Total cal!D3': 3660, 'Total cal!G4': 0, 'Total cal!G8': 0, 'Total cal!G12': 0, 'Total cal!G16': 0, 'Total cal!G20': 4, 'Total cal!H3': 105, 'Total cal!M3': 100, 'Total cal!N24': 0, 'Total cal!N25': 0 }
+    const q7 = buildCompiledSet(q7Wb, 'q7', 'SYSTEM A', q7Ov, 2, 30, 25, false, 0)
+    const q7Bodies = generateDefaultBodyItems(q7.summary, q7Wb, q7Ov, [q7.set as any])
+    const q7Grp = buildNormalizedBodyGroups(q7Bodies, [q7.set as any], q7Ov, q7Wb, q7.summary)
+    // DFMU-D 4 units * 6 rows/unit = 24 bodies/set * 2 sets = 48 bodies (note D3=3660 -> 4 bay vs A3=6 -> 3 bay, A3 wins!)
+    if (q7.summary.transport !== 0 || q7.summary.accommodation !== 0 || q7.summary.installation !== 0 || q7Grp.totalBodies !== 48 || q7Grp.groups[0].bay !== 3) {
+      failures.push(`Q7 failed: trans=${q7.summary.transport}, bodies=${q7Grp.totalBodies}, bay=${q7Grp.groups[0].bay}`)
+    }
+
+    // Q8: Mixed 2-System Equal Bays (Both 3 Bay) Subject Collapse & Unit-Breakdown 8-Col Discount Parity
+    const q8Wb = new Workbook(rawWb, SERVER_CONSTANTS)
+    const q8SysA = buildCompiledSet(q8Wb, 'qa', 'SYSTEM A', { 'Total cal!A3': 6, 'Total cal!D3': 2745, 'Total cal!G4': 4, 'Total cal!G8': 1, 'Total cal!G12': 1, 'Total cal!G16': 0, 'Total cal!G20': 0 }, 1, 20, 10, true, 0).set
+    const q8SysB = buildCompiledSet(q8Wb, 'qb', 'SYSTEM B', { 'Total cal!A3': 6, 'Total cal!D3': 2745, 'Total cal!G4': 6, 'Total cal!G8': 2, 'Total cal!G12': 0, 'Total cal!G16': 0, 'Total cal!G20': 0 }, 2, 20, 10, true, 0).set
+    const q8Subj = formatSubjectBayPart([getSetBayCount(q8SysA, 0), getSetBayCount(q8SysB, 1)])
+    const q8BdRes = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'unit_breakdown',
+      effectiveDiscountPct: 10,
+      isMultiSystem: false,
+      subtotal: q8SysA.breakdown.finalBeforeGst,
+      sets: [q8SysA as any],
+      lineItems: [],
+      breakdownResult: q8SysA.breakdown,
+    })
+    if (q8Subj !== '3' || Math.abs((q8BdRes.totalBeforeDiscount - q8BdRes.totalDiscountAmount) - q8SysA.breakdown.finalBeforeGst) > 0.02) {
+      failures.push(`Q8 failed: subj=${q8Subj}, bdPre=${q8BdRes.totalBeforeDiscount}, bdPost=${q8SysA.breakdown.finalBeforeGst}`)
+    }
+
+    if (failures.length === 0) {
+      logResult(67, 'Comprehensive End-to-End Multi-Quotation Stress Simulation (8 Real Quotes)', 'PASSED',
+        'Simulated 8 diverse quotations (1-Bay SFFU, Wide 5-Bay Double-Drive, 5-Model Doors + Extra, 4-System 234-Body Heterogenous + 13-Sheet Excel + Unit-Wise Discount, Copied Mutation + Audit Diff, Legacy Stale Recovery) with 0 failures.')
+    } else {
+      logResult(67, 'Comprehensive End-to-End Multi-Quotation Stress Simulation (8 Real Quotes)', 'FAILED',
+        failures.join(' | '))
+    }
+  } catch (e) {
+    logResult(67, 'Comprehensive End-to-End Multi-Quotation Stress Simulation (8 Real Quotes)', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length
