@@ -47,6 +47,8 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'mine' | 'shared' | 'reminders'>(initialScope || 'all')
   const [showArchived, setShowArchived] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
   const currentFy = useMemo(() => getFiscalYear(), [])
   const [selectedFys, setSelectedFys] = useState<string[]>(() => [getFiscalYear()])
   const [fyDropdownOpen, setFyDropdownOpen] = useState(false)
@@ -860,6 +862,13 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     }
   }
 
+  const activeFilterCount =
+    (searchType !== 'all' ? 1 : 0) +
+    (scopeFilter !== 'all' ? 1 : 0) +
+    (statusFilter !== 'all' ? 1 : 0) +
+    (showArchived ? 1 : 0) +
+    (sortBy !== 'updated_at' || sortAsc ? 1 : 0)
+
   // Render individual quotation revision file row
   const renderProjectRow = (p: Project, isSubRow = false) => {
     const isSelected = p.id === currentProjectId
@@ -878,14 +887,16 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         key={p.id}
         className={`${isSubRow ? 'file-subrow' : ''} ${isSelected ? 'selected-row' : ''} ${p.is_archived ? 'dim' : ''} ${selectedIds.has(p.id) ? 'batch-selected-row' : ''}`}
       >
-        <td style={{ width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            aria-label={`Select quotation ${p.name}`}
-            checked={selectedIds.has(p.id)}
-            onChange={(e) => handleToggleSelectOne(p.id, e.target.checked)}
-          />
-        </td>
+        {selectionMode && (
+          <td style={{ width: '36px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              aria-label={`Select quotation ${p.name}`}
+              checked={selectedIds.has(p.id)}
+              onChange={(e) => handleToggleSelectOne(p.id, e.target.checked)}
+            />
+          </td>
+        )}
         <td className={isSubRow ? 'file-subrow-cell' : ''}>
           {isSubRow && (
             <>
@@ -1087,24 +1098,24 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   }
 
   return (
-    <div className="projects-page">
-      {/* Page Header with Folders / Files View Toggle */}
-      <div className="row between mb-2" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <div className="row gap" style={{ flexWrap: 'wrap' }}>
-          <h2 style={{ fontSize: '18px' }}>
+    <div className="projects-page minimal-projects-page">
+      {/* Minimal Header */}
+      <div className="row between" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+        <div className="row gap" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
             {isAdminOrOwner
               ? scopeFilter === 'shared'
                 ? 'Shared Quotations'
                 : scopeFilter === 'mine'
-                  ? 'My Projects & Quotations'
-                  : 'Projects & Quotations'
+                  ? 'My Quotations'
+                  : 'Projects & Estimates'
               : scopeFilter === 'shared'
-                ? 'Quotations Shared with Me'
+                ? 'Shared with Me'
                 : scopeFilter === 'mine'
                   ? 'My Quotations'
-                  : 'My Projects & Shared Quotations'}
+                  : 'Projects & Estimates'}
           </h2>
-          <div className="view-mode-tabs">
+          <div className="view-mode-tabs compact">
             <button
               className={`view-mode-btn ${viewMode === 'folders' ? 'active' : ''}`}
               onClick={() => setViewMode('folders')}
@@ -1115,121 +1126,71 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             <button
               className={`view-mode-btn ${viewMode === 'flat' ? 'active' : ''}`}
               onClick={() => setViewMode('flat')}
-              title="Show all individual revision files"
+              title="Show all individual files"
             >
-              <span className="file-icon">{Icon.fileText}</span> All Files ({filteredProjects.length})
+              <span className="file-icon">{Icon.fileText}</span> Files ({filteredProjects.length})
             </button>
             <button
-              className={'view-mode-btn ' + (viewMode === 'pipeline' ? 'active' : '')}
+              className={`view-mode-btn ${viewMode === 'pipeline' ? 'active' : ''}`}
               onClick={() => setViewMode('pipeline')}
-              title="Sales Pipeline Funnel Kanban Board"
+              title="Sales Pipeline Board"
             >
-              <span style={{ fontSize: 13 }}>📋</span> Pipeline ({filteredProjects.length})
+              <span style={{ fontSize: 12 }}>📋</span> Pipeline
             </button>
           </div>
           {viewMode === 'folders' && projectFolders.length > 0 && (
-            <div className="row gap" style={{ marginLeft: 4 }}>
-              <button className="link-inline tiny" onClick={expandAllFolders}>Expand All</button>
+            <div className="row gap" style={{ gap: 6 }}>
+              <button className="link-inline tiny" onClick={expandAllFolders}>Expand</button>
               <span className="tiny text-muted">·</span>
-              <button className="link-inline tiny" onClick={collapseAllFolders}>Collapse All</button>
+              <button className="link-inline tiny" onClick={collapseAllFolders}>Collapse</button>
             </div>
           )}
         </div>
-        <button className="btn primary sm" onClick={onNewProject}>
+        <button className="btn primary sm" onClick={onNewProject} style={{ height: '32px', padding: '0 12px', fontSize: '12.5px' }}>
           {Icon.plus} New Project
         </button>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="card filter-bar">
-        <div className="search-wrap" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <select
-            value={searchType}
-            onChange={(e) => setSearchType(e.target.value as any)}
-            className="search-type-select"
-            title="Search all fields or choose a specific quotation field"
-            style={{
-              height: '32px',
-              border: '1px solid #cbd5e1',
-              borderRadius: '6px',
-              background: '#f8fafc',
-              fontSize: '11.5px',
-              fontWeight: 600,
-              color: '#334155',
-              padding: '0 8px',
-              cursor: 'pointer',
-              outline: 'none',
-              flexShrink: 0,
-            }}
-          >
-            <option value="all">🔍 All Fields (Search Everything)</option>
-            <option value="qtn">📄 Quotation # / Project Name</option>
-            <option value="client">🏢 Client &amp; Company Name</option>
-            <option value="address">📍 Address, City &amp; State</option>
-            <option value="contact">📞 Phone, Email &amp; GST</option>
-            <option value="amount">💰 Amount &amp; Total Value (₹)</option>
-            <option value="description">📝 Description &amp; Client Notes</option>
-            <option value="specs">⚙️ Specs, Models, Bay &amp; Sets</option>
-          </select>
-          <span className="search-icon">{Icon.search}</span>
-          <input
-            type="text"
-            className="search-input"
-            placeholder={
-              searchType === 'qtn'
-                ? `Search by quotation # (e.g. MSSLP/${currentFy}/...), project name…`
-                : searchType === 'client'
-                ? 'Search by client, company name, kind attn, person…'
-                : searchType === 'address'
-                ? 'Search by address, city, state, pin, site location…'
-                : searchType === 'contact'
-                ? 'Search by mobile number, email address, GSTIN…'
-                : searchType === 'amount'
-                ? 'Search by quotation amount, sales total (e.g. 150000, ₹1,50,000)…'
-                : searchType === 'description'
-                ? 'Search by project description, scope, client notes…'
-                : searchType === 'specs'
-                ? 'Search by model (DFMU, SFMU, SFFU), bay count, dimensions…'
-                : 'Search anything across all quotations (client, quotation #, address, specs, notes, amount)…'
-            }
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button className="icon-btn sm" onClick={() => setSearch('')}>
-              {Icon.close}
-            </button>
-          )}
-        </div>
+      {/* Slim Minimal Toolbar: Search + FY + Filters Toggle Button + Select Toggle Button */}
+      <div className="card minimal-toolbar-card">
+        <div className="minimal-toolbar-row">
+          <div className="search-wrap minimal-search-wrap">
+            <span className="search-icon">{Icon.search}</span>
+            <input
+              type="text"
+              className="search-input"
+              placeholder={
+                searchType === 'qtn'
+                  ? `Search QTN # (e.g. MSSLP/${currentFy}/...) or project name…`
+                  : searchType === 'client'
+                  ? 'Search client, company, contact person…'
+                  : 'Search quotation #, client, amount, specs…'
+              }
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button className="icon-btn sm" onClick={() => setSearch('')} title="Clear search">
+                {Icon.close}
+              </button>
+            )}
+          </div>
 
-        <div className="filter-controls">
-          {/* Financial Year (FY) Multi-Select Filter Dropdown — Defaults to Current FY */}
+          {/* Compact FY Multi-Select Dropdown */}
           <div ref={fyDropdownRef} style={{ position: 'relative' }}>
             <button
               type="button"
-              className="btn ghost sm"
+              className="btn ghost sm minimal-pill-btn"
               onClick={() => setFyDropdownOpen((o) => !o)}
-              title="Filter quotations by Financial Year (default: Current FY). Select All FY or multiple years."
+              title="Filter by Financial Year (default: Current FY). Select All FY or multiple years."
               style={{
-                height: '30px',
-                border: selectedFys.includes('ALL') || selectedFys.length > 1 || selectedFys[0] !== currentFy
-                  ? '1.5px solid #2563eb'
-                  : '1px solid #cbd5e1',
-                background: selectedFys.includes('ALL') || selectedFys.length > 1 || selectedFys[0] !== currentFy
-                  ? '#eff6ff'
-                  : '#ffffff',
+                borderColor: selectedFys.includes('ALL') || selectedFys.length > 1 || selectedFys[0] !== currentFy ? '#2563eb' : '#e2e8f0',
+                background: selectedFys.includes('ALL') || selectedFys.length > 1 || selectedFys[0] !== currentFy ? '#eff6ff' : '#ffffff',
                 color: '#1e293b',
-                fontWeight: 600,
-                fontSize: '12px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '0 10px',
-                borderRadius: '6px',
               }}
             >
               <span>📅 {fyButtonLabel}</span>
-              <span style={{ fontSize: '10px', opacity: 0.7 }}>{fyDropdownOpen ? '▲' : '▼'}</span>
+              <span style={{ fontSize: '9px', opacity: 0.65 }}>{fyDropdownOpen ? '▲' : '▼'}</span>
             </button>
 
             {fyDropdownOpen && (
@@ -1237,7 +1198,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 4px)',
-                  left: 0,
+                  right: 0,
                   zIndex: 60,
                   minWidth: '220px',
                   background: '#ffffff',
@@ -1338,89 +1299,171 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             )}
           </div>
 
-          {/* Scope Filter Tabs: All, My Quotations, Shared with Me */}
-          <div className="status-tabs scope-filter-tabs">
-            <button
-              className={`status-tab ${scopeFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setScopeFilter('all')}
-              title="Show all accessible quotations"
-            >
-              All {isAdminOrOwner ? `(${projects.length})` : `(${myProjectsCount + sharedProjectsCount})`}
-            </button>
-            <button
-              className={`status-tab ${scopeFilter === 'mine' ? 'active' : ''}`}
-              onClick={() => setScopeFilter('mine')}
-              title="Show quotations created by me"
-            >
-              My Quotations ({myProjectsCount})
-            </button>
-            <button
-              className={`status-tab ${scopeFilter === 'shared' ? 'active' : ''}`}
-              onClick={() => setScopeFilter('shared')}
-              title="Show quotations shared with me by other staff"
-            >
-              🤝 Shared with Me {sharedProjectsCount > 0 ? `(${sharedProjectsCount})` : ''}
-            </button>
-            {remindersCount > 0 && (
-              <button
-                className={`status-tab ${scopeFilter === 'reminders' ? 'active' : ''}`}
-                onClick={() => setScopeFilter('reminders')}
-                style={{ color: scopeFilter === 'reminders' ? '#fff' : '#b45309', background: scopeFilter === 'reminders' ? '#f59e0b' : '#fffbeb', borderColor: '#fcd34d', fontWeight: 700 }}
-                title="Show quotations with active follow-up alarms & reminders"
-              >
-                🔔 Reminders ({remindersCount})
-              </button>
+          {/* Filters Box Toggle Button (click to reveal/hide filter box cleanly) */}
+          <button
+            type="button"
+            className="btn ghost sm minimal-pill-btn"
+            onClick={() => setFiltersOpen((o) => !o)}
+            title="Show or hide Search Scope, Status, Sort, and Archive filters"
+            style={{
+              borderColor: filtersOpen || activeFilterCount > 0 ? '#2563eb' : '#e2e8f0',
+              background: filtersOpen || activeFilterCount > 0 ? '#eff6ff' : '#ffffff',
+              color: filtersOpen || activeFilterCount > 0 ? '#1d4ed8' : '#334155',
+            }}
+          >
+            <span>🎛 Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="minimal-count-dot">{activeFilterCount}</span>
             )}
-          </div>
+          </button>
 
-          <div className="status-tabs">
-            {[
-              { id: 'all', label: 'ACTIVE (QUOTED & NEGOTIATING)' },
-              { id: 'quoted', label: 'QUOTED' },
-              { id: 'negotiating', label: 'NEGOTIATING' },
-              { id: 'won', label: 'WON' },
-              { id: 'loss', label: 'LOSS' },
-            ].map(({ id, label }) => (
-              <button
-                key={id}
-                className={`status-tab ${statusFilter === id ? 'active' : ''}`}
-                onClick={() => setStatusFilter(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-            />
-            <span>Show Archived</span>
-          </label>
-
-          <div className="sort-group">
-            <span className="tiny muted">Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortField)}
-              className="select-input"
-            >
-              <option value="updated_at">Recently Updated</option>
-              <option value="name">Project Name</option>
-              <option value="total">Quotation Amount</option>
-              <option value="created_at">Date Created</option>
-            </select>
+          {/* Select Mode Toggle Button (click to reveal/hide selection checkboxes) */}
+          {viewMode !== 'pipeline' && (
             <button
-              className="icon-btn sm"
-              title={sortAsc ? 'Ascending' : 'Descending'}
-              onClick={() => setSortAsc(!sortAsc)}
+              type="button"
+              className="btn ghost sm minimal-pill-btn"
+              onClick={() => {
+                setSelectionMode((prev) => {
+                  if (prev) setSelectedIds(new Set())
+                  return !prev
+                })
+              }}
+              title="Toggle row selection checkboxes for bulk actions"
+              style={{
+                borderColor: selectionMode ? '#2563eb' : '#e2e8f0',
+                background: selectionMode ? '#eff6ff' : '#ffffff',
+                color: selectionMode ? '#1d4ed8' : '#334155',
+              }}
             >
-              {sortAsc ? '↑' : '↓'}
+              <span>{selectionMode ? '✕ Done' : '☑ Select'}</span>
             </button>
-          </div>
+          )}
         </div>
+
+        {/* Collapsible Filter Box — Hidden by default for minimal UI, appears when Filters button is clicked */}
+        {filtersOpen && (
+          <div className="minimal-filters-box">
+            <div className="minimal-filter-group">
+              <span className="minimal-filter-label">Search Field</span>
+              <select
+                value={searchType}
+                onChange={(e) => setSearchType(e.target.value as any)}
+                className="select-input compact"
+              >
+                <option value="all">All Fields</option>
+                <option value="qtn">Quotation # / Name</option>
+                <option value="client">Client Name</option>
+                <option value="address">Address / City</option>
+                <option value="contact">Phone / Email / GST</option>
+                <option value="amount">Amount (₹)</option>
+                <option value="description">Description / Notes</option>
+                <option value="specs">Specs / Bay / Models</option>
+              </select>
+            </div>
+
+            <div className="minimal-filter-group">
+              <span className="minimal-filter-label">Scope</span>
+              <div className="status-tabs scope-filter-tabs">
+                <button
+                  className={`status-tab ${scopeFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setScopeFilter('all')}
+                >
+                  All ({isAdminOrOwner ? projects.length : myProjectsCount + sharedProjectsCount})
+                </button>
+                <button
+                  className={`status-tab ${scopeFilter === 'mine' ? 'active' : ''}`}
+                  onClick={() => setScopeFilter('mine')}
+                >
+                  My Quotations ({myProjectsCount})
+                </button>
+                <button
+                  className={`status-tab ${scopeFilter === 'shared' ? 'active' : ''}`}
+                  onClick={() => setScopeFilter('shared')}
+                >
+                  🤝 Shared with Me {sharedProjectsCount > 0 ? `(${sharedProjectsCount})` : ''}
+                </button>
+                {remindersCount > 0 && (
+                  <button
+                    className={`status-tab ${scopeFilter === 'reminders' ? 'active' : ''}`}
+                    onClick={() => setScopeFilter('reminders')}
+                    style={{ color: scopeFilter === 'reminders' ? '#fff' : '#b45309', background: scopeFilter === 'reminders' ? '#f59e0b' : '#fffbeb' }}
+                  >
+                    🔔 Reminders ({remindersCount})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="minimal-filter-group">
+              <span className="minimal-filter-label">Status</span>
+              <div className="status-tabs">
+                {[
+                  { id: 'all', label: 'Active' },
+                  { id: 'quoted', label: 'Quoted' },
+                  { id: 'negotiating', label: 'Negotiating' },
+                  { id: 'won', label: 'Won' },
+                  { id: 'loss', label: 'Loss' },
+                ].map(({ id, label }) => (
+                  <button
+                    key={id}
+                    className={`status-tab ${statusFilter === id ? 'active' : ''}`}
+                    onClick={() => setStatusFilter(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="minimal-filter-group" style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <label className="checkbox-label" style={{ fontSize: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => setShowArchived(e.target.checked)}
+                />
+                <span>Archived</span>
+              </label>
+
+              <div className="sort-group">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortField)}
+                  className="select-input compact"
+                >
+                  <option value="updated_at">Recently Updated</option>
+                  <option value="name">Project Name</option>
+                  <option value="total">Quotation Amount</option>
+                  <option value="created_at">Date Created</option>
+                </select>
+                <button
+                  className="icon-btn sm"
+                  title={sortAsc ? 'Ascending' : 'Descending'}
+                  onClick={() => setSortAsc(!sortAsc)}
+                >
+                  {sortAsc ? '↑' : '↓'}
+                </button>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  className="link-inline tiny"
+                  onClick={() => {
+                    setSearchType('all')
+                    setScopeFilter('all')
+                    setStatusFilter('all')
+                    setShowArchived(false)
+                    setSortBy('updated_at')
+                    setSortAsc(false)
+                  }}
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Batch Actions Bar */}
@@ -1688,24 +1731,26 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             <table className="tbl full-table">
             <thead>
               <tr>
-                <th style={{ width: '40px', textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    aria-label="Select all visible quotations"
-                    checked={allVisibleSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected
-                    }}
-                    onChange={handleToggleSelectAll}
-                  />
-                </th>
-                <th>{viewMode === 'folders' ? 'Project Folder / Revision File' : 'Project Name'}</th>
+                {selectionMode && (
+                  <th style={{ width: '36px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible quotations"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected
+                      }}
+                      onChange={handleToggleSelectAll}
+                    />
+                  </th>
+                )}
+                <th>{viewMode === 'folders' ? 'Project / Quotation' : 'Project Name'}</th>
                 <th>Client</th>
                 <th>Status</th>
-                <th>Template Version</th>
-                <th className="r">Quotation Total</th>
-                <th>Owner / Creator</th>
-                <th>Last Updated</th>
+                <th>Ver</th>
+                <th className="r">Total</th>
+                <th>Owner</th>
+                <th>Updated</th>
                 <th className="r">Actions</th>
               </tr>
             </thead>
@@ -1726,17 +1771,19 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                         onClick={() => toggleFolder(folder.id)}
                         style={{ cursor: 'pointer' }}
                       >
-                        <td style={{ width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Select folder ${folder.folderName}`}
-                            checked={folderAllSelected}
-                            ref={(el) => {
-                              if (el) el.indeterminate = folderSomeSelected && !folderAllSelected
-                            }}
-                            onChange={(e) => handleToggleFolderSelect(folder, e.target.checked)}
-                          />
-                        </td>
+                        {selectionMode && (
+                          <td style={{ width: '36px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select folder ${folder.folderName}`}
+                              checked={folderAllSelected}
+                              ref={(el) => {
+                                if (el) el.indeterminate = folderSomeSelected && !folderAllSelected
+                              }}
+                              onChange={(e) => handleToggleFolderSelect(folder, e.target.checked)}
+                            />
+                          </td>
+                        )}
                         <td>
                           <div className="row gap" style={{ flexWrap: 'wrap' }}>
                             <button
