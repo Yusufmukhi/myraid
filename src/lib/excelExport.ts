@@ -307,29 +307,22 @@ function buildStyledWorksheet(
         // N29 (r=28, c=13): SALES (Incl. GST)
         if (r === 28 && c === 13) { rowArr.push(grandTotalSales); continue }
 
-        // R5:S8 & Discount/GST summary cards
+        // R5:S9 summary cards:
+        // - Actual Export: R5=Subtotal Before GST (=N27), R6=Profit Amount (=N26), R7=Quotation Sales (=N27 / =S11), R8=Profit Margin % (=C26), R9:R13=Discount & GST
+        // - C2C Export: R5=Subtotal Before GST (quotation before GST), R6=C2C ANALYSIS ('✓ synced'), R7=Profit: (=S5-SUM(N22:N25)), R8=Total: (=S7+N50), R9=Ratio: (=IF(J44>0,S8/J44,0))
         if (r === 4 && c === 17) { rowArr.push('Subtotal Before GST'); continue }
-        if (r === 4 && c === 18) { rowArr.push(c2cData ? (options?.subtotalBeforeGst ?? subtotalWithProfit) : subtotalWithProfit); continue }
-
-        if (r === 5 && c === 17) { rowArr.push(isActualExport ? 'Profit Amount' : 'C2C Profit'); continue }
-        if (r === 5 && c === 18) {
-          rowArr.push(c2cData ? Math.round(c2cData.profit) : Math.round(computedProfit))
-          continue
-        }
-
-        if (r === 6 && c === 17) { rowArr.push(isActualExport ? 'Quotation Sales' : 'C2C Total'); continue }
-        if (r === 6 && c === 18) {
-          rowArr.push(c2cData ? Math.round(c2cData.total) : Math.round(afterDiscount))
-          continue
-        }
-
-        if (r === 7 && c === 17) { rowArr.push(isActualExport ? 'Profit Margin %' : 'C2C Ratio'); continue }
-        if (r === 7 && c === 18) {
-          rowArr.push(c2cData ? Number(c2cData.ratio.toFixed(2)) : effectiveProfitPct)
-          continue
-        }
+        if (r === 4 && c === 18) { rowArr.push(c2cData ? (options?.subtotalBeforeGst ?? c2cData.subtotalBeforeGst ?? subtotalWithProfit) : subtotalWithProfit); continue }
 
         if (isActualExport) {
+          if (r === 5 && c === 17) { rowArr.push('Profit Amount'); continue }
+          if (r === 5 && c === 18) { rowArr.push(Math.round(computedProfit)); continue }
+
+          if (r === 6 && c === 17) { rowArr.push('Quotation Sales'); continue }
+          if (r === 6 && c === 18) { rowArr.push(Math.round(afterDiscount)); continue }
+
+          if (r === 7 && c === 17) { rowArr.push('Profit Margin %'); continue }
+          if (r === 7 && c === 18) { rowArr.push(effectiveProfitPct); continue }
+
           if (discountPct > 0) {
             if (r === 8 && c === 17) { rowArr.push('Discount %'); continue }
             if (r === 8 && c === 18) { rowArr.push(discountPct); continue }
@@ -347,6 +340,29 @@ function buildStyledWorksheet(
             if (r === 9 && c === 17) { rowArr.push('Grand Total (Incl. GST)'); continue }
             if (r === 9 && c === 18) { rowArr.push(grandTotalSales); continue }
           }
+        } else {
+          // C2C ANALYSIS block starting from R6
+          const c2cBeforeGst = Number(options?.subtotalBeforeGst ?? c2cData?.subtotalBeforeGst ?? subtotalWithProfit)
+          const c2cProfitCached = c2cData?.profit !== undefined
+            ? Math.round(c2cData.profit)
+            : Math.round(c2cBeforeGst - directCostBase)
+          const c2cLabourVal = Number(wb.value(sheetName, 49, 13)) || Number(c2cData?.labour) || 0
+          const c2cTotalCached = c2cData?.total !== undefined
+            ? Math.round(c2cData.total)
+            : Math.round(c2cProfitCached + c2cLabourVal)
+          const c2cWeightVal = Number(wb.value(sheetName, 43, 9)) || Number(c2cData?.steelWeight) || 0
+          const c2cRatioCached = c2cData?.ratio !== undefined
+            ? Number(c2cData.ratio.toFixed(2))
+            : Number((c2cWeightVal > 0 ? c2cTotalCached / c2cWeightVal : 0).toFixed(2))
+
+          if (r === 5 && c === 17) { rowArr.push('C2C ANALYSIS'); continue }
+          if (r === 5 && c === 18) { rowArr.push('✓ synced'); continue }
+          if (r === 6 && c === 17) { rowArr.push('Profit:'); continue }
+          if (r === 6 && c === 18) { rowArr.push(c2cProfitCached); continue }
+          if (r === 7 && c === 17) { rowArr.push('Total:'); continue }
+          if (r === 7 && c === 18) { rowArr.push(c2cTotalCached); continue }
+          if (r === 8 && c === 17) { rowArr.push('Ratio:'); continue }
+          if (r === 8 && c === 18) { rowArr.push(c2cRatioCached); continue }
         }
 
         // Row 22: O22 (c=14) SET label, P22 (c=15) sets quantity value
@@ -460,6 +476,7 @@ function buildStyledWorksheet(
         // R5:S13 live summary cards
         if (r === 4 && c === 18) {
           // Link S5 directly to N27 when Actual export (never hardcoded!)
+          // In C2C export, S5 holds Quotation Subtotal Before GST (referenced by S7 Profit formula)
           if (isActualExport) applyFormula(r, c, 'N27')
           continue
         }
@@ -468,11 +485,26 @@ function buildStyledWorksheet(
           continue
         }
         if (r === 6 && c === 18) {
-          if (isActualExport) applyFormula(r, c, discountPct > 0 ? 'S11' : 'N27')
+          if (isActualExport) {
+            applyFormula(r, c, discountPct > 0 ? 'S11' : 'N27')
+          } else {
+            // C2C Profit = Quotation Before GST (S5) - C2C Direct Cost Base (SUM(N22:N25) [+ K25])
+            applyFormula(r, c, totalExtraAmountSum > 0 ? 'S5-(SUM(N22:N25)+K25)' : 'S5-SUM(N22:N25)')
+          }
           continue
         }
         if (r === 7 && c === 18) {
-          if (isActualExport) applyFormula(r, c, 'C26')
+          if (isActualExport) {
+            applyFormula(r, c, 'C26')
+          } else {
+            // C2C Total = Profit (S7) + C2C Labour Charges (N50)
+            applyFormula(r, c, 'S7+N50')
+          }
+          continue
+        }
+        if (!isActualExport && r === 8 && c === 18) {
+          // C2C Ratio = Total (S8) / Total Steel Weight (J44)
+          applyFormula(r, c, 'IF(J44>0,S8/J44,0)')
           continue
         }
         if (isActualExport && (c === 17 || c === 18) && r >= 8 && r <= 12) {
@@ -581,11 +613,37 @@ function buildStyledWorksheet(
     styleLabel('R5')
     styleMoney('S5', 'E2EFDA', '0F172A')
     styleLabel('R6')
-    styleMoney('S6', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
-    styleLabel('R7')
-    styleMoney('S7', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
-    styleLabel('R8')
-    styleMoney('S8', 'DBEAFE', '1E3A8A', c2cData ? '0.00 "₹/kg"' : '0.00"%"')
+    if (isActualExport) {
+      styleMoney('S6', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
+      styleLabel('R7')
+      styleMoney('S7', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
+      styleLabel('R8')
+      styleMoney('S8', 'DBEAFE', '1E3A8A', '0.00"%"')
+    } else {
+      // C2C ANALYSIS card styling from R6:S9
+      if (ws['R6']) {
+        ws['R6'].s = {
+          font: { bold: true, color: { rgb: '1E3A8A' }, sz: 10 },
+          fill: { fgColor: { rgb: 'DBEAFE' } },
+          alignment: { horizontal: 'right', vertical: 'center' },
+          border: THIN_BORDER,
+        }
+      }
+      if (ws['S6']) {
+        ws['S6'].s = {
+          font: { bold: true, color: { rgb: '166534' }, sz: 10 },
+          fill: { fgColor: { rgb: '92D050' } },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: THIN_BORDER,
+        }
+      }
+      styleLabel('R7')
+      styleMoney('S7', 'E2EFDA', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
+      styleLabel('R8')
+      styleMoney('S8', 'E2EFDA', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
+      styleLabel('R9')
+      styleMoney('S9', 'DBEAFE', '1E3A8A', '"₹"#,##0.00"/kg"')
+    }
 
     if (isActualExport) {
       if (discountPct > 0) {
@@ -979,6 +1037,52 @@ export function exportMultiSystemWorkbookToXLSX(
       },
     })
   })
+
+  if (!globalOptions.isActual) {
+    masterRows.push([])
+    const c2cHeaderRowIdx = masterRows.length
+    masterRows.push(['C2C ANALYSIS', null, '✓ synced'])
+    masterStyles.push(
+      { r: c2cHeaderRowIdx, c: 0, s: { font: { bold: true, color: { rgb: '1E3A8A' }, sz: 10 }, fill: { fgColor: { rgb: 'DBEAFE' } }, border: THIN_BORDER } },
+      { r: c2cHeaderRowIdx, c: 2, s: { font: { bold: true, color: { rgb: '166534' }, sz: 10 }, fill: { fgColor: { rgb: '92D050' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: THIN_BORDER } },
+    )
+
+    const s5Expr = systemSheetsMeta.map(({ tcTab }) => quoteRef(tcTab, 'S5')).join('+')
+    const s5RowIdx = masterRows.length
+    const s5ExcelRow = s5RowIdx + 1
+    masterRows.push(['Subtotal Before GST (Quotation)', null, 0])
+    masterFormulas.push({ r: s5RowIdx, c: 2, f: s5Expr, fmt: cellMoneyFmt })
+    masterStyles.push(
+      { r: s5RowIdx, c: 0, s: { font: { bold: true, color: { rgb: '1E293B' }, sz: 10 }, fill: { fgColor: { rgb: 'F1F5F9' } }, border: THIN_BORDER } },
+      { r: s5RowIdx, c: 2, s: { font: { bold: true, color: { rgb: '0F172A' }, sz: 10 }, fill: { fgColor: { rgb: 'E2EFDA' } }, border: THIN_BORDER, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: cellMoneyFmt } },
+    )
+
+    const pRowIdx = masterRows.length
+    const pExcelRow = pRowIdx + 1
+    masterRows.push(['Profit:', null, 0])
+    masterFormulas.push({ r: pRowIdx, c: 2, f: `C${s5ExcelRow}-M${totalExcelRow}`, fmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"' })
+    masterStyles.push(
+      { r: pRowIdx, c: 0, s: { font: { bold: true, color: { rgb: '1E293B' }, sz: 10 }, fill: { fgColor: { rgb: 'F1F5F9' } }, border: THIN_BORDER } },
+      { r: pRowIdx, c: 2, s: { font: { bold: true, color: { rgb: '166534' }, sz: 11 }, fill: { fgColor: { rgb: 'E2EFDA' } }, border: THIN_BORDER, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"' } },
+    )
+
+    const tRowIdx = masterRows.length
+    const tExcelRow = tRowIdx + 1
+    masterRows.push(['Total:', null, 0])
+    masterFormulas.push({ r: tRowIdx, c: 2, f: `C${pExcelRow}+AC${totalExcelRow}`, fmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"' })
+    masterStyles.push(
+      { r: tRowIdx, c: 0, s: { font: { bold: true, color: { rgb: '1E293B' }, sz: 10 }, fill: { fgColor: { rgb: 'F1F5F9' } }, border: THIN_BORDER } },
+      { r: tRowIdx, c: 2, s: { font: { bold: true, color: { rgb: '166534' }, sz: 11 }, fill: { fgColor: { rgb: 'E2EFDA' } }, border: THIN_BORDER, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: '"₹"#,##0;[Red]-"₹"#,##0;"-"' } },
+    )
+
+    const rRowIdx = masterRows.length
+    masterRows.push(['Ratio:', null, 0])
+    masterFormulas.push({ r: rRowIdx, c: 2, f: `IF(Z${totalExcelRow}>0,C${tExcelRow}/Z${totalExcelRow},0)`, fmt: '"₹"#,##0.00"/kg"' })
+    masterStyles.push(
+      { r: rRowIdx, c: 0, s: { font: { bold: true, color: { rgb: '1E293B' }, sz: 10 }, fill: { fgColor: { rgb: 'F1F5F9' } }, border: THIN_BORDER } },
+      { r: rRowIdx, c: 2, s: { font: { bold: true, color: { rgb: '1E3A8A' }, sz: 11 }, fill: { fgColor: { rgb: 'DBEAFE' } }, border: THIN_BORDER, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: '"₹"#,##0.00"/kg"' } },
+    )
+  }
 
   masterRows.push([]) // blank
 

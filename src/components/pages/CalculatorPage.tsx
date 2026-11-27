@@ -3176,9 +3176,11 @@ export function CalculatorPage({
 
             const sysBeforeGst = compiled?.amount || Math.round((compiled?.summary?.beforeGst || summary.beforeGst) * sysQty)
             const sysPreDisc = compiled?.pre_discount_amount || Math.round((compiled?.summary?.subtotalWithProfit || summary.beforeGst) * sysQty)
+            const c2cBaseExclLogistics = Math.max(0, (c2cSum.costBase || 0) - allocatedTransport - allocatedAccommodation)
+            const c2cCostBaseAllSets = (c2cBaseExclLogistics * sysQty) + allocatedTransport + allocatedAccommodation
             const c2cMetrics = calculateC2CAnalysis(
               sysBeforeGst,
-              (c2cSum.costBase || 0) * sysQty,
+              c2cCostBaseAllSets,
               (c2cSum.labourSubtotal || 0) * sysQty,
               (c2cSum.totalWeight || 0) * sysQty,
             )

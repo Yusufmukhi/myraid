@@ -3238,12 +3238,52 @@ async function runAllTests() {
         }
       }
 
-      if (exactC26Ok && exactN26Ok && exactS5Ok && exactS6Ok && exactS8Ok && exactN23Ok && multiSheetOrderOk && hasSysALink && hasSysBLink && hasBreakdownText && multiErrorCount === 0) {
-        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System 3-Sheet Workbook Export', 'PASSED',
-          `Single-sys: C26=${singleWs['C26']?.v}%, N26='${singleWs['N26']?.f}', S5='${singleWs['S5']?.f}', S8='${singleWs['S8']?.f}' (${singleWs['S8']?.v}%), N23=${singleWs['N23']?.v}; Multi-sys: 7 ordered tabs [Total cal + 3 sheets x 2 systems] with live cross-sheet links & per-set breakdown and 0 formula/error leaks.`)
+      // Verify C2C ANALYSIS block starting at R6 (S5-linked Profit, Total=S7+N50, Ratio=S8/J44)
+      exportWorkbookToXLSX(
+        wbTest,
+        'Test_C2C_Analysis_S5.xlsx',
+        {
+          profit: 66206,
+          total: 83372,
+          ratio: 88.23,
+          subtotalBeforeGst: 400000,
+          setsQty: 1,
+          sysTransport: 10000,
+          sysAccommodation: 5000,
+        },
+        {
+          setsQty: 1,
+          subtotalBeforeGst: 400000,
+          sysTransport: 10000,
+          sysAccommodation: 5000,
+          isActual: false,
+          profitPct: 15,
+          discountPct: 0,
+          includeInstallation: false,
+          extraAmount: 0,
+        },
+      )
+      const c2cWs = capturedWrites[2]?.wbObj?.Sheets?.['Total cal']
+      const c2cR6BlockOk =
+        c2cWs?.['R6']?.v === 'C2C ANALYSIS' &&
+        c2cWs?.['S6']?.v === '✓ synced' &&
+        c2cWs?.['R7']?.v === 'Profit:' &&
+        c2cWs?.['S7']?.f === 'S5-SUM(N22:N25)' &&
+        Number(c2cWs?.['S7']?.v) === 66206 &&
+        c2cWs?.['R8']?.v === 'Total:' &&
+        c2cWs?.['S8']?.f === 'S7+N50' &&
+        Number(c2cWs?.['S8']?.v) === 83372 &&
+        c2cWs?.['R9']?.v === 'Ratio:' &&
+        c2cWs?.['S9']?.f === 'IF(J44>0,S8/J44,0)' &&
+        Number(c2cWs?.['S9']?.v) === 88.23 &&
+        c2cWs?.['S9']?.s?.numFmt === '"₹"#,##0.00"/kg"'
+
+      if (exactC26Ok && exactN26Ok && exactS5Ok && exactS6Ok && exactS8Ok && exactN23Ok && multiSheetOrderOk && hasSysALink && hasSysBLink && hasBreakdownText && multiErrorCount === 0 && c2cR6BlockOk) {
+        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27), C2C R6:S9 S5-Linked Analysis & Multi-System 3-Sheet Export', 'PASSED',
+          `Single-sys: C26=${singleWs['C26']?.v}%, N26='${singleWs['N26']?.f}', S5='${singleWs['S5']?.f}', S8='${singleWs['S8']?.f}' (${singleWs['S8']?.v}%), N23=${singleWs['N23']?.v}; C2C R6:S9: Profit='${c2cWs['S7']?.f}' (₹${c2cWs['S7']?.v}), Total='${c2cWs['S8']?.f}' (₹${c2cWs['S8']?.v}), Ratio='${c2cWs['S9']?.f}' (₹${c2cWs['S9']?.v}/kg); Multi-sys: 7 ordered tabs with live cross-sheet links & 0 errors.`)
       } else {
-        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System 3-Sheet Workbook Export', 'FAILED',
-          `exactC26=${exactC26Ok}, exactN26=${exactN26Ok} (${singleWs?.['N26']?.f}), exactS5=${exactS5Ok} (${singleWs?.['S5']?.f}), exactS6=${exactS6Ok}, exactS8=${exactS8Ok}, exactN23=${exactN23Ok}, multiSheetOrder=${multiSheetOrderOk} (${actualSheets.join(', ')}), sysALink=${hasSysALink}, sysBLink=${hasSysBLink}, breakdown=${hasBreakdownText}, multiErrors=${multiErrorCount}`)
+        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27), C2C R6:S9 S5-Linked Analysis & Multi-System 3-Sheet Export', 'FAILED',
+          `exactC26=${exactC26Ok}, exactN26=${exactN26Ok} (${singleWs?.['N26']?.f}), exactS5=${exactS5Ok} (${singleWs?.['S5']?.f}), exactS6=${exactS6Ok}, exactS8=${exactS8Ok}, exactN23=${exactN23Ok}, multiSheetOrder=${multiSheetOrderOk} (${actualSheets.join(', ')}), sysALink=${hasSysALink}, sysBLink=${hasSysBLink}, breakdown=${hasBreakdownText}, multiErrors=${multiErrorCount}, c2cR6Block=${c2cR6BlockOk}`)
       }
     } finally {
       XLSX.writeFile = origWriteFile
