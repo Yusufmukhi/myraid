@@ -3252,6 +3252,108 @@ async function runAllTests() {
     logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27) & Multi-System 3-Sheet Workbook Export', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 61: PDF Live Download Date on Revise, Saved-Only PDF Snapshot, FY Filter (Current/All/Multi), & MSSLP FY Sync
+  // -------------------------------------------------------------------------
+  try {
+    const {
+      getFiscalYear,
+      formatPdfDate,
+      buildOfficialQtnNo,
+      syncQtnNoFiscalYear,
+      getProjectFiscalYear,
+      getAvailableFiscalYears,
+      matchesFiscalYearFilter,
+    } = await import('../src/lib/revision')
+
+    // 1. Indian FY boundaries & MSSLP FY sync
+    const fyBoundaryOk =
+      getFiscalYear('2026-03-31T23:59:00Z') === '25-26' &&
+      getFiscalYear('2026-04-01T00:00:00Z') === '26-27' &&
+      getFiscalYear('2027-04-01') === '27-28' &&
+      getFiscalYear('15-03-2026') === '25-26' &&
+      getFiscalYear('27-11-2026') === '26-27'
+
+    const qtnBuildAndSyncOk =
+      buildOfficialQtnNo('QTN NO 123-A', '2026-02-15') === 'MSSLP/25-26/MT-SL/123-A' &&
+      buildOfficialQtnNo('MSSLP/25-26/MT-SL/123-A', '2026-11-27') === 'MSSLP/26-27/MT-SL/123-A' &&
+      syncQtnNoFiscalYear('MSSLP/25-26/MT-SL/1797-A', '26-27') === 'MSSLP/26-27/MT-SL/1797-A' &&
+      syncQtnNoFiscalYear('MSSLP/26-27/MT-SL/1797', '27-28') === 'MSSLP/27-28/MT-SL/1797'
+
+    // 2. FY search filter: default current FY excludes old FY duplicate QTN; ALL & multi-select work
+    const projPrevFy = { id: 'old-123', name: 'QTN NO 123', created_at: '2026-02-10T10:00:00Z', summary: { client_info: { qtn_no: 'MSSLP/25-26/MT-SL/123' } } }
+    const projCurrFy = { id: 'cur-123', name: 'QTN NO 123', created_at: '2026-11-20T10:00:00Z', summary: { client_info: { qtn_no: 'MSSLP/26-27/MT-SL/123' } } }
+    const currFyStr = getFiscalYear('2026-11-27')
+    const availFys = getAvailableFiscalYears([projPrevFy, projCurrFy], currFyStr)
+    const defaultFyOnlyCurr =
+      !matchesFiscalYearFilter(projPrevFy, [currFyStr]) &&
+      matchesFiscalYearFilter(projCurrFy, [currFyStr])
+    const allFyMatchesBoth =
+      matchesFiscalYearFilter(projPrevFy, ['ALL']) &&
+      matchesFiscalYearFilter(projCurrFy, ['ALL'])
+    const multiFyMatchesSelected =
+      matchesFiscalYearFilter(projPrevFy, ['25-26', '26-27']) &&
+      matchesFiscalYearFilter(projCurrFy, ['25-26', '26-27']) &&
+      matchesFiscalYearFilter(projPrevFy, ['25-26']) &&
+      !matchesFiscalYearFilter(projCurrFy, ['25-26'])
+    const fyProjectResolvedOk = getProjectFiscalYear(projPrevFy) === '25-26' && getProjectFiscalYear(projCurrFy) === '26-27' && availFys.includes('25-26') && availFys.includes('26-27')
+
+    // 3. Verify PDF live download date, Revise date/FY refresh, Saved-Only PDF rendering, & ProjectsPage FY dropdown in source
+    const pdfSrc = fs.readFileSync('src/components/quotation/OfficialQuotationDocument.tsx', 'utf8')
+    const calcSrc = fs.readFileSync('src/components/pages/CalculatorPage.tsx', 'utf8')
+    const wsSrc = fs.readFileSync('src/components/Workspace.tsx', 'utf8')
+    const projPageSrc = fs.readFileSync('src/components/pages/ProjectsPage.tsx', 'utf8')
+
+    const pdfLiveDateAndFySyncOk =
+      pdfSrc.includes('date: today,') &&
+      pdfSrc.includes('syncQtnNoFiscalYear(saved.qtn_no, projectFy)') &&
+      pdfSrc.includes('ensureDownloadDateSynced') &&
+      pdfSrc.includes('handleClientDateChange')
+
+    const reviseUpdatesDateAndFyOk =
+      wsSrc.includes('formatPdfDate(revNow)') &&
+      wsSrc.includes('buildOfficialQtnNo(res.name || copyName, revNow)') &&
+      projPageSrc.includes('formatPdfDate(revNow)') &&
+      projPageSrc.includes('buildOfficialQtnNo(res.name || nm, revNow)')
+
+    const savedOnlyPdfOk =
+      calcSrc.includes('const savedProject: Project = dirty') &&
+      calcSrc.includes('initialSets={savedSets}') &&
+      calcSrc.includes('wb={savedWb}') &&
+      calcSrc.includes('Preserve last saved calculator specs/inputs when calculator has unsaved changes')
+
+    const projectsPageFyFilterOk =
+      projPageSrc.includes('selectedFys') &&
+      projPageSrc.includes('matchesFiscalYearFilter(p, selectedFys)') &&
+      projPageSrc.includes('Financial Year Filter') &&
+      projPageSrc.includes('All FY') &&
+      projPageSrc.includes('toggleSingleFy')
+
+    const todayFmtOk = /^\d{2}-\d{2}-\d{4}$/.test(formatPdfDate(new Date()))
+
+    if (
+      fyBoundaryOk &&
+      qtnBuildAndSyncOk &&
+      defaultFyOnlyCurr &&
+      allFyMatchesBoth &&
+      multiFyMatchesSelected &&
+      fyProjectResolvedOk &&
+      pdfLiveDateAndFySyncOk &&
+      reviseUpdatesDateAndFyOk &&
+      savedOnlyPdfOk &&
+      projectsPageFyFilterOk &&
+      todayFmtOk
+    ) {
+      logResult(61, 'PDF Live Download Date on Revise, Saved-Only PDF Snapshot, FY Search Filter (Current/All/Multi), & MSSLP FY Sync', 'PASSED',
+        `FY logic verified (25-26/26-27/27-28); default FY excludes duplicate prior-FY QTN while All/Multi-select include selected FYs; Revise & PDF Download sync live date (${formatPdfDate(new Date())}) and MSSLP/{fy}; PDF strictly renders last saved quotation state.`)
+    } else {
+      logResult(61, 'PDF Live Download Date on Revise, Saved-Only PDF Snapshot, FY Search Filter (Current/All/Multi), & MSSLP FY Sync', 'FAILED',
+        `fyBoundary=${fyBoundaryOk}, qtnSync=${qtnBuildAndSyncOk}, defFy=${defaultFyOnlyCurr}, allFy=${allFyMatchesBoth}, multiFy=${multiFyMatchesSelected}, projFy=${fyProjectResolvedOk}, pdfDateFy=${pdfLiveDateAndFySyncOk}, revDateFy=${reviseUpdatesDateAndFyOk}, savedOnly=${savedOnlyPdfOk}, fyUI=${projectsPageFyFilterOk}, todayFmt=${todayFmtOk}`)
+    }
+  } catch (e) {
+    logResult(61, 'PDF Live Download Date on Revise, Saved-Only PDF Snapshot, FY Search Filter (Current/All/Multi), & MSSLP FY Sync', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

@@ -1,9 +1,19 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { api, Org, Project, ProjectStatus, Session, tokenStore } from '../../lib/api'
 import { deleteProject } from '../../lib/permissions'
 import { inr, timeAgo } from '../../lib/format'
 import { getSavedClients } from '../../lib/clientDirectory'
-import { groupProjectsIntoFolders, parseRevision, ProjectFolder } from '../../lib/revision'
+import {
+  buildOfficialQtnNo,
+  formatPdfDate,
+  getAvailableFiscalYears,
+  getFiscalYear,
+  getProjectFiscalYear,
+  groupProjectsIntoFolders,
+  matchesFiscalYearFilter,
+  parseRevision,
+  ProjectFolder,
+} from '../../lib/revision'
 import { Icon, Spinner, useUI } from '../ui'
 
 interface Props {
@@ -37,6 +47,57 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'mine' | 'shared' | 'reminders'>(initialScope || 'all')
   const [showArchived, setShowArchived] = useState(false)
+  const currentFy = useMemo(() => getFiscalYear(), [])
+  const [selectedFys, setSelectedFys] = useState<string[]>(() => [getFiscalYear()])
+  const [fyDropdownOpen, setFyDropdownOpen] = useState(false)
+  const fyDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!fyDropdownOpen) return
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (fyDropdownRef.current && !fyDropdownRef.current.contains(e.target as Node)) {
+        setFyDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [fyDropdownOpen])
+
+  const { availableFys, fyCounts } = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const p of projects || []) {
+      const fy = getProjectFiscalYear(p)
+      counts[fy] = (counts[fy] || 0) + 1
+    }
+    const list = getAvailableFiscalYears(projects || [], currentFy)
+    return { availableFys: list, fyCounts: counts }
+  }, [projects, currentFy])
+
+  const toggleAllFys = () => {
+    setSelectedFys((prev) => (prev.includes('ALL') ? [currentFy] : ['ALL']))
+  }
+
+  const toggleSingleFy = (fy: string) => {
+    setSelectedFys((prev) => {
+      if (prev.includes('ALL')) {
+        return [fy]
+      }
+      if (prev.includes(fy)) {
+        const next = prev.filter((item) => item !== fy)
+        return next.length > 0 ? next : ['ALL']
+      }
+      return [...prev, fy]
+    })
+  }
+
+  const fyButtonLabel = useMemo(() => {
+    if (selectedFys.includes('ALL')) return 'All FY'
+    if (selectedFys.length === 1) {
+      const only = selectedFys[0]
+      return only === currentFy ? `FY ${only} (Current)` : `FY ${only}`
+    }
+    return `FY (${selectedFys.length} selected)`
+  }, [selectedFys, currentFy])
   const [sortBy, setSortBy] = useState<SortField>('updated_at')
   const [sortAsc, setSortAsc] = useState(false)
   const [viewMode, setViewMode] = useState<'folders' | 'flat' | 'pipeline'>('folders')
@@ -194,6 +255,9 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           if (!isMine && !isSharedWithMe) return false
           if (isSharedWithMe && p.status?.toLowerCase() === 'approved') return false
         }
+
+        // Financial Year filter (default: current FY only; user can select 'ALL' or multiple FYs)
+        if (!matchesFiscalYearFilter(p, selectedFys)) return false
 
         // Scope filter
         if (scopeFilter === 'mine' && !isMine) return false
@@ -437,7 +501,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         else cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
         return sortAsc ? cmp : -cmp
       })
-  }, [projects, isAdminOrOwner, session.username, session.user_id, scopeFilter, search, searchType, statusFilter, showArchived, sortBy, sortAsc, savedClients])
+  }, [projects, isAdminOrOwner, session.username, session.user_id, scopeFilter, selectedFys, search, searchType, statusFilter, showArchived, sortBy, sortAsc, savedClients, viewMode])
 
   // Group filtered projects into Project Folders
   const projectFolders = useMemo(() => {
@@ -582,6 +646,16 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     if (!nm) return toast('Revision name cannot be empty', 'err')
     try {
       const res = await api.projectDuplicate(session.token, reviseProj.id, nm, false)
+      const revNow = new Date()
+      const revSummary = {
+        ...(reviseProj.summary || {}),
+        fy: getFiscalYear(revNow),
+        client_info: {
+          ...(reviseProj.summary?.client_info || {}),
+          qtn_no: buildOfficialQtnNo(res.name || nm, revNow),
+          date: formatPdfDate(revNow),
+        },
+      }
       try {
         await api.projectUpdate(
           session.token,
@@ -591,7 +665,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           reviseProj.inputs,
           reviseProj.formula_overrides,
           reviseProj.total,
-          reviseProj.summary,
+          revSummary,
           `Revision ${res.name} created - Status set to Quoted`,
         )
       } catch (err) {
@@ -603,7 +677,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           reviseProj.inputs,
           reviseProj.formula_overrides,
           reviseProj.total,
-          reviseProj.summary,
+          revSummary,
           `Revision ${res.name} created`,
         )
       }
@@ -638,6 +712,16 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
     if (!nm) return toast('Duplicate project name cannot be empty', 'err')
     try {
       const res = await api.projectDuplicate(session.token, duplicateProj.id, nm, dupUseLatest)
+      const dupNow = new Date()
+      const dupSummary = {
+        ...(duplicateProj.summary || {}),
+        fy: getFiscalYear(dupNow),
+        client_info: {
+          ...(duplicateProj.summary?.client_info || {}),
+          qtn_no: buildOfficialQtnNo(res.name || nm, dupNow),
+          date: formatPdfDate(dupNow),
+        },
+      }
       try {
         await api.projectUpdate(
           session.token,
@@ -647,7 +731,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
           duplicateProj.inputs,
           duplicateProj.formula_overrides,
           duplicateProj.total,
-          duplicateProj.summary,
+          dupSummary,
           `Quotation ${nm} created as copy - Status set to Quoted`,
         )
       } catch {}
@@ -864,15 +948,28 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         </td>
         <td>
           {(() => {
-            const clientInfo = p.summary?.client_info
+              const clientInfo = p.summary?.client_info
             const clientName = clientInfo?.buyer_name || ''
             const qtnNo = clientInfo?.qtn_no
+            const rowFy = getProjectFiscalYear(p)
             const city = clientInfo?.buyer_city || ''
             const address = clientInfo?.buyer_address || ''
-            if (!clientName) return <span className="muted tiny">—</span>
+            if (!clientName) {
+              return (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span className="muted tiny">—</span>
+                  <span className="chip sm font-mono" style={{ fontSize: '10px', background: '#f1f5f9', color: '#475569' }}>FY {rowFy}</span>
+                </div>
+              )
+            }
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <strong style={{ color: '#0f172a', fontSize: '12px' }}>{clientName}</strong>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <strong style={{ color: '#0f172a', fontSize: '12px' }}>{clientName}</strong>
+                  <span className="chip sm font-mono" style={{ fontSize: '10px', background: rowFy === currentFy ? '#eff6ff' : '#f1f5f9', color: rowFy === currentFy ? '#1d4ed8' : '#475569' }}>
+                    FY {rowFy}
+                  </span>
+                </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   {qtnNo && <span className="tiny font-mono text-muted" style={{ fontSize: '10.5px' }}>{qtnNo}</span>}
                   {(city || address) && (
@@ -1080,7 +1177,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             className="search-input"
             placeholder={
               searchType === 'qtn'
-                ? 'Search by quotation # (e.g. MSSLP/26-27/...), project name…'
+                ? `Search by quotation # (e.g. MSSLP/${currentFy}/...), project name…`
                 : searchType === 'client'
                 ? 'Search by client, company name, kind attn, person…'
                 : searchType === 'address'
@@ -1106,6 +1203,141 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
         </div>
 
         <div className="filter-controls">
+          {/* Financial Year (FY) Multi-Select Filter Dropdown — Defaults to Current FY */}
+          <div ref={fyDropdownRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setFyDropdownOpen((o) => !o)}
+              title="Filter quotations by Financial Year (default: Current FY). Select All FY or multiple years."
+              style={{
+                height: '30px',
+                border: selectedFys.includes('ALL') || selectedFys.length > 1 || selectedFys[0] !== currentFy
+                  ? '1.5px solid #2563eb'
+                  : '1px solid #cbd5e1',
+                background: selectedFys.includes('ALL') || selectedFys.length > 1 || selectedFys[0] !== currentFy
+                  ? '#eff6ff'
+                  : '#ffffff',
+                color: '#1e293b',
+                fontWeight: 600,
+                fontSize: '12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '0 10px',
+                borderRadius: '6px',
+              }}
+            >
+              <span>📅 {fyButtonLabel}</span>
+              <span style={{ fontSize: '10px', opacity: 0.7 }}>{fyDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {fyDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  left: 0,
+                  zIndex: 60,
+                  minWidth: '220px',
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 25px rgba(15, 23, 42, 0.14)',
+                  padding: '6px',
+                }}
+              >
+                <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Financial Year Filter
+                </div>
+
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: selectedFys.includes('ALL') ? '#eff6ff' : 'transparent',
+                    color: selectedFys.includes('ALL') ? '#1d4ed8' : '#0f172a',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedFys.includes('ALL')}
+                      onChange={toggleAllFys}
+                    />
+                    <span>All FY</span>
+                  </span>
+                  <span className="tiny muted">{projects.length}</span>
+                </label>
+
+                <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
+
+                <div style={{ maxHeight: '190px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {availableFys.map((fy) => {
+                    const checked = !selectedFys.includes('ALL') && selectedFys.includes(fy)
+                    const isCurr = fy === currentFy
+                    return (
+                      <label
+                        key={fy}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: isCurr ? 700 : 500,
+                          background: checked ? '#f0fdf4' : 'transparent',
+                          color: '#0f172a',
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSingleFy(fy)}
+                          />
+                          <span>FY {fy}{isCurr ? ' (Current)' : ''}</span>
+                        </span>
+                        <span className="tiny muted">{fyCounts[fy] || 0}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #e2e8f0' }}>
+                  <button
+                    type="button"
+                    className="link-inline tiny"
+                    onClick={() => {
+                      setSelectedFys([currentFy])
+                      setFyDropdownOpen(false)
+                    }}
+                  >
+                    Reset to Current FY
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{ padding: '2px 8px', fontSize: '11px' }}
+                    onClick={() => setFyDropdownOpen(false)}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Scope Filter Tabs: All, My Quotations, Shared with Me */}
           <div className="status-tabs scope-filter-tabs">
             <button

@@ -18,7 +18,7 @@ import { api, Member, Org, Project, Session, Template } from '../lib/api'
 import { DEFAULT_NAMED_CONSTANTS, Overrides, SheetData, Workbook } from '../lib/engine'
 import { inr, timeAgo } from '../lib/format'
 import { cleanOverrides, extractTemplateDefaults, summarize, filterCutToCutOverrides } from '../lib/model'
-import { formatInitialProjectName, parseRevision } from '../lib/revision'
+import { buildOfficialQtnNo, formatInitialProjectName, formatPdfDate, getFiscalYear, parseRevision } from '../lib/revision'
 import { cleanCopiedText, fuzzyTextMatch } from '../lib/cleanText'
 import { getSavedClients, fetchClientsFromSupabase, SavedClient } from '../lib/clientDirectory'
 import { Navigation, NavTab } from './Navigation'
@@ -497,6 +497,13 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
           },
         ]
       }
+      const nowDate = new Date()
+      initialSummary.fy = getFiscalYear(nowDate)
+      initialSummary.client_info = {
+        ...(initialSummary.client_info || {}),
+        qtn_no: buildOfficialQtnNo(nm, nowDate),
+        date: formatPdfDate(nowDate),
+      }
       const res = await api.projectCreate(
         session.token,
         org.id,
@@ -651,9 +658,20 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       const inputsToSave = latestData?.inputs || currentProject.inputs
       const foToSave = latestData?.formula_overrides || currentProject.formula_overrides
       const totalToSave = latestData?.total ?? currentProject.total
-      const summaryToSave = latestData?.summary
+      const rawSummaryToSave = latestData?.summary
         ? { ...currentProject.summary, ...latestData.summary }
-        : currentProject.summary
+        : (currentProject.summary || {})
+      const revNow = new Date()
+      const currentRevFy = getFiscalYear(revNow)
+      const summaryToSave = {
+        ...rawSummaryToSave,
+        fy: currentRevFy,
+        client_info: {
+          ...(rawSummaryToSave.client_info || {}),
+          qtn_no: buildOfficialQtnNo(res.name || copyName, revNow),
+          date: formatPdfDate(revNow),
+        },
+      }
 
       try {
         await api.projectUpdate(

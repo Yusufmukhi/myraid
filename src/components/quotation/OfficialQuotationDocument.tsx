@@ -8,7 +8,14 @@ import { Project, api, tokenStore } from '../../lib/api'
 import { inr } from '../../lib/format'
 import { Workbook } from '../../lib/engine'
 import { Summary, getWidthExtra } from '../../lib/model'
-import { buildOfficialQtnNo, extractQuotationCode, getFiscalYear } from '../../lib/revision'
+import {
+  buildOfficialQtnNo,
+  extractQuotationCode,
+  formatPdfDate,
+  getFiscalYear,
+  getProjectFiscalYear,
+  syncQtnNoFiscalYear,
+} from '../../lib/revision'
 import {
   getSavedClients,
   getVisibleClientsForUser,
@@ -973,7 +980,7 @@ export function OfficialQuotationDocument({
   // 1. Initial Client Fields
   const initialClientInfo = useMemo<QuotationClientInfo>(() => {
     const saved = project.summary?.client_info || {}
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+    const today = formatPdfDate(new Date())
     const currentA3 = Number(project.inputs?.['Total cal!A3'] ?? (wb ? wb.num('Total cal', 'A3') : undefined))
     const currentD3 = Number(project.inputs?.['Total cal!D3'] ?? (wb ? wb.num('Total cal', 'D3') : undefined))
     const fallbackBay =
@@ -987,15 +994,16 @@ export function OfficialQuotationDocument({
     const expectedBayPart = formatSubjectBayPart(systemBays)
     const defaultSubject = `QUOTATION FOR SUPPLY ${expectedBayPart} BAY MECHANICAL MOBILE COMPACTOR`
 
-    // Generate standard official QTN NO based on project name and fiscal year:
-    // e.g. "QTY NO 123" -> MSSLP/26-27/MT-SL/123
-    // e.g. "QTY NO 123-A" -> MSSLP/26-27/MT-SL/123-A
-    const generatedQtnNo = buildOfficialQtnNo(project.name, saved.date || today)
+    // Generate / sync official QTN NO using the quotation's Financial Year (April 1 - March 31)
+    const projectFy = getProjectFiscalYear(project)
+    const generatedQtnNo = buildOfficialQtnNo(project.name, project.created_at || today)
     const isOldDummy = saved.qtn_no === 'MSSLP/26-27/MT-SL/3167-A'
     const projectCode = extractQuotationCode(project.name)
     const savedCode = saved.qtn_no ? extractQuotationCode(saved.qtn_no) : ''
     const isMismatchedRevision = Boolean(projectCode && savedCode && projectCode !== savedCode)
-    const effectiveQtnNo = (!saved.qtn_no || isOldDummy || isMismatchedRevision) ? generatedQtnNo : saved.qtn_no
+    const effectiveQtnNo = (!saved.qtn_no || isOldDummy || isMismatchedRevision)
+      ? generatedQtnNo
+      : syncQtnNoFiscalYear(saved.qtn_no, projectFy)
 
     const effectiveBuyerName = (saved.buyer_name && saved.buyer_name !== 'Patil Group') ? saved.buyer_name : ''
     const dirMatch = effectiveBuyerName
@@ -1057,7 +1065,7 @@ export function OfficialQuotationDocument({
     return {
       client_id: saved.client_id || dirMatch?.id || '',
       qtn_no: effectiveQtnNo,
-      date: saved.date || today,
+      date: today,
       buyer_name: effectiveBuyerName,
       buyer_address: resolvedAddress,
       buyer_gst: resolvedGst,
@@ -1104,6 +1112,21 @@ export function OfficialQuotationDocument({
 
   const { toast } = useUI()
   const [clientInfo, setClientInfo] = useState<QuotationClientInfo>(initialClientInfo)
+  const manualDateEditedRef = useRef(false)
+  useEffect(() => {
+    manualDateEditedRef.current = false
+  }, [project.id])
+
+  const handleClientDateChange = (nextDate: string) => {
+    manualDateEditedRef.current = true
+    const trimmed = nextDate.trim()
+    const isCompleteDate = /^\d{2}[-/]\d{2}[-/]\d{4}$/.test(trimmed) || /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(trimmed)
+    setClientInfo((prev) => ({
+      ...prev,
+      date: nextDate,
+      qtn_no: isCompleteDate ? syncQtnNoFiscalYear(prev.qtn_no, getFiscalYear(trimmed)) : prev.qtn_no,
+    }))
+  }
   const [activeSidebarTab, setActiveSidebarTab] = useState<'options' | 'breakdown' | 'client' | 'terms' | 'body' | 'specs'>('options')
   const [specsSubTab, setSpecsSubTab] = useState<'page3' | 'page4' | 'page5'>('page3')
   const [justSaved, setJustSaved] = useState(false)
@@ -2777,6 +2800,15 @@ export function OfficialQuotationDocument({
     }
   }
 
+  const ensureDownloadDateSynced = async () => {
+    if (manualDateEditedRef.current) return
+    const downloadToday = formatPdfDate(new Date())
+    if (clientInfo.date !== downloadToday) {
+      setClientInfo((prev) => ({ ...prev, date: downloadToday }))
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+  }
+
   const handleDirectDownload = async () => {
     if (!grandTotal || grandTotal <= 0 || isNaN(grandTotal)) {
       toast('Quotation calculations are incomplete or total is 0. Please verify specifications before downloading PDF.', 'err')
@@ -2784,6 +2816,7 @@ export function OfficialQuotationDocument({
     }
     setIsGeneratingPdf(true)
     try {
+      await ensureDownloadDateSynced()
       const generated = await generatePdfInstance()
       if (!generated) {
         handlePrint()
@@ -2866,6 +2899,7 @@ export function OfficialQuotationDocument({
     }
     setIsGeneratingPdf(true)
     try {
+      await ensureDownloadDateSynced()
       const generated = await generatePdfInstance()
       if (!generated) {
         toast('Could not render quotation PDF for WhatsApp sharing', 'err')
@@ -2952,28 +2986,40 @@ export function OfficialQuotationDocument({
       toast('Quotation calculations are incomplete or total is 0. Please verify specifications before printing.', 'err')
       return
     }
-    const fileName = getQuotationFileName()
-    const prevTitle = document.title
-    document.title = fileName
-    window.print()
+    const triggerPrint = () => {
+      const fileName = getQuotationFileName()
+      const prevTitle = document.title
+      document.title = fileName
+      window.print()
 
-    // Record in Activity Log
-    const token = tokenStore.get()
-    if (token && effectiveOrgId) {
-      api.logActivity(token, effectiveOrgId, 'pdf_downloaded', {
-        name: project.name,
-        file_name: fileName,
-        buyer_name: clientInfo.buyer_name || 'Direct Buyer',
-        qtn_no: clientInfo.qtn_no || '',
-        total: grandTotal,
-        mode: effectiveQuotationMode,
-        method: 'print_dialog',
-      }, project.id).catch(() => {})
+      // Record in Activity Log
+      const token = tokenStore.get()
+      if (token && effectiveOrgId) {
+        api.logActivity(token, effectiveOrgId, 'pdf_downloaded', {
+          name: project.name,
+          file_name: fileName,
+          buyer_name: clientInfo.buyer_name || 'Direct Buyer',
+          qtn_no: clientInfo.qtn_no || '',
+          total: grandTotal,
+          mode: effectiveQuotationMode,
+          method: 'print_dialog',
+        }, project.id).catch(() => {})
+      }
+
+      setTimeout(() => {
+        document.title = prevTitle
+      }, 2000)
     }
 
-    setTimeout(() => {
-      document.title = prevTitle
-    }, 2000)
+    if (!manualDateEditedRef.current) {
+      const downloadToday = formatPdfDate(new Date())
+      if (clientInfo.date !== downloadToday) {
+        setClientInfo((prev) => ({ ...prev, date: downloadToday }))
+        setTimeout(triggerPrint, 40)
+        return
+      }
+    }
+    triggerPrint()
   }
 
   const handleSave = async () => {
@@ -6840,7 +6886,7 @@ export function OfficialQuotationDocument({
                       type="text"
                       className="option-input-field"
                       value={clientInfo.date}
-                      onChange={(e) => setClientInfo({ ...clientInfo, date: e.target.value })}
+                      onChange={(e) => handleClientDateChange(e.target.value)}
                     />
                   </div>
 

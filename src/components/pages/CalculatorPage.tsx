@@ -1716,14 +1716,9 @@ export function CalculatorPage({
       return
     }
     if (!isAdminOrOwner && !isSharedLocked) {
-      const liveSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
+      const savedSales = Number(project.total || project.summary?.sales || 0)
       const nextSummary = {
-        ...project.summary,
-        ...summary,
-        systems,
-        quotation_sets: compiledSets,
-        profit_pct: profitPct,
-        discount_pct: discountPct,
+        ...(project.summary || {}),
         shared_locked: true,
         locked_after_share: true,
       }
@@ -1732,13 +1727,13 @@ export function CalculatorPage({
         project.id,
         project.name,
         project.status,
-        cleanOverrides(wb, overrides),
-        formulaOverrides,
-        liveSales,
+        project.inputs || {},
+        project.formula_overrides || {},
+        savedSales,
         nextSummary,
         `Quotation locked after official quotation opened by @${session.username}`
       ).then(() => {
-        onProjectUpdated({ ...project, summary: nextSummary, total: liveSales })
+        onProjectUpdated({ ...project, summary: nextSummary, total: savedSales })
       }).catch(() => {})
     }
     setShowOfficialQuotation(true)
@@ -2675,6 +2670,52 @@ export function CalculatorPage({
     sets?: any[],
     extraSettings?: Record<string, any>
   ) => {
+    if (dirty) {
+      // Preserve last saved calculator specs/inputs when calculator has unsaved changes;
+      // only persist PDF client info, line items, body items, and PDF settings.
+      const savedBaseSummary = project.summary || {}
+      const updatedSummary = {
+        ...savedBaseSummary,
+        client_info: {
+          ...clientInfo,
+          client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
+        },
+        client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
+        quotation_items: items,
+        body_items: bodyItems,
+        quotation_mode: extraSettings?.quotation_mode || savedBaseSummary.quotation_mode || quotationMode,
+        extra_amount: extraSettings?.extra_amount !== undefined ? extraSettings.extra_amount : (savedBaseSummary.extra_amount ?? extraAmount),
+        ...(sets ? { quotation_sets: sets } : {}),
+        ...(extraSettings || {}),
+      }
+      const savedTotal = Number(project.total ?? savedBaseSummary.sales ?? 0)
+      const updatedProject: Project = {
+        ...project,
+        summary: updatedSummary,
+      }
+      try {
+        await api.projectUpdate(
+          session.token,
+          project.id,
+          project.name,
+          project.status,
+          project.inputs || {},
+          project.formula_overrides || {},
+          savedTotal,
+          updatedSummary,
+          'Updated official quotation client details'
+        )
+        toast('Quotation PDF details saved (unsaved calculator changes kept local until Save is clicked)')
+        if (onProjectUpdated) {
+          onProjectUpdated(updatedProject)
+        }
+      } catch (err) {
+        toast((err as Error).message, 'err')
+        throw err
+      }
+      return
+    }
+
     const nextOverrides = { ...overrides }
     if (extraSettings?.__profit_pct !== undefined) {
       nextOverrides['__profit_pct'] = extraSettings.__profit_pct
@@ -7493,44 +7534,77 @@ export function CalculatorPage({
 
 
 
-      {/* Official 2-Page Quotation Document (Exact Myriad Storage System LLP Format) */}
+      {/* Official 2-Page Quotation Document — ALWAYS renders ONLY last saved quotation data */}
 
       {showOfficialQuotation && (() => {
-        wb.setFormulaOverrides(formulaOverrides)
-        wb.setOverrides(overrides)
-        const liveProject: Project = {
-          ...project,
-          name,
-          status,
-          inputs: overrides,
-          formula_overrides: formulaOverrides,
-          summary: {
-            ...project.summary,
-            ...summary,
-            quotation_mode: project.summary?.quotation_mode === 'unit_breakdown' ? 'unit_breakdown' : quotationMode,
-            systems: getEffectiveSystems(overrides, formulaOverrides),
-            quotation_sets: compiledSets,
-            include_installation: includeInstallation,
-            extra_amount: extraAmount,
-            profit_pct: profitPct,
-            discount_pct: discountPct,
-          },
-        }
+        const savedInputs = project.inputs || {}
+        const savedFO = project.formula_overrides || {}
+        const savedSumObj: any = project.summary || {}
+        const savedWb = new Workbook(
+          { sheets: Array.from(wb.sheets.values()) },
+          wb.getNamedConstants(),
+        )
+        savedWb.setTemplateDefaults(wb.getTemplateDefaults())
+        savedWb.setFormulaOverrides(savedFO)
+        savedWb.setOverrides(savedInputs)
+
+        const savedProfitPct = savedSumObj.profit_pct !== undefined
+          ? Number(savedSumObj.profit_pct)
+          : (savedInputs['__profit_pct'] !== undefined ? Number(savedInputs['__profit_pct']) : 25)
+        const savedDiscountPct = savedSumObj.discount_pct !== undefined
+          ? Number(savedSumObj.discount_pct)
+          : (savedInputs['__discount_pct'] !== undefined ? Number(savedInputs['__discount_pct']) : 0)
+        const savedIncInst = savedSumObj.include_installation !== undefined
+          ? Boolean(savedSumObj.include_installation)
+          : (savedInputs['__include_installation'] !== undefined ? Number(savedInputs['__include_installation']) !== 0 : true)
+        const savedExtra = savedSumObj.extra_amount !== undefined
+          ? Number(savedSumObj.extra_amount)
+          : (savedInputs['__extra_amount'] !== undefined ? Number(savedInputs['__extra_amount']) : 0)
+
+        const savedSummary: Summary = (!dirty && !savedSumObj.models)
+          ? summary
+          : (savedSumObj.models ? (savedSumObj as Summary) : summarize(savedWb, savedProfitPct, savedDiscountPct, savedIncInst, savedExtra))
+
+        const savedQuotationMode: 'set_wise' | 'unit_wise' | 'unit_breakdown' =
+          savedSumObj.quotation_mode || (!dirty ? quotationMode : 'set_wise')
+
+        const savedSets = (Array.isArray(savedSumObj.quotation_sets) && savedSumObj.quotation_sets.length > 0)
+          ? savedSumObj.quotation_sets
+          : (!dirty ? compiledSets : [])
+
+        const savedCombinedBodies = savedSumObj.total_combined_bodies ?? (savedSets.length > 0 ? undefined : (!dirty ? totalCombinedBodies : savedSummary.bodies))
+
+        const savedProject: Project = dirty
+          ? project
+          : {
+              ...project,
+              summary: {
+                ...savedSumObj,
+                ...savedSummary,
+                quotation_mode: savedQuotationMode,
+                systems: savedSumObj.systems || getEffectiveSystems(savedInputs, savedFO),
+                quotation_sets: savedSets,
+                include_installation: savedIncInst,
+                extra_amount: savedExtra,
+                profit_pct: savedProfitPct,
+                discount_pct: savedDiscountPct,
+              },
+            }
 
         return (
           <OfficialQuotationDocument
-            project={liveProject}
-            summary={summary}
-            wb={wb}
+            project={savedProject}
+            summary={savedSummary}
+            wb={savedWb}
             role={org.role}
             isAdminOrOwner={isAdminOrOwner}
             orgId={org.id}
             username={session.username}
             userId={session.user_id}
-            initialQuotationMode={quotationMode}
-            initialExtraAmount={extraAmount}
-            initialSets={compiledSets}
-            totalCombinedBodies={totalCombinedBodies}
+            initialQuotationMode={savedQuotationMode}
+            initialExtraAmount={savedExtra}
+            initialSets={savedSets}
+            totalCombinedBodies={savedCombinedBodies}
             isUnsavedWarning={dirty}
             onClose={() => setShowOfficialQuotation(false)}
             onSaveClientInfo={handleSaveClientQuotationData}

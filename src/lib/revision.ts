@@ -35,17 +35,31 @@ export function getFiscalYear(dateInput?: Date | string): string {
   let d = new Date()
   if (dateInput) {
     if (typeof dateInput === 'string') {
-      const parts = dateInput.trim().split(/[-/]/)
-      if (parts.length === 3) {
-        if (parts[0].length === 4) {
-          // YYYY-MM-DD
-          d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
-        } else if (parts[2].length === 4) {
-          // DD-MM-YYYY
-          d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10))
+      const trimmed = dateInput.trim()
+      // Handle ISO timestamps like "2026-02-15T10:30:00Z" cleanly using local/UTC date portion
+      const isoPrefixMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      if (isoPrefixMatch) {
+        d = new Date(
+          parseInt(isoPrefixMatch[1], 10),
+          parseInt(isoPrefixMatch[2], 10) - 1,
+          parseInt(isoPrefixMatch[3], 10),
+        )
+      } else {
+        const parts = trimmed.split(/[-/]/)
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            // YYYY-MM-DD
+            d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+          } else if (parts[2].length === 4) {
+            // DD-MM-YYYY
+            d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10))
+          }
+        } else {
+          const parsed = new Date(trimmed)
+          if (!isNaN(parsed.getTime())) d = parsed
         }
       }
-    } else {
+    } else if (!isNaN(dateInput.getTime())) {
       d = dateInput
     }
   }
@@ -57,19 +71,99 @@ export function getFiscalYear(dateInput?: Date | string): string {
 }
 
 /**
- * Extracts the clean quotation number/code from project name.
+ * Formats a date as DD-MM-YYYY for Official PDF Quotation Date.
+ */
+export function formatPdfDate(dateInput: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(dateInput.getDate())}-${pad(dateInput.getMonth() + 1)}-${dateInput.getFullYear()}`
+}
+
+/**
+ * Extracts explicit FY segment (e.g. "26-27") from an MSSLP QTN string if present.
+ */
+export function extractFiscalYearFromQtnNo(qtnNo?: string): string | null {
+  if (!qtnNo) return null
+  const m = qtnNo.trim().match(/^MSSLP\/(\d{2}-\d{2})(?:\/|$)/i)
+  return m ? m[1] : null
+}
+
+/**
+ * Replaces the FY segment inside an MSSLP/{fy}/... quotation number cleanly.
+ */
+export function syncQtnNoFiscalYear(qtnNo: string, fy: string): string {
+  const trimmed = (qtnNo || '').trim()
+  if (!trimmed || !/^\d{2}-\d{2}$/.test(fy)) return qtnNo
+  const m = trimmed.match(/^(MSSLP\/)\d{2}-\d{2}(\/.*)$/i)
+  if (m) {
+    return `MSSLP/${fy}${m[2]}`
+  }
+  return qtnNo
+}
+
+/**
+ * Resolves the authoritative Financial Year ("25-26", "26-27", etc.) for a quotation project.
+ * Prioritizes project creation date (`created_at`) so quotations belong to the FY in which they were issued/revised.
+ */
+export function getProjectFiscalYear(project: { created_at?: string; summary?: any }): string {
+  const explicitSummaryFy = project?.summary?.fy
+  if (typeof explicitSummaryFy === 'string' && /^\d{2}-\d{2}$/.test(explicitSummaryFy.trim())) {
+    return explicitSummaryFy.trim()
+  }
+  if (project?.created_at) {
+    const parsed = new Date(project.created_at)
+    if (!isNaN(parsed.getTime())) {
+      return getFiscalYear(project.created_at)
+    }
+  }
+  const qtnFy = extractFiscalYearFromQtnNo(project?.summary?.client_info?.qtn_no)
+  if (qtnFy) return qtnFy
+  if (project?.summary?.client_info?.date) {
+    return getFiscalYear(project.summary.client_info.date)
+  }
+  return getFiscalYear()
+}
+
+/**
+ * Returns sorted unique Financial Years present across projects (newest first), always including currentFy.
+ */
+export function getAvailableFiscalYears(
+  projects: Array<{ created_at?: string; summary?: any }>,
+  currentFy: string = getFiscalYear(),
+): string[] {
+  const set = new Set<string>([currentFy])
+  for (const p of projects || []) {
+    const fy = getProjectFiscalYear(p)
+    if (fy) set.add(fy)
+  }
+  return Array.from(set).sort((a, b) => b.localeCompare(a))
+}
+
+/**
+ * Checks whether a project matches the active FY multi-select filter (where ['ALL'] allows every FY).
+ */
+export function matchesFiscalYearFilter(
+  project: { created_at?: string; summary?: any },
+  selectedFys: string[],
+): boolean {
+  if (!selectedFys || selectedFys.length === 0 || selectedFys.includes('ALL')) {
+    return true
+  }
+  return selectedFys.includes(getProjectFiscalYear(project))
+}
+
+/**
+ * Extracts the clean quotation number/code from project name or official MSSLP reference.
  * e.g. "QTY NO 123" -> "123"
  * e.g. "QTY NO 123-A" -> "123-A"
  * e.g. "QTY NO 123 - Rev A" -> "123-A"
- * e.g. "QTY NO: 4183" -> "4183"
+ * e.g. "MSSLP/25-26/MT-SL/123-A" -> "123-A"
  */
 export function extractQuotationCode(projectName: string): string {
   if (!projectName) return ''
   let cleaned = projectName.trim()
 
-  if (cleaned.startsWith('MSSLP/')) {
-    return cleaned
-  }
+  // Strip MSSLP/{fy}/MT-SL/ or MSSLP/{fy}/ prefix if provided
+  cleaned = cleaned.replace(/^MSSLP\/\d{2}-\d{2}\/(?:MT-SL\/)?/i, '').trim()
 
   // Remove leading "QTY NO", "QTN NO", "QTY NO:", "QTN NO:", "QTY:", "QTN:", "QTY", "QTN"
   cleaned = cleaned.replace(/^(?:QTY|QTN)\s*(?:NO|NUM|NUMBER)?\s*[:\-_/.]*\s*/i, '').trim()
@@ -94,9 +188,6 @@ export function extractQuotationCode(projectName: string): string {
  */
 export function buildOfficialQtnNo(projectName: string, dateInput?: Date | string): string {
   const trimmed = (projectName || '').trim()
-  if (trimmed.startsWith('MSSLP/')) {
-    return trimmed
-  }
   const fy = getFiscalYear(dateInput)
   const code = extractQuotationCode(trimmed) || '101'
   return `MSSLP/${fy}/MT-SL/${code}`
