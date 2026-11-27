@@ -4166,6 +4166,119 @@ async function runAllTests() {
     logResult(67, 'Comprehensive End-to-End Multi-Quotation Stress Simulation (8 Real Quotes)', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 68: Staff Security & Cost-Control Hardening (Items 1, 3, 4, 5 — leaving B49 editable)
+  // -------------------------------------------------------------------------
+  try {
+    const { isStaffDiscountBlocked, sanitizePdfExtraSettingsForRole } = await import('../src/components/pages/CalculatorPage')
+    const staffSec = await import('../supabase/functions/calculate/staffSecurity')
+
+    const secFailures: string[] = []
+
+    // Item 1: Discount limit enforcement
+    if (isStaffDiscountBlocked(false, 10, null)) secFailures.push('10% staff discount should be allowed')
+    if (!isStaffDiscountBlocked(false, 15, null)) secFailures.push('15% staff discount without request must be blocked')
+    if (!isStaffDiscountBlocked(false, 15, { requested_pct: 15, status: 'pending' })) secFailures.push('15% pending request must remain blocked')
+    if (!isStaffDiscountBlocked(false, 18, { requested_pct: 15, status: 'approved' })) secFailures.push('18% discount vs 15% approved request must be blocked')
+    if (isStaffDiscountBlocked(false, 15, { requested_pct: 15, status: 'approved' })) secFailures.push('15% matching approved request should be allowed')
+    if (isStaffDiscountBlocked(true, 40, null)) secFailures.push('Admin discount must not be blocked by staff cap')
+
+    // Item 3: Staff calculation security (blocks formulas/c2c/base rates/H3/M3/C26/__profit_pct, LEAVES B49 editable)
+    if (!staffSec.hasStaffForbiddenFormulaOrC2COverrides({ systems: [{ c2c_overrides: { 'Total cal!H3': 50 } }] })) {
+      secFailures.push('Nested system c2c_overrides must be flagged as forbidden for staff')
+    }
+    const sanitizedOv = staffSec.sanitizeStaffOverrides(
+      {
+        'Total cal!B49': 450, // Item #2 skipped: Labour per Body MUST remain editable by staff
+        'Total cal!H3': 10,
+        'Total cal!M3': 5,
+        'Total cal!C26': -50,
+        '__profit_pct': -30,
+        'Total cal!D4': 100,
+        'Total cal!N4': 100,
+        'Total cal!G4': 12,
+      },
+      {
+        'Total cal!H3': 92,
+        'Total cal!C26': 28,
+        '__profit_pct': 28,
+      },
+    )
+    if (sanitizedOv['Total cal!B49'] !== 450) secFailures.push('Total cal!B49 (Labour/Body) must remain editable by staff')
+    if (sanitizedOv['Total cal!G4'] !== 12) secFailures.push('Unit quantity G4 must remain editable by staff')
+    if (sanitizedOv['Total cal!H3'] !== 92 || sanitizedOv['Total cal!M3'] !== undefined || sanitizedOv['Total cal!C26'] !== 28 || sanitizedOv['__profit_pct'] !== 28 || sanitizedOv['Total cal!D4'] !== undefined || sanitizedOv['Total cal!N4'] !== undefined) {
+      secFailures.push(`Protected rate keys were not sanitized properly: ${JSON.stringify(sanitizedOv)}`)
+    }
+    if (staffSec.resolveAuthoritativeStaffProfitPct(null, 32) !== 32) {
+      secFailures.push('Authoritative client margin should apply when project has no saved profit override')
+    }
+    if (staffSec.resolveAuthoritativeStaffDiscountPct(25, { status: 'quoted', summary: {} }) !== 10) {
+      secFailures.push('Unapproved 25% discount must clamp to 10% server-side')
+    }
+    if (staffSec.resolveAuthoritativeStaffDiscountPct(5, { status: 'quoted', summary: { shared_locked: true, discount_pct: 8 } }) !== 8) {
+      secFailures.push('Shared-locked discount must stay locked at DB discount_pct')
+    }
+
+    // Item 4 & 5: Source/SQL verification across Frontend, Edge Function, Schema, and Migration patch
+    const safeExtra = sanitizePdfExtraSettingsForRole(false, {
+      extra_amount: 50000,
+      __profit_pct: -20,
+      discount_pct: 50,
+      include_technical_pages: true,
+    })
+    if ('extra_amount' in safeExtra || '__profit_pct' in safeExtra || 'discount_pct' in safeExtra || safeExtra.include_technical_pages !== true) {
+      secFailures.push(`sanitizePdfExtraSettingsForRole failed: ${JSON.stringify(safeExtra)}`)
+    }
+
+    const wsSrc = fs.readFileSync('src/components/Workspace.tsx', 'utf8')
+    const pdfSrc = fs.readFileSync('src/components/quotation/OfficialQuotationDocument.tsx', 'utf8')
+    const calcSrc = fs.readFileSync('src/components/pages/CalculatorPage.tsx', 'utf8')
+    const edgeSrc = fs.readFileSync('supabase/functions/calculate/index.ts', 'utf8')
+    const schemaSrc = fs.readFileSync('supabase/schema.sql', 'utf8')
+    const patchSrc = fs.readFileSync('supabase/patch_security_3_staff_hardening.sql', 'utf8')
+
+    if (!wsSrc.includes("tab === 'members' && isAdminOrOwner") || !wsSrc.includes("tab === 'activity' && isAdminOrOwner")) {
+      secFailures.push('Workspace.tsx missing isAdminOrOwner tab render guards')
+    }
+    if (!pdfSrc.includes('{userIsAdmin && (') || !pdfSrc.includes('...(userIsAdmin ? { extra_amount: extraAmount, __profit_pct: profitPct } : {})')) {
+      secFailures.push('OfficialQuotationDocument.tsx missing userIsAdmin guards on extra_amount/__profit_pct')
+    }
+    if (!calcSrc.includes('disabled={isApprovedLocked || isStaffRateLocked}') || !calcSrc.includes('disabled={!isAdminOrOwner && (isApprovedLocked || isStaffRateLocked)}')) {
+      secFailures.push('CalculatorPage.tsx missing shared/approved locks on discount/status')
+    }
+    if (!edgeSrc.includes('project_id?: string') || !edgeSrc.includes('resolveAuthoritativeStaffProfitPct')) {
+      secFailures.push('calculate Edge Function missing authoritative staff checks')
+    }
+    for (const [label, sqlText] of [['schema.sql', schemaSrc], ['patch_security_3_staff_hardening.sql', patchSrc]] as const) {
+      const checks = [
+        '_sanitize_summary_for_staff',
+        '_staff_sanitize_protected_inputs',
+        '_check_staff_discount_limit',
+        "if lower(coalesce(p.status, '')) in ('approved', 'won') then",
+        "to_jsonb(c) - 'profit_margin_pct'",
+        'include_full_proposal',
+        'Strictly authoritative verified total',
+      ]
+      for (const token of checks) {
+        if (!sqlText.includes(token)) {
+          secFailures.push(`${label} missing hardening token: ${token}`)
+        }
+      }
+      if (/as \$(?!\$)/m.test(sqlText)) {
+        secFailures.push(`${label} has corrupted single-$ delimiter`)
+      }
+    }
+
+    if (secFailures.length === 0) {
+      logResult(68, 'Staff Security & Cost-Control Hardening (Items 1, 3, 4, 5; B49 Editable)', 'PASSED',
+        'Verified 10% discount enforcement, pending vs approved request handling, server/DB locks on H3/M3/C26/D4..D20/formulas/C2C while keeping B49 editable, won/shared locks, PDF staff restrictions, and secret margin/C2C stripping in RPCs.')
+    } else {
+      logResult(68, 'Staff Security & Cost-Control Hardening (Items 1, 3, 4, 5; B49 Editable)', 'FAILED', secFailures.join(' | '))
+    }
+  } catch (e) {
+    logResult(68, 'Staff Security & Cost-Control Hardening (Items 1, 3, 4, 5; B49 Editable)', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

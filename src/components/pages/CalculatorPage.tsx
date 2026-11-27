@@ -54,6 +54,40 @@ import {
 
 
 
+export const MAX_STAFF_DISCOUNT_PCT = 10
+
+export function isStaffDiscountBlocked(
+  isAdminOrOwner: boolean,
+  discountPct: number,
+  discountRequest?: { requested_pct?: number; status?: string } | null
+): boolean {
+  if (isAdminOrOwner) return false
+  const pct = Number(discountPct || 0)
+  if (!(pct > MAX_STAFF_DISCOUNT_PCT)) return false
+  return !(
+    discountRequest?.status === 'approved' &&
+    Number(discountRequest.requested_pct) === pct
+  )
+}
+
+export function sanitizePdfExtraSettingsForRole(
+  isAdminOrOwner: boolean,
+  extraSettings: Record<string, any>
+): Record<string, any> {
+  if (isAdminOrOwner) return extraSettings
+  const {
+    __profit_pct: _p0,
+    profit_pct: _p1,
+    profitPct: _p2,
+    extra_amount: _ea,
+    discount_pct: _dp1,
+    discountPct: _dp2,
+    discount_request: _dr,
+    ...rest
+  } = extraSettings || {}
+  return rest
+}
+
 interface Props {
 
   session: Session
@@ -1297,7 +1331,6 @@ export function CalculatorPage({
     toast(mode === 'unit_wise' ? 'Switched to Individual Unit-Wise Mode' : 'Switched to System / Set-Wise Mode')
   }
 
-  const MAX_STAFF_DISCOUNT_PCT = 10
   const discountRequest = project.summary?.discount_request as {
     requested_pct: number
     requested_by: string
@@ -1338,64 +1371,54 @@ export function CalculatorPage({
 
 
   const handleSendDiscountRequest = async (pct: number) => {
-
     if (pct <= MAX_STAFF_DISCOUNT_PCT) return
-
     setIsSendingDiscountRequest(true)
-
     const newRequest = {
-
       requested_pct: pct,
-
       requested_by: session.username,
-
       requested_at: new Date().toISOString(),
-
       status: 'pending' as const,
-
     }
-
-    const updatedSystems = systems.map((s) => ({
-      ...s,
-      discountPct: pct,
-      overrides: { ...(s.overrides || {}), __discount_pct: pct },
-    }))
+    // Preserve currently active/approved discount until Owner/Admin approves the pending request
+    const savedBaseSummary = project.summary || {}
+    const savedDiscountRaw = Number(
+      savedBaseSummary.discount_pct ?? savedBaseSummary.discountPct ?? project.inputs?.['__discount_pct'] ?? 0
+    )
+    const savedReqApproved =
+      discountRequest?.status === 'approved' && Number(discountRequest.requested_pct) === savedDiscountRaw
+    const activeDiscountPct =
+      !isAdminOrOwner && savedDiscountRaw > MAX_STAFF_DISCOUNT_PCT && !savedReqApproved
+        ? MAX_STAFF_DISCOUNT_PCT
+        : Math.max(0, savedDiscountRaw)
+    const preservedInputs = {
+      ...(project.inputs || {}),
+      __discount_pct: activeDiscountPct,
+    }
     const updatedSummary = {
-      ...project.summary,
-      ...summary,
+      ...savedBaseSummary,
       discount_request: newRequest,
-      systems: updatedSystems,
-      quotation_sets: compiledSets,
-      profit_pct: profitPct,
-      discount_pct: pct,
+      discount_pct: activeDiscountPct,
     }
-    const finalSales = allSystemsTotals.sales || (summary.sales * activeSysQty)
+    const finalSales = Number(project.total ?? savedBaseSummary.sales ?? 0)
     try {
       await api.projectUpdate(
         session.token,
         project.id,
-        name,
-        status,
-        cleanOverrides(wb, { ...overrides, __discount_pct: pct }),
-        formulaOverrides,
+        project.name,
+        project.status,
+        cleanOverrides(wb, preservedInputs),
+        project.formula_overrides || formulaOverrides,
         finalSales,
         updatedSummary,
         `Staff @${session.username} submitted discount authorization request for ${pct}%`,
       )
-      onProjectUpdated({ ...project, summary: updatedSummary, total: finalSales })
-
+      onProjectUpdated({ ...project, inputs: cleanOverrides(wb, preservedInputs), summary: updatedSummary, total: finalSales })
       toast(`Discount approval request for ${pct}% sent to Owner and Administrators!`)
-
     } catch (e) {
-
       toast((e as Error).message, 'err')
-
     } finally {
-
       setIsSendingDiscountRequest(false)
-
     }
-
   }
 
 
@@ -1716,6 +1739,10 @@ export function CalculatorPage({
       toast('Calculating latest rates from server. Please wait a moment before opening PDF…', 'err')
       return
     }
+    if (isStaffDiscountBlocked(isAdminOrOwner, discountPct, discountRequest)) {
+      toast(`Discount (${discountPct}%) exceeds 10% and is not approved by Owner/Admin. Send a discount request or lower discount to ≤10%.`, 'err')
+      return
+    }
     if (!isAdminOrOwner && !isSharedLocked) {
       const savedSales = Number(project.total || project.summary?.sales || 0)
       const nextSummary = {
@@ -1885,6 +1912,7 @@ export function CalculatorPage({
 
         const result = await api.calculateServer(session.token, {
           org_id: org.id,
+          project_id: project.id,
           inputs: overrides,
           systems: effectiveSystems,
           active_system_idx: activeSystemIdx,
@@ -1899,28 +1927,40 @@ export function CalculatorPage({
 
         if (active && (result?.summary || result)) {
           const rawSum = result.summary || result
+          const useServerNumbersDirectly = !isAdminOrOwner && rawSum.costBase === undefined && rawSum.sales !== undefined
           const effCostBase = rawSum.costBase ?? (rawSum.subtotal + (rawSum.installation || 0) + (rawSum.transport || 0) + (rawSum.accommodation || 0) + (rawSum.extraAmount || 0) * (rawSum.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))
           const effProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (rawSum.profitPct || 25)
-          const effDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (rawSum.discountPct || 0)
+          const effDiscountPct = useServerNumbersDirectly
+            ? (rawSum.discountPct ?? 0)
+            : (discountPct !== undefined && !isNaN(discountPct) ? discountPct : (rawSum.discountPct || 0))
           const pAmount = effCostBase * (effProfitPct / 100)
           const subWithP = effCostBase + pAmount
-          const dAmount = subWithP * (effDiscountPct / 100)
-          const bGst = subWithP - dAmount
-          const g = bGst * 0.18
-          const s = Math.round(bGst + g)
+          const dAmount = useServerNumbersDirectly ? (rawSum.discountAmount ?? 0) : subWithP * (effDiscountPct / 100)
+          const bGst = useServerNumbersDirectly ? (rawSum.beforeGst ?? 0) : (subWithP - dAmount)
+          const g = useServerNumbersDirectly ? (rawSum.gst ?? bGst * 0.18) : (bGst * 0.18)
+          const s = useServerNumbersDirectly ? Math.round(rawSum.sales) : Math.round(bGst + g)
 
-          const normalizedSummary = {
-            ...rawSum,
-            costBase: effCostBase,
-            profitPct: effProfitPct,
-            profitAmount: pAmount,
-            subtotalWithProfit: subWithP,
-            discountPct: effDiscountPct,
-            discountAmount: dAmount,
-            beforeGst: bGst,
-            gst: g,
-            sales: s,
-          }
+          const normalizedSummary = useServerNumbersDirectly
+            ? {
+                ...rawSum,
+                discountPct: effDiscountPct,
+                discountAmount: dAmount,
+                beforeGst: bGst,
+                gst: g,
+                sales: s,
+              }
+            : {
+                ...rawSum,
+                costBase: effCostBase,
+                profitPct: effProfitPct,
+                profitAmount: pAmount,
+                subtotalWithProfit: subWithP,
+                discountPct: effDiscountPct,
+                discountAmount: dAmount,
+                beforeGst: bGst,
+                gst: g,
+                sales: s,
+              }
 
           setServerQuote({
             ...result,
@@ -2211,6 +2251,14 @@ export function CalculatorPage({
 
     }
 
+    if (isStaffDiscountBlocked(isAdminOrOwner, discountPct, discountRequest)) {
+
+      toast(`Cannot save with ${discountPct}% discount (>10%). Send a discount request for Owner/Admin approval or lower discount to ≤10%.`, 'err')
+
+      return
+
+    }
+
     setSaving(true)
 
     const cleaned = cleanOverrides(wb, overrides)
@@ -2272,7 +2320,7 @@ export function CalculatorPage({
         const serverResult = await api.serverCalculate(session.token, {
 
           org_id: org.id,
-
+          project_id: project.id,
 
           inputs: currentClean,
           active_system_idx: activeSystemIdx,
@@ -2301,29 +2349,43 @@ export function CalculatorPage({
 
         if (serverResult && serverResult.summary) {
           const rawSum = serverResult.summary
+          const useServerNumbersDirectly = !isAdminOrOwner && rawSum.costBase === undefined && rawSum.sales !== undefined
           const effCostBase = rawSum.costBase ?? (rawSum.subtotal + (rawSum.installation || 0) + (rawSum.transport || 0) + (rawSum.accommodation || 0) + (rawSum.extraAmount || 0) * (rawSum.models?.reduce((a: number, m: any) => a + m.qty, 0) || 1))
           const effProfitPct = profitPct !== undefined && !isNaN(profitPct) ? profitPct : (rawSum.profitPct || 25)
-          const effDiscountPct = discountPct !== undefined && !isNaN(discountPct) ? discountPct : (rawSum.discountPct || 0)
+          const effDiscountPct = useServerNumbersDirectly
+            ? (rawSum.discountPct ?? 0)
+            : (discountPct !== undefined && !isNaN(discountPct) ? discountPct : (rawSum.discountPct || 0))
           const pAmount = effCostBase * (effProfitPct / 100)
           const subWithP = effCostBase + pAmount
-          const dAmount = subWithP * (effDiscountPct / 100)
-          const bGst = subWithP - dAmount
-          const g = bGst * 0.18
-          const s = Math.round(bGst + g)
+          const dAmount = useServerNumbersDirectly ? (rawSum.discountAmount ?? 0) : subWithP * (effDiscountPct / 100)
+          const bGst = useServerNumbersDirectly ? (rawSum.beforeGst ?? 0) : (subWithP - dAmount)
+          const g = useServerNumbersDirectly ? (rawSum.gst ?? bGst * 0.18) : (bGst * 0.18)
+          const s = useServerNumbersDirectly ? Math.round(rawSum.sales) : Math.round(bGst + g)
 
-          serverSummary = {
-            ...rawSum,
-            costBase: effCostBase,
-            profitPct: effProfitPct,
-            profitAmount: pAmount,
-            subtotalWithProfit: subWithP,
-            discountPct: effDiscountPct,
-            discountAmount: dAmount,
-            beforeGst: bGst,
-            gst: g,
-            sales: s,
-          }
-          serverTotal = allSystemsTotals.sales || (serverResult.computed_total !== undefined ? Math.round(serverResult.computed_total * 1.18) : (s * activeSysQty))
+          serverSummary = useServerNumbersDirectly
+            ? {
+                ...rawSum,
+                discountPct: effDiscountPct,
+                discountAmount: dAmount,
+                beforeGst: bGst,
+                gst: g,
+                sales: s,
+              }
+            : {
+                ...rawSum,
+                costBase: effCostBase,
+                profitPct: effProfitPct,
+                profitAmount: pAmount,
+                subtotalWithProfit: subWithP,
+                discountPct: effDiscountPct,
+                discountAmount: dAmount,
+                beforeGst: bGst,
+                gst: g,
+                sales: s,
+              }
+          serverTotal = useServerNumbersDirectly
+            ? Math.round(Number(serverResult.computed_total !== undefined ? serverResult.computed_total * 1.18 : s))
+            : (allSystemsTotals.sales || (serverResult.computed_total !== undefined ? Math.round(serverResult.computed_total * 1.18) : (s * activeSysQty)))
           serverCleanedOverrides = serverResult.cleaned_overrides ?? cleaned
           serverSystems = serverResult.systems || []
           serverTotalBodies = serverResult.total_combined_bodies || totalCombinedBodies
@@ -2676,29 +2738,37 @@ export function CalculatorPage({
     sets?: any[],
     extraSettings?: Record<string, any>
   ) => {
-    const { audit_changes: rawAuditChanges, ...cleanExtraSettings } = extraSettings || {}
+    if (!isAdminOrOwner && isApprovedLocked) {
+      toast('Approved/Won quotations are locked and cannot be modified by staff.', 'err')
+      throw new Error('Approved/Won quotations are locked')
+    }
+    const { audit_changes: rawAuditChanges, ...rawExtraSettings } = extraSettings || {}
+    const cleanExtraSettings = sanitizePdfExtraSettingsForRole(isAdminOrOwner, rawExtraSettings)
     const pdfAuditChanges: string[] = Array.isArray(rawAuditChanges) ? rawAuditChanges : []
     const pdfAuditNote = pdfAuditChanges.length > 0
       ? pdfAuditChanges.join('; ')
       : 'Updated official quotation PDF details'
 
-    if (dirty) {
-      // Preserve last saved calculator specs/inputs when calculator has unsaved changes;
-      // only persist PDF client info, line items, body items, and PDF settings.
+    if (dirty || isStaffRateLocked) {
+      // Preserve last saved calculator specs/inputs when calculator has unsaved changes (or staff rate-locked after share);
+      // only persist non-financial PDF client info, body items, and layout/technical settings.
       const savedBaseSummary = project.summary || {}
       const updatedSummary = {
         ...savedBaseSummary,
+        ...cleanExtraSettings,
         client_info: {
           ...clientInfo,
           client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
         },
         client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
-        quotation_items: items,
+        ...(isStaffRateLocked ? {} : { quotation_items: items }),
         body_items: bodyItems,
         quotation_mode: cleanExtraSettings.quotation_mode || savedBaseSummary.quotation_mode || quotationMode,
-        extra_amount: cleanExtraSettings.extra_amount !== undefined ? cleanExtraSettings.extra_amount : (savedBaseSummary.extra_amount ?? extraAmount),
-        ...(sets ? { quotation_sets: sets } : {}),
-        ...cleanExtraSettings,
+        extra_amount: isAdminOrOwner && cleanExtraSettings.extra_amount !== undefined ? cleanExtraSettings.extra_amount : (savedBaseSummary.extra_amount ?? extraAmount),
+        ...(!isStaffRateLocked && sets ? { quotation_sets: sets } : {}),
+        ...(savedBaseSummary.systems ? { systems: savedBaseSummary.systems } : {}),
+        ...(savedBaseSummary.profit_pct !== undefined ? { profit_pct: savedBaseSummary.profit_pct } : {}),
+        ...(savedBaseSummary.discount_pct !== undefined ? { discount_pct: savedBaseSummary.discount_pct } : {}),
         ...(pdfAuditChanges.length > 0 ? { changes: pdfAuditChanges } : {}),
       }
       const savedTotal = Number(project.total ?? savedBaseSummary.sales ?? 0)
@@ -2718,7 +2788,7 @@ export function CalculatorPage({
           updatedSummary,
           pdfAuditNote,
         )
-        toast('Quotation PDF details saved (unsaved calculator changes kept local until Save is clicked)')
+        toast(isStaffRateLocked ? 'Quotation PDF info saved (commercial rates remain locked)' : 'Quotation PDF details saved (unsaved calculator changes kept local until Save is clicked)')
         if (onProjectUpdated) {
           onProjectUpdated(updatedProject)
         }
@@ -2730,14 +2800,14 @@ export function CalculatorPage({
     }
 
     const nextOverrides = { ...overrides }
-    if (extraSettings?.__profit_pct !== undefined) {
-      nextOverrides['__profit_pct'] = extraSettings.__profit_pct
+    if (isAdminOrOwner && cleanExtraSettings?.__profit_pct !== undefined) {
+      nextOverrides['__profit_pct'] = cleanExtraSettings.__profit_pct
     }
-    if (extraSettings?.include_installation !== undefined) {
-      nextOverrides['__include_installation'] = extraSettings.include_installation ? 1 : 0
+    if (cleanExtraSettings?.include_installation !== undefined) {
+      nextOverrides['__include_installation'] = cleanExtraSettings.include_installation ? 1 : 0
     }
-    if (extraSettings?.extra_amount !== undefined) {
-      nextOverrides['__extra_amount'] = extraSettings.extra_amount
+    if (isAdminOrOwner && cleanExtraSettings?.extra_amount !== undefined) {
+      nextOverrides['__extra_amount'] = cleanExtraSettings.extra_amount
     }
     setOverrides(nextOverrides)
 
@@ -3991,7 +4061,8 @@ export function CalculatorPage({
                   className={`status-select status-${status === 'approved' ? 'won' : status === 'archived' || status === 'lost' ? 'loss' : status}`}
                   value={status === 'draft' ? 'quoted' : status === 'lost' || status === 'archived' ? 'loss' : status === 'approved' ? 'won' : status}
                   onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-                  title="Quotation Status"
+                  disabled={!isAdminOrOwner && (isApprovedLocked || isStaffRateLocked)}
+                  title={!isAdminOrOwner && (isApprovedLocked || isStaffRateLocked) ? 'Status is locked for staff once shared or won/approved' : 'Quotation Status'}
                 >
                   <option value="quoted">Quoted</option>
                   <option value="negotiating">Negotiating</option>
@@ -6484,7 +6555,7 @@ export function CalculatorPage({
 
                           value={discountInput}
 
-                          disabled={isApprovedLocked}
+                          disabled={isApprovedLocked || isStaffRateLocked}
 
                           min={0}
 
@@ -6506,11 +6577,11 @@ export function CalculatorPage({
 
 
 
-                    {summary.discountPct > MAX_STAFF_DISCOUNT_PCT && (
+                    {Math.max(discountPct, summary.discountPct) > MAX_STAFF_DISCOUNT_PCT && (
 
                       <div style={{ marginTop: '8px', padding: '9px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px' }}>
 
-                        {discountRequest?.status === 'pending' && discountRequest.requested_pct === summary.discountPct ? (
+                        {discountRequest?.status === 'pending' && discountRequest.requested_pct === Math.max(discountPct, summary.discountPct) ? (
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#92400e', fontSize: '12px' }}>
 
@@ -6524,7 +6595,7 @@ export function CalculatorPage({
 
                           </div>
 
-                        ) : discountRequest?.status === 'approved' && discountRequest.requested_pct === summary.discountPct ? (
+                        ) : discountRequest?.status === 'approved' && discountRequest.requested_pct === Math.max(discountPct, summary.discountPct) ? (
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534', fontSize: '12px' }}>
 
@@ -6538,7 +6609,7 @@ export function CalculatorPage({
 
                           </div>
 
-                        ) : discountRequest?.status === 'rejected' && discountRequest.requested_pct === summary.discountPct ? (
+                        ) : discountRequest?.status === 'rejected' && discountRequest.requested_pct === Math.max(discountPct, summary.discountPct) ? (
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#991b1b', fontSize: '12px' }}>
 
@@ -6558,7 +6629,7 @@ export function CalculatorPage({
 
                             <div style={{ fontSize: '12px', color: '#92400e' }}>
 
-                              ⚠️ <b>{summary.discountPct}%</b> exceeds standard 10% limit.
+                              ⚠️ <b>{discountPct}%</b> exceeds standard 10% limit.
 
                             </div>
 
@@ -6570,13 +6641,13 @@ export function CalculatorPage({
 
                               style={{ background: '#d97706', borderColor: '#b45309', fontSize: '12px', padding: '4px 10px' }}
 
-                              onClick={() => handleSendDiscountRequest(summary.discountPct)}
+                              onClick={() => handleSendDiscountRequest(discountPct)}
 
-                              disabled={isSendingDiscountRequest || isApprovedLocked}
+                              disabled={isSendingDiscountRequest || isApprovedLocked || isStaffRateLocked}
 
                             >
 
-                              {isSendingDiscountRequest ? 'Sending Request...' : `Send Request for ${summary.discountPct}% Discount`}
+                              {isSendingDiscountRequest ? 'Sending Request...' : `Send Request for ${discountPct}% Discount`}
 
                             </button>
 

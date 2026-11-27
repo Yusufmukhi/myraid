@@ -3379,8 +3379,7 @@ export function OfficialQuotationDocument({
           terms_list: cleanTerms,
           red_specs: redSpecs,
           proposal_specs: proposalSpecs,
-          extra_amount: extraAmount,
-          __profit_pct: profitPct,
+          ...(userIsAdmin ? { extra_amount: extraAmount, __profit_pct: profitPct } : {}),
           table_scale: tableScale,
           table_density: tableDensity,
           systems_per_page: systemsPerPageSetting,
@@ -6675,31 +6674,33 @@ export function OfficialQuotationDocument({
                     </div>
                   </div>
 
-                  {/* OTHER EXTRA AMOUNT */}
-                  <div className="option-group-card">
-                    <div className="option-group-title">
-                      <span>OTHER EXTRA AMOUNT (₹)</span>
-                      <span className="chip sm">₹{extraAmount.toLocaleString('en-IN')}</span>
+                  {/* OTHER EXTRA AMOUNT (Admin / Owner Only) */}
+                  {userIsAdmin && (
+                    <div className="option-group-card">
+                      <div className="option-group-title">
+                        <span>OTHER EXTRA AMOUNT (₹)</span>
+                        <span className="chip sm">₹{extraAmount.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                        <input
+                          type="number"
+                          className="option-input-field font-mono font-bold"
+                          value={extraAmount === 0 ? '' : extraAmount}
+                          min={0}
+                          step={100}
+                          placeholder="0"
+                          onChange={(e) => {
+                            const v = Math.max(0, parseFloat(e.target.value) || 0)
+                            setExtraAmount(v)
+                          }}
+                          style={{ width: '120px' }}
+                        />
+                        <span className="tiny font-bold text-muted">
+                          Adds ₹{extraAmount.toLocaleString('en-IN')} to Unit Rate
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-                      <input
-                        type="number"
-                        className="option-input-field font-mono font-bold"
-                        value={extraAmount === 0 ? '' : extraAmount}
-                        min={0}
-                        step={100}
-                        placeholder="0"
-                        onChange={(e) => {
-                          const v = Math.max(0, parseFloat(e.target.value) || 0)
-                          setExtraAmount(v)
-                        }}
-                        style={{ width: '120px' }}
-                      />
-                      <span className="tiny font-bold text-muted">
-                        Adds ₹{extraAmount.toLocaleString('en-IN')} to Unit Rate
-                      </span>
-                    </div>
-                  </div>
+                  )}
 
                   {/* COMMERCIAL PROFIT MARGIN (Admin / Owner Only) */}
                   {userIsAdmin && (

@@ -1628,7 +1628,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
             />
           )}
 
-          {tab === 'members' && (
+          {tab === 'members' && isAdminOrOwner && (
             <MembersPage
               session={session}
               org={org}
@@ -1636,7 +1636,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
             />
           )}
 
-          {tab === 'activity' && (
+          {tab === 'activity' && isAdminOrOwner && (
             <ActivityPage
               session={session}
               org={org}
