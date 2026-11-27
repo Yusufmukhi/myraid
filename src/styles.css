@@ -3563,6 +3563,7 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   font-weight: 700;
   font-size: 10.1px;
   padding: 5px 6px;
+  white-space: nowrap;
 }
 .td-sum-label.grand {
   font-weight: 800;
@@ -3581,6 +3582,16 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
   text-align: center !important;
   vertical-align: middle !important;
 }
+
+.pdf-goods-table.unit-wise-table .th-sl { width: 36px !important; }
+.pdf-goods-table.unit-wise-table .th-qty { width: 56px !important; }
+.pdf-goods-table.unit-wise-table .th-rate { width: 112px !important; min-width: 112px !important; }
+.pdf-goods-table.unit-wise-table .th-amount { width: 108px !important; min-width: 108px !important; }
+.pdf-goods-table.unit-wise-table .td-sum-label {
+  font-size: 9.4px !important;
+  padding: 5px 5px !important;
+}
+.pdf-goods-table .td-sum-val { white-space: nowrap; }
 
 .pdf-words-bar {
   border: 1px solid #000000;

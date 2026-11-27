@@ -542,6 +542,176 @@ export interface QuotationSet {
   overrides?: any
 }
 
+export interface DiscountDisplayResult {
+  hasDiscount: boolean
+  discountPct: number
+  totalBeforeDiscount: number
+  totalDiscountAmount: number
+  setDisplayAmounts: Array<{ rate: number; amount: number }>
+  lineItemDisplayAmounts: Array<{ rate: number; amount: number }>
+  multiSystemUnitDisplayRows: Array<Array<{ qty: number; rate: number; amount: number }>>
+}
+
+/** Reconciles a list of weights so distributed amounts sum strictly to targetTotal without drift. */
+function distributeAmountsToTarget(
+  weights: number[],
+  quantities: number[],
+  targetTotal: number,
+): Array<{ rate: number; amount: number }> {
+  if (weights.length === 0) return []
+  const totalWeight = weights.reduce((acc, w) => acc + Math.max(0, w), 0)
+  let runningSum = 0
+  return weights.map((w, idx) => {
+    let amt = 0
+    if (idx === weights.length - 1) {
+      amt = Number((targetTotal - runningSum).toFixed(2))
+    } else {
+      const prop = totalWeight > 0 ? Math.max(0, w) / totalWeight : 1 / weights.length
+      amt = Number((targetTotal * prop).toFixed(2))
+      runningSum = Number((runningSum + amt).toFixed(2))
+    }
+    const qty = Math.max(1, quantities[idx] || 1)
+    const rate = Number((amt / qty).toFixed(2))
+    return { rate, amount: amt }
+  })
+}
+
+/**
+ * Computes consistent pre-discount, discount, and after-discount display amounts across all
+ * quotation modes (`set_wise`, single/multi-system `unit_wise`, and `unit_breakdown`), ensuring
+ * displayed table rows always sum to `TOTAL` (`totalBeforeDiscount`).
+ */
+export function computeQuotationDiscountDisplay(params: {
+  effectiveQuotationMode: 'set_wise' | 'unit_wise' | 'unit_breakdown'
+  effectiveDiscountPct: number
+  isMultiSystem: boolean
+  subtotal: number
+  sets: QuotationSet[]
+  lineItems: Array<{ quantity: number; rate: number; amount: number }>
+  breakdownResult: UnitWiseBreakdownResult
+}): DiscountDisplayResult {
+  const {
+    effectiveQuotationMode,
+    effectiveDiscountPct,
+    isMultiSystem,
+    subtotal,
+    sets,
+    lineItems,
+    breakdownResult,
+  } = params
+
+  const hasDiscount = effectiveDiscountPct > 0
+  if (!hasDiscount) {
+    const setDisplayAmounts = sets.map((s) => ({
+      rate: Number(s.rate) || 0,
+      amount: Number(s.amount) || 0,
+    }))
+    const lineItemDisplayAmounts =
+      lineItems.length > 0
+        ? distributeAmountsToTarget(
+            lineItems.map((it) => Number(it.amount) || 0),
+            lineItems.map((it) => Math.max(1, Number(it.quantity) || 1)),
+            subtotal,
+          )
+        : []
+    const multiSystemUnitDisplayRows = sets.map((s, sIdx) => {
+      const sysQty = Math.max(1, Number(s.quantity) || 1)
+      const items = s.items || []
+      const targetSysAmt = setDisplayAmounts[sIdx]?.amount ?? Number(s.amount) ?? 0
+      const weights = items.map((it) => {
+        const totalItemQty = (Number(it.unit_qty) || 1) * sysQty
+        if (it.final_amount !== undefined) return Number(it.final_amount) * sysQty
+        if (it.amount !== undefined) return Number(it.amount) * (Number(it.unit_qty) ? sysQty : 1)
+        return (Number(it.final_unit_rate ?? it.rate) || 0) * totalItemQty
+      })
+      const qtys = items.map((it) => (Number(it.unit_qty) || 1) * sysQty)
+      const dist = distributeAmountsToTarget(weights, qtys, targetSysAmt)
+      return dist.map((d, i) => ({ qty: qtys[i], rate: d.rate, amount: d.amount }))
+    })
+    return {
+      hasDiscount: false,
+      discountPct: 0,
+      totalBeforeDiscount: Number(subtotal.toFixed(2)),
+      totalDiscountAmount: 0,
+      setDisplayAmounts,
+      lineItemDisplayAmounts,
+      multiSystemUnitDisplayRows,
+    }
+  }
+
+  const factor = 1 - effectiveDiscountPct / 100
+  let candidatePre = 0
+  if (sets.length > 1) {
+    candidatePre = sets.reduce((sum, s) => sum + (Number(s.pre_discount_amount) || 0), 0)
+  } else if (effectiveQuotationMode === 'unit_breakdown') {
+    candidatePre = breakdownResult.totalPriceWithProfit || 0
+  } else if (!isMultiSystem && breakdownResult.totalPriceWithProfit > 0) {
+    const q = sets[0]?.quantity ? Math.max(1, Number(sets[0].quantity)) : 1
+    candidatePre = breakdownResult.totalPriceWithProfit * q
+  } else if (sets.length > 0) {
+    candidatePre = Number(sets[0]?.pre_discount_amount) || breakdownResult.totalPriceWithProfit || 0
+  }
+
+  // Reconstruct pre-discount total if saved sets lacked distinct pre_discount_amount
+  if (!(candidatePre > subtotal + 0.01)) {
+    candidatePre = factor > 0 ? subtotal / factor : subtotal
+  }
+
+  const totalBeforeDiscount = Number(candidatePre.toFixed(2))
+  const totalDiscountAmount = Number(Math.max(0, totalBeforeDiscount - subtotal).toFixed(2))
+
+  // Distribute pre-discount amounts across sets using explicit pre_discount_amount when distinct, else proportional
+  const allSetsHavePre = sets.length > 0 && sets.every((s) => Number(s.pre_discount_amount) > (Number(s.amount) || 0))
+  const setWeights = sets.map((s) =>
+    allSetsHavePre ? Number(s.pre_discount_amount) || 0 : Number(s.amount) || 0,
+  )
+  const setDisplayAmounts = distributeAmountsToTarget(
+    setWeights,
+    sets.map((s) => Math.max(1, Number(s.quantity) || 1)),
+    totalBeforeDiscount,
+  )
+
+  // Single-system unit_wise rows: use pre-discount breakdown rows scaled cleanly to totalBeforeDiscount
+  const singleSysQty = !isMultiSystem && sets[0]?.quantity ? Math.max(1, Number(sets[0].quantity)) : 1
+  const lineItemWeights = lineItems.map((it, idx) => {
+    const rowPre = breakdownResult.rows[idx]?.total_price_with_profit
+    if (rowPre !== undefined && rowPre > 0) return rowPre * singleSysQty
+    return Number(it.amount) || 0
+  })
+  const lineItemDisplayAmounts = distributeAmountsToTarget(
+    lineItemWeights,
+    lineItems.map((it) => Math.max(1, Number(it.quantity) || 1)),
+    totalBeforeDiscount,
+  )
+
+  // Multi-system unit_wise rows: MUST show pre-discount rate & amount summing to setDisplayAmounts[sIdx].amount
+  const multiSystemUnitDisplayRows = sets.map((s, sIdx) => {
+    const sysQty = Math.max(1, Number(s.quantity) || 1)
+    const items = s.items || []
+    const targetSysAmt = setDisplayAmounts[sIdx]?.amount ?? totalBeforeDiscount
+    const weights = items.map((it) => {
+      const totalItemQty = (Number(it.unit_qty) || 1) * sysQty
+      if (it.amount !== undefined && Number(it.amount) > 0) return Number(it.amount) * sysQty
+      if (it.rate !== undefined && Number(it.rate) > 0) return Number(it.rate) * totalItemQty
+      if (it.final_amount !== undefined && Number(it.final_amount) > 0) return Number(it.final_amount) * sysQty
+      return (Number(it.final_unit_rate) || 0) * totalItemQty
+    })
+    const qtys = items.map((it) => (Number(it.unit_qty) || 1) * sysQty)
+    const dist = distributeAmountsToTarget(weights, qtys, targetSysAmt)
+    return dist.map((d, i) => ({ qty: qtys[i], rate: d.rate, amount: d.amount }))
+  })
+
+  return {
+    hasDiscount: true,
+    discountPct: effectiveDiscountPct,
+    totalBeforeDiscount,
+    totalDiscountAmount,
+    setDisplayAmounts,
+    lineItemDisplayAmounts,
+    multiSystemUnitDisplayRows,
+  }
+}
+
 export interface InstallationBodyItem {
   id: string
   title: string
@@ -1993,7 +2163,7 @@ export function OfficialQuotationDocument({
         set_label: '1 SET',
         quantity: 1,
         unit: 'SET',
-        rate: Math.round(preDiscAmount),
+        rate: Math.round(baseAmount),
         amount: Number(baseAmount.toFixed(2)),
         pre_discount_rate: Math.round(preDiscAmount),
         pre_discount_amount: Number(preDiscAmount.toFixed(2)),
@@ -2004,21 +2174,22 @@ export function OfficialQuotationDocument({
 
   const [sets, setSets] = useState<QuotationSet[]>(defaultSets)
 
-  // 3. Dynamic Unit-Wise Line Items (Directly derived from live breakdownResult — reflects all calculator changes)
+  // 3. Dynamic Unit-Wise Line Items (Directly derived from live breakdownResult — reflects all calculator changes & single-system set qty)
   const lineItems = useMemo<QuotationLineItem[]>(() => {
+    const q = (!isMultiSystem && sets[0]?.quantity) ? Math.max(1, Number(sets[0].quantity)) : 1
     return breakdownResult.rows.map((r, idx) => ({
       id: String(idx + 1),
       model_code: r.model_code,
       model_name: r.model_name,
       dimensions: r.dimensions,
-      quantity: r.qty,
+      quantity: r.qty * q,
       unit_base_rate: r.unit_rate,
       extra_charges: r.transportation,
       total_unit_rate: r.total_unit_rate,
-      rate: r.final_unit_rate,
-      amount: r.final_amount,
+      rate: Number(r.final_unit_rate.toFixed(2)),
+      amount: Number((r.final_amount * q).toFixed(2)),
     }))
-  }, [breakdownResult])
+  }, [breakdownResult, isMultiSystem, sets])
 
   // Live update sets from initialSets (multi-system calculator sync), preserving manual reorder in Edit Pad
   useEffect(() => {
@@ -2446,97 +2617,26 @@ export function OfficialQuotationDocument({
     return 0
   }, [breakdownResult, summary, project])
 
-  const hasDiscount = effectiveDiscountPct > 0
-
-  const { totalBeforeDiscount, totalDiscountAmount } = useMemo(() => {
-    if (!hasDiscount) {
-      return { totalBeforeDiscount: subtotal, totalDiscountAmount: 0 }
-    }
-    let beforeDisc = 0
-    if (sets.length > 1) {
-      const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || Number(s.amount) || 0), 0)
-      if (setsPreDiscSum > 0) {
-        beforeDisc = setsPreDiscSum
-      } else {
-        const factor = 1 - (effectiveDiscountPct / 100)
-        beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
-      }
-    } else if (!isMultiSystem && breakdownResult.totalPriceWithProfit > 0) {
-      const q = sets[0]?.quantity ? Math.max(1, Number(sets[0].quantity)) : 1
-      beforeDisc = breakdownResult.totalPriceWithProfit * q
-    } else if (effectiveQuotationMode === 'set_wise' && sets.length > 0) {
-      const setsPreDiscSum = sets.reduce((sum, s: any) => sum + (Number(s.pre_discount_amount) || 0), 0)
-      if (setsPreDiscSum > 0) {
-        beforeDisc = setsPreDiscSum
-      } else if (breakdownResult.totalPriceWithProfit > 0) {
-        beforeDisc = breakdownResult.totalPriceWithProfit
-      } else {
-        const factor = 1 - (effectiveDiscountPct / 100)
-        beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
-      }
-    } else if (effectiveQuotationMode === 'unit_breakdown') {
-      beforeDisc = breakdownResult.totalPriceWithProfit || subtotal
-    } else {
-      const lineItemsPreDiscSum = breakdownResult.totalPriceWithProfit
-      if (lineItemsPreDiscSum > 0) {
-        beforeDisc = lineItemsPreDiscSum
-      } else {
-        const factor = 1 - (effectiveDiscountPct / 100)
-        beforeDisc = factor > 0 ? Number((subtotal / factor).toFixed(2)) : subtotal
-      }
-    }
-    const discAmt = Number((beforeDisc - subtotal).toFixed(2))
-    return {
-      totalBeforeDiscount: beforeDisc,
-      totalDiscountAmount: discAmt,
-    }
-  }, [hasDiscount, effectiveDiscountPct, subtotal, effectiveQuotationMode, sets, breakdownResult])
-
-  // Pre-calculate pre-discount amounts for sets so the displayed column amounts sum exactly to totalBeforeDiscount
-  const setDisplayAmounts = useMemo(() => {
-    if (!hasDiscount || sets.length === 0) {
-      return sets.map((s) => ({
-        rate: Number(s.rate) || 0,
-        amount: Number(s.amount) || 0,
-      }))
-    }
-    let runningSum = 0
-    return sets.map((s, idx) => {
-      let amt = 0
-      if (idx === sets.length - 1) {
-        amt = Number((totalBeforeDiscount - runningSum).toFixed(2))
-      } else {
-        const prop = subtotal > 0 ? ((Number(s.amount) || 0) / subtotal) : (1 / sets.length)
-        amt = Number((totalBeforeDiscount * prop).toFixed(2))
-        runningSum += amt
-      }
-      const rate = Math.round(amt / Math.max(1, s.quantity || 1))
-      return { rate, amount: amt }
-    })
-  }, [hasDiscount, sets, totalBeforeDiscount, subtotal])
-
-  // Pre-calculate pre-discount amounts for unit-wise lineItems
-  const lineItemDisplayAmounts = useMemo(() => {
-    if (!hasDiscount || lineItems.length === 0) {
-      return lineItems.map((it) => ({
-        rate: Number(it.rate) || 0,
-        amount: Number(it.amount) || 0,
-      }))
-    }
-    let runningSum = 0
-    return lineItems.map((it, idx) => {
-      let amt = 0
-      if (idx === lineItems.length - 1) {
-        amt = Number((totalBeforeDiscount - runningSum).toFixed(2))
-      } else {
-        const prop = subtotal > 0 ? ((Number(it.amount) || 0) / subtotal) : (1 / lineItems.length)
-        amt = Number((totalBeforeDiscount * prop).toFixed(2))
-        runningSum += amt
-      }
-      const rate = Math.round(amt / Math.max(1, Number(it.quantity) || 1))
-      return { rate, amount: amt }
-    })
-  }, [hasDiscount, lineItems, totalBeforeDiscount, subtotal])
+  const {
+    hasDiscount,
+    totalBeforeDiscount,
+    totalDiscountAmount,
+    setDisplayAmounts,
+    lineItemDisplayAmounts,
+    multiSystemUnitDisplayRows,
+  } = useMemo(
+    () =>
+      computeQuotationDiscountDisplay({
+        effectiveQuotationMode,
+        effectiveDiscountPct,
+        isMultiSystem,
+        subtotal,
+        sets,
+        lineItems,
+        breakdownResult,
+      }),
+    [effectiveQuotationMode, effectiveDiscountPct, isMultiSystem, subtotal, sets, lineItems, breakdownResult],
+  )
 
   // Check if compactor width is >= 3000 mm for DOUBLE DRIVE WITH REDUCTION WHEEL in red specs
   const hasDoubleDrive = useMemo(() => {
@@ -3751,7 +3851,7 @@ export function OfficialQuotationDocument({
               ) : null}
 
               {/* Main Items Table */}
-              <table className={`pdf-goods-table ${effectiveQuotationMode === 'unit_breakdown' ? 'unit-breakdown-table' : ''}`}>
+              <table className={`pdf-goods-table ${effectiveQuotationMode === 'unit_breakdown' ? 'unit-breakdown-table' : effectiveQuotationMode === 'unit_wise' ? 'unit-wise-table' : 'set-wise-table'}`}>
                 <thead>
                   {effectiveQuotationMode === 'unit_breakdown' ? (
                     <tr>
@@ -3796,7 +3896,7 @@ export function OfficialQuotationDocument({
                         />
                       </th>
                       <th className="th-set resizable-th" style={{ width: `${goodsColWidths.set}px` }}>
-                        {isMultiSystem ? 'Set' : ''}
+                        Set
                         <div
                           className="table-col-resizer no-print"
                           onMouseDown={(e) => startColResize('goods', 'set', e)}
@@ -3895,12 +3995,19 @@ export function OfficialQuotationDocument({
                                 </tr>
                                 {sysItems.map((it, itIdx) => {
                                   const slNo = currentSl++
-                                  const displayRate = (it as any).final_unit_rate !== undefined ? (it as any).final_unit_rate : (it.rate || 0)
                                   const itemUnitQty = Number(it.unit_qty) || 1
                                   const totalItemQty = itemUnitQty * sysQty
-                                  const displayAmount = (it as any).final_amount !== undefined
-                                    ? (it as any).final_amount * sysQty
-                                    : Math.round(Number(displayRate) * totalItemQty)
+                                  const reconciled = multiSystemUnitDisplayRows[sIdx]?.[itIdx]
+                                  const displayRate = reconciled
+                                    ? reconciled.rate
+                                    : (hasDiscount
+                                        ? (it.rate || ((it as any).final_unit_rate || 0))
+                                        : ((it as any).final_unit_rate !== undefined ? (it as any).final_unit_rate : (it.rate || 0)))
+                                  const displayAmount = reconciled
+                                    ? reconciled.amount
+                                    : (hasDiscount
+                                        ? (it.amount !== undefined ? Number(it.amount) * sysQty : Number(displayRate) * totalItemQty)
+                                        : ((it as any).final_amount !== undefined ? (it as any).final_amount * sysQty : Math.round(Number(displayRate) * totalItemQty)))
 
                                   return (
                                     <tr key={`${s.id || sIdx}-${it.id || itIdx}`} className="item-row">
@@ -3991,8 +4098,8 @@ export function OfficialQuotationDocument({
                                 style={{ textAlign: 'center', verticalAlign: 'middle', fontWeight: 600, fontSize: '10.5px' }}
                               >
                                 {Number(displayAmount).toFixed(2)}
+                                <span style={{ display: 'none' }}>{Number(it.rate).toFixed(2)}{Number(it.amount).toFixed(2)}</span>
                               </td>
-                              <span style={{ display: 'none' }}>{Number(it.rate).toFixed(2)}{Number(it.amount).toFixed(2)}</span>
                             </tr>
                           )
                         })
@@ -4100,6 +4207,7 @@ export function OfficialQuotationDocument({
                                   </td>
                                   <td className="td-qty text-center font-bold" style={{ verticalAlign: 'middle', fontSize: '10.5px' }}>
                                     {it.unit_qty}
+                                    <span style={{ display: 'none' }}>{Number(itemRate).toFixed(2)}{Number(itemAmount).toFixed(2)}</span>
                                   </td>
                                   {!systemTitle && itIdx === 0 && (
                                     <>
@@ -4131,7 +4239,6 @@ export function OfficialQuotationDocument({
                                       </td>
                                     </>
                                   )}
-                                  <span style={{ display: 'none' }}>{Number(itemRate).toFixed(2)}{Number(itemAmount).toFixed(2)}</span>
                                 </tr>
                               )
                             })}
@@ -4206,13 +4313,21 @@ export function OfficialQuotationDocument({
                       </tr>
                       {hasDiscount && (
                         <>
-                          <tr className="summary-split-row">
-                            <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>DISCOUNT</td>
-                            <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{totalDiscountAmount.toFixed(2)}</td>
+                          <tr className="summary-split-row discount-summary-row">
+                            <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle', color: '#dc2626' }}>
+                              DISCOUNT ({Number(effectiveDiscountPct.toFixed(2))}%)
+                            </td>
+                            <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle', color: '#dc2626' }}>
+                              -{totalDiscountAmount.toFixed(2)}
+                            </td>
                           </tr>
-                          <tr className="summary-split-row">
-                            <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>AFTER DISCOUNT</td>
-                            <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{subtotal.toFixed(2)}</td>
+                          <tr className="summary-split-row after-discount-row">
+                            <td colSpan={effectiveQuotationMode === 'unit_wise' ? 1 : 2} className="td-sum-label text-center" style={{ textAlign: 'center', verticalAlign: 'middle', background: '#f8fafc' }}>
+                              AFTER DISCOUNT
+                            </td>
+                            <td className="td-sum-val text-center" style={{ textAlign: 'center', verticalAlign: 'middle', background: '#f8fafc' }}>
+                              {subtotal.toFixed(2)}
+                            </td>
                           </tr>
                         </>
                       )}

@@ -3578,6 +3578,127 @@ async function runAllTests() {
     logResult(63, 'Exhaustive Audit Trail (Multi-System Diffs & Smallest-to-Largest Edit PDF Diffs)', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 64: PDF Discount Math Consistency (Set-Wise & Unit-Wise) & Valid Table Format
+  // -------------------------------------------------------------------------
+  try {
+    const {
+      computeUnitWiseBreakdown,
+      computeQuotationDiscountDisplay,
+    } = await import('../src/components/quotation/OfficialQuotationDocument')
+    const pdfSrc = fs.readFileSync('src/components/quotation/OfficialQuotationDocument.tsx', 'utf8')
+
+    // Build real breakdown for 10% discount
+    const wbDisc = new Workbook(rawWb, SERVER_CONSTANTS)
+    wbDisc.setOverrides({ 'Total cal!A3': 8, 'Total cal!G4': 4, 'Total cal!G8': 1, 'Total cal!N24': 6000, 'Total cal!N25': 3000 })
+    const sumPre10 = summarize(wbDisc, 20, 10, true, 0)
+    const bdDisc = computeUnitWiseBreakdown(sumPre10, wbDisc, true, 20, 10, sumPre10.bodies, 0)
+
+    // Case 1: Single-system Unit-Wise with 2 sets & 10% discount
+    const singleSets = [
+      {
+        id: '1',
+        system_title: 'SYSTEM A',
+        set_label: '2 SETS',
+        quantity: 2,
+        unit: 'SET',
+        rate: Math.round(bdDisc.finalBeforeGst),
+        amount: Math.round(bdDisc.finalBeforeGst * 2),
+        pre_discount_rate: Math.round(bdDisc.totalPriceWithProfit),
+        pre_discount_amount: Math.round(bdDisc.totalPriceWithProfit * 2),
+        items: bdDisc.rows.map((r, idx) => ({
+          id: String(idx + 1),
+          model_code: r.model_code,
+          model_name: r.model_name,
+          dimensions: r.dimensions,
+          unit_qty: r.qty,
+          rate: r.unit_rate_with_profit,
+          amount: r.total_price_with_profit,
+          final_unit_rate: r.final_unit_rate,
+          final_amount: r.final_amount,
+        })),
+      },
+    ]
+    const singleLineItems = bdDisc.rows.map((r) => ({
+      quantity: r.qty * 2,
+      rate: Number(r.final_unit_rate.toFixed(2)),
+      amount: Number((r.final_amount * 2).toFixed(2)),
+    }))
+    const singleSubtotal = Number((sumPre10.beforeGst * 2).toFixed(2))
+    const singleUnitRes = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'unit_wise',
+      effectiveDiscountPct: 10,
+      isMultiSystem: false,
+      subtotal: singleSubtotal,
+      sets: singleSets as any,
+      lineItems: singleLineItems,
+      breakdownResult: bdDisc,
+    })
+    const singleRowSum = Number(singleUnitRes.lineItemDisplayAmounts.reduce((a, r) => a + r.amount, 0).toFixed(2))
+    const singleMathOk =
+      singleUnitRes.hasDiscount &&
+      singleUnitRes.totalBeforeDiscount > singleSubtotal &&
+      Math.abs(singleRowSum - singleUnitRes.totalBeforeDiscount) < 0.02 &&
+      Math.abs((singleUnitRes.totalBeforeDiscount - singleUnitRes.totalDiscountAmount) - singleSubtotal) < 0.02
+
+    // Case 2: Multi-system Unit-Wise (2 systems) with 10% discount (must show pre-discount unit rows, NOT final_amount)
+    const multiSets = [
+      { ...singleSets[0], id: '1', system_title: 'SYSTEM A', quantity: 2 },
+      { ...singleSets[0], id: '2', system_title: 'SYSTEM B', quantity: 1, rate: Math.round(bdDisc.finalBeforeGst), amount: Math.round(bdDisc.finalBeforeGst), pre_discount_rate: Math.round(bdDisc.totalPriceWithProfit), pre_discount_amount: Math.round(bdDisc.totalPriceWithProfit) },
+    ]
+    const multiSubtotal = multiSets.reduce((a, s) => a + s.amount, 0)
+    const multiUnitRes = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'unit_wise',
+      effectiveDiscountPct: 10,
+      isMultiSystem: true,
+      subtotal: multiSubtotal,
+      sets: multiSets as any,
+      lineItems: [],
+      breakdownResult: bdDisc,
+    })
+    const multiUnitRowSum = Number(
+      multiUnitRes.multiSystemUnitDisplayRows.flat().reduce((a, r) => a + r.amount, 0).toFixed(2),
+    )
+    const multiUnitNotEqualAfterDisc = Math.abs(multiUnitRowSum - multiSubtotal) > 100
+    const multiMathOk =
+      multiUnitRes.hasDiscount &&
+      multiUnitNotEqualAfterDisc &&
+      Math.abs(multiUnitRowSum - multiUnitRes.totalBeforeDiscount) < 0.02 &&
+      Math.abs((multiUnitRes.totalBeforeDiscount - multiUnitRes.totalDiscountAmount) - multiSubtotal) < 0.02
+
+    // Case 3: Stale saved sets missing distinct pre_discount_amount while discountPct = 10 -> still reconstructs true pre-discount
+    const staleSets = [
+      { ...singleSets[0], pre_discount_amount: singleSets[0].amount, pre_discount_rate: singleSets[0].rate },
+    ]
+    const staleRes = computeQuotationDiscountDisplay({
+      effectiveQuotationMode: 'set_wise',
+      effectiveDiscountPct: 10,
+      isMultiSystem: false,
+      subtotal: singleSets[0].amount,
+      sets: staleSets as any,
+      lineItems: [],
+      breakdownResult: bdDisc,
+    })
+    const staleReconstructOk = staleRes.totalDiscountAmount > 100 && staleRes.totalBeforeDiscount > singleSets[0].amount
+
+    // Case 4: Valid table HTML / CSS format (no direct <tr><span...>, Set header always populated, Discount % label)
+    const formatOk =
+      pdfSrc.includes('DISCOUNT ({Number(effectiveDiscountPct.toFixed(2))}%)') &&
+      !pdfSrc.includes("isMultiSystem ? 'Set' : ''") &&
+      pdfSrc.includes('unit-wise-table') &&
+      !/<\/td>\s*<span style=\{\{ display: 'none' \}\}/.test(pdfSrc)
+
+    if (singleMathOk && multiMathOk && staleReconstructOk && formatOk) {
+      logResult(64, 'PDF Discount Math Consistency (Set-Wise & Unit-Wise) & Valid Table Format', 'PASSED',
+        `Single/Multi Unit-Wise pre-discount rows sum strictly to TOTAL (${singleRowSum} & ${multiUnitRowSum}), distinct from AFTER DISCOUNT (${singleSubtotal} & ${multiSubtotal}), stale pre-discount reconstructed, and valid table HTML/format verified.`)
+    } else {
+      logResult(64, 'PDF Discount Math Consistency (Set-Wise & Unit-Wise) & Valid Table Format', 'FAILED',
+        `singleMathOk=${singleMathOk}, multiMathOk=${multiMathOk} (rowSum=${multiUnitRowSum}, pre=${multiUnitRes.totalBeforeDiscount}, post=${multiSubtotal}), staleReconstructOk=${staleReconstructOk}, formatOk=${formatOk}`)
+    }
+  } catch (e) {
+    logResult(64, 'PDF Discount Math Consistency (Set-Wise & Unit-Wise) & Valid Table Format', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length
