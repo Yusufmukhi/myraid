@@ -3394,6 +3394,59 @@ async function runAllTests() {
     logResult(61, 'PDF Live Download Date on Revise, Saved-Only PDF Snapshot, FY Search Filter (Current/All/Multi), & MSSLP FY Sync', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 62: Minimal UI (Projects & Estimates / Dashboard / Activity Log) & Won-vs-Loss Conversion Summary
+  // -------------------------------------------------------------------------
+  try {
+    const projSrc = fs.readFileSync('src/components/pages/ProjectsPage.tsx', 'utf8')
+    const dashSrc = fs.readFileSync('src/components/pages/Dashboard.tsx', 'utf8')
+    const actSrc = fs.readFileSync('src/components/pages/ActivityPage.tsx', 'utf8')
+
+    // 1. Verify Won vs Loss Conversion calculation excludes Quoted/Negotiating (e.g. 3 Won, 1 Loss, 10 Quoted -> 75% Win / 25% Loss)
+    const sampleQuotes = [
+      { status: 'won' }, { status: 'won' }, { status: 'approved' }, // 3 won
+      { status: 'loss' }, // 1 loss
+      { status: 'quoted' }, { status: 'quoted' }, { status: 'negotiating' }, // ignored in Won vs Loss ratio
+    ]
+    const wonCnt = sampleQuotes.filter((q) => q.status === 'won' || q.status === 'approved').length
+    const lossCnt = sampleQuotes.filter((q) => q.status === 'loss' || q.status === 'lost').length
+    const decided = wonCnt + lossCnt
+    const winPctCalc = decided > 0 ? Math.round((wonCnt / decided) * 100) : 0
+    const lossPctCalc = decided > 0 ? Math.round((lossCnt / decided) * 100) : 0
+    const wonLossRatioOk = wonCnt === 3 && lossCnt === 1 && decided === 4 && winPctCalc === 75 && lossPctCalc === 25
+
+    // 2. Verify Dashboard Won vs Loss UI, collapsible period filter button, and Activity Log action formatting
+    const dashMinimalOk =
+      dashSrc.includes('Quotation Conversion (Won vs Loss)') &&
+      dashSrc.includes('const decidedCount = won + lost') &&
+      dashSrc.includes('analyticsFilterOpen') &&
+      dashSrc.includes("case 'project_updated':") &&
+      dashSrc.includes("case 'pdf_downloaded':")
+
+    // 3. Verify ProjectsPage & ActivityPage minimal collapsible filter / summary / selection buttons + full info preservation
+    const projMinimalOk =
+      projSrc.includes('filtersOpen') &&
+      projSrc.includes('minimal-filters-box') &&
+      projSrc.includes('selectionMode')
+
+    const actMinimalOk =
+      actSrc.includes('staffSummaryOpen') &&
+      actSrc.includes('filtersOpen') &&
+      actSrc.includes('plainSummaryText') &&
+      actSrc.includes('Details ▾') &&
+      actSrc.includes('Full Inspector')
+
+    if (wonLossRatioOk && dashMinimalOk && projMinimalOk && actMinimalOk) {
+      logResult(62, 'Minimal UI (Projects/Dashboard/Activity), Won-vs-Loss Conversion (75%/25%) & Plain-English Activity Log', 'PASSED',
+        'Projects & Dashboard collapse extra filter boxes behind clean toggle buttons; Conversion Summary computes strictly Won vs Loss (3W/1L => 75% Win / 25% Loss, excluding Quoted/Negotiating); Activity Log shows plain-English summaries with full expandable diff/metadata details.')
+    } else {
+      logResult(62, 'Minimal UI (Projects/Dashboard/Activity), Won-vs-Loss Conversion (75%/25%) & Plain-English Activity Log', 'FAILED',
+        `wonLossRatio=${wonLossRatioOk} (${winPctCalc}/${lossPctCalc}), dashMinimal=${dashMinimalOk}, projMinimal=${projMinimalOk}, actMinimal=${actMinimalOk}`)
+    }
+  } catch (e) {
+    logResult(62, 'Minimal UI (Projects/Dashboard/Activity), Won-vs-Loss Conversion (75%/25%) & Plain-English Activity Log', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

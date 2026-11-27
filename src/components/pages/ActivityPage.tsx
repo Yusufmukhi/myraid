@@ -40,6 +40,8 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
   const [modalLog, setModalLog] = useState<ActivityItem | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [summaryTimeframe, setSummaryTimeframe] = useState<'all' | 'today' | 'week' | 'month'>('all')
+  const [staffSummaryOpen, setStaffSummaryOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const PAGE_SIZE = 20
 
   const loadActivity = async () => {
@@ -285,25 +287,41 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
     }
   }
 
+  const activityFilterCount =
+    (dateRange !== 'all' ? 1 : 0) +
+    (selectedStaff !== 'all' ? 1 : 0) +
+    (filterAction !== 'all' ? 1 : 0)
+
   return (
-    <div className="activity-page">
-      {/* Top Header */}
-      <div className="activity-top-header mb-3">
-        <div>
-          <h2 style={{ fontSize: '20px', margin: 0, fontWeight: 700 }}>Organisation Audit Trail</h2>
-          <p className="tiny muted" style={{ margin: '3px 0 0 0' }}>
-            Permanent revision history, system access events, and field-level modification records ({filteredLogs.length} events)
-          </p>
+    <div className="activity-page minimal-activity-page">
+      {/* Minimal Top Header */}
+      <div className="row between" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <div className="row gap" style={{ alignItems: 'baseline', gap: 10 }}>
+          <h2 style={{ fontSize: '16px', margin: 0, fontWeight: 700, color: '#0f172a' }}>Activity Log</h2>
+          <span className="tiny muted">{filteredLogs.length} events</span>
         </div>
-        <div className="row gap" style={{ alignItems: 'center' }}>
+        <div className="row gap" style={{ alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <button
-            className="btn ghost sm"
-            onClick={handleExpandAll}
-            title={expandedLogIds.size === filteredLogs.length ? 'Collapse all log details' : 'Expand all log details'}
+            type="button"
+            className="btn ghost sm minimal-pill-btn"
+            onClick={() => setStaffSummaryOpen((o) => !o)}
+            style={{
+              borderColor: staffSummaryOpen ? '#2563eb' : '#e2e8f0',
+              background: staffSummaryOpen ? '#eff6ff' : '#ffffff',
+              color: staffSummaryOpen ? '#1d4ed8' : '#334155',
+            }}
           >
-            {expandedLogIds.size === filteredLogs.length ? '▴ Collapse All' : '▾ Expand All'}
+            <span>👥 Staff Summary</span>
+            <span style={{ fontSize: '9px', opacity: 0.7 }}>{staffSummaryOpen ? '▲' : '▼'}</span>
           </button>
-          <button className="btn ghost sm" onClick={loadActivity} title="Refresh audit log">
+          <button
+            className="btn ghost sm minimal-pill-btn"
+            onClick={handleExpandAll}
+            title={expandedLogIds.size === paginatedLogs.length ? 'Collapse all log details' : 'Expand all log details'}
+          >
+            {expandedLogIds.size === paginatedLogs.length && paginatedLogs.length > 0 ? '▴ Collapse All' : '▾ Expand All'}
+          </button>
+          <button className="btn ghost sm minimal-pill-btn" onClick={loadActivity} title="Refresh activity log">
             {Icon.refresh} Refresh
           </button>
         </div>
@@ -311,239 +329,188 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
 
       {/* Security Incident Banner (Shows ONLY when real incidents exist) */}
       {securityAlertsCount > 0 && (
-        <div className="security-incidents-banner mb-3">
-          <div className="row between" style={{ alignItems: 'center' }}>
-            <div className="row gap" style={{ alignItems: 'center' }}>
-              <span style={{ fontSize: '22px' }}>🛡️</span>
-              <div>
-                <strong style={{ fontSize: '14px', color: '#991b1b' }}>
-                  Security Incident Monitor: {securityAlertsCount} Event{securityAlertsCount > 1 ? 's' : ''} Flagged
-                </strong>
-                <div className="tiny" style={{ color: '#7f1d1d' }}>
-                  Flagging external access requests, project deletions, and rogue price revisions.
-                </div>
-              </div>
-            </div>
-            <button
-              className={`btn sm ${filterAction === 'security_alerts' ? 'primary' : 'ghost'}`}
-              onClick={() => setFilterAction(filterAction === 'security_alerts' ? 'all' : 'security_alerts')}
-              style={filterAction === 'security_alerts' ? undefined : { color: '#991b1b', borderColor: '#fca5a5' }}
-            >
-              {filterAction === 'security_alerts' ? 'Show All Activity' : `Filter Incidents (${securityAlertsCount})`}
-            </button>
+        <div className="card" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px', color: '#991b1b' }}>
+            <span>🛡️</span>
+            <strong>{securityAlertsCount} Security Event{securityAlertsCount > 1 ? 's' : ''}</strong>
+            <span className="tiny" style={{ color: '#7f1d1d' }}>· Access requests, deletions, or high discounts</span>
           </div>
+          <button
+            className={`btn sm ${filterAction === 'security_alerts' ? 'primary' : 'ghost'}`}
+            onClick={() => setFilterAction(filterAction === 'security_alerts' ? 'all' : 'security_alerts')}
+            style={filterAction === 'security_alerts' ? { height: 26, fontSize: '11.5px' } : { height: 26, fontSize: '11.5px', color: '#991b1b', borderColor: '#fca5a5' }}
+          >
+            {filterAction === 'security_alerts' ? 'Show All' : `Filter (${securityAlertsCount})`}
+          </button>
         </div>
       )}
 
-      {/* Staff Activity Summary (Daily / Weekly) */}
-      <div
-        className="card mb-3"
-        style={{
-          background: '#ffffff',
-          border: '1px solid #cbd5e1',
-          borderRadius: '10px',
-          padding: '14px 18px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
-      >
+      {/* Collapsible Staff Activity Summary (Hidden by default; opens on Staff Summary button click) */}
+      {staffSummaryOpen && (
         <div
+          className="card"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '12px',
-            flexWrap: 'wrap',
-            gap: '8px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+            padding: '12px 14px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>📈</span>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                Staff Activity &amp; Productivity Summary
-              </h3>
-              <span className="tiny text-muted">
-                {summaryTimeframe === 'today'
-                  ? 'Actions recorded today since midnight'
-                  : summaryTimeframe === 'week'
-                  ? 'Activity over the past 7 days (Weekly summary)'
-                  : summaryTimeframe === 'month'
-                  ? 'Activity over the past 30 days (Monthly summary)'
-                  : 'All recorded activity logs across all history'}
-              </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '10px',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}
+          >
+            <strong style={{ fontSize: '13px', color: '#0f172a' }}>📈 Staff Activity Summary</strong>
+            <div className="status-tabs" style={{ margin: 0 }}>
+              <button className={'status-tab ' + (summaryTimeframe === 'all' ? 'active' : '')} onClick={() => setSummaryTimeframe('all')} style={{ fontSize: '11px', padding: '2px 8px' }}>All</button>
+              <button className={'status-tab ' + (summaryTimeframe === 'today' ? 'active' : '')} onClick={() => setSummaryTimeframe('today')} style={{ fontSize: '11px', padding: '2px 8px' }}>Today</button>
+              <button className={'status-tab ' + (summaryTimeframe === 'week' ? 'active' : '')} onClick={() => setSummaryTimeframe('week')} style={{ fontSize: '11px', padding: '2px 8px' }}>7d</button>
+              <button className={'status-tab ' + (summaryTimeframe === 'month' ? 'active' : '')} onClick={() => setSummaryTimeframe('month')} style={{ fontSize: '11px', padding: '2px 8px' }}>30d</button>
             </div>
           </div>
 
-          <div className="status-tabs" style={{ margin: 0 }}>
-            <button
-              className={'status-tab ' + (summaryTimeframe === 'all' ? 'active' : '')}
-              onClick={() => setSummaryTimeframe('all')}
-              style={{ fontSize: '11px', padding: '3px 10px' }}
-            >
-              🌐 All Time
-            </button>
-            <button
-              className={'status-tab ' + (summaryTimeframe === 'today' ? 'active' : '')}
-              onClick={() => setSummaryTimeframe('today')}
-              style={{ fontSize: '11px', padding: '3px 10px' }}
-            >
-              📅 Today
-            </button>
-            <button
-              className={'status-tab ' + (summaryTimeframe === 'week' ? 'active' : '')}
-              onClick={() => setSummaryTimeframe('week')}
-              style={{ fontSize: '11px', padding: '3px 10px' }}
-            >
-              🗓️ Last 7 Days
-            </button>
-            <button
-              className={'status-tab ' + (summaryTimeframe === 'month' ? 'active' : '')}
-              onClick={() => setSummaryTimeframe('month')}
-              style={{ fontSize: '11px', padding: '3px 10px' }}
-            >
-              📆 Last 30 Days
-            </button>
-          </div>
-        </div>
-
-        {staffActivitySummary.length === 0 ? (
-          <div className="tiny muted text-center" style={{ padding: '12px 0' }}>
-            No staff activity recorded for this time period.
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-            {staffActivitySummary.map((staff) => {
-              const isSelected = selectedStaff === staff.username
-              return (
-                <div
-                  key={staff.username}
-                  onClick={() => setSelectedStaff(isSelected ? 'all' : staff.username)}
-                  style={{
-                    background: isSelected ? '#eff6ff' : '#f8fafc',
-                    border: isSelected ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  title={"Click to filter audit trail for @" + staff.username}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '13px' }}>👤</span>
-                      <strong style={{ fontSize: '13px', color: '#1e293b' }}>@{staff.username}</strong>
+          {staffActivitySummary.length === 0 ? (
+            <div className="tiny muted text-center" style={{ padding: '8px 0' }}>
+              No staff activity recorded for this time period.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
+              {staffActivitySummary.map((staff) => {
+                const isSelected = selectedStaff === staff.username
+                return (
+                  <div
+                    key={staff.username}
+                    onClick={() => setSelectedStaff(isSelected ? 'all' : staff.username)}
+                    style={{
+                      background: isSelected ? '#eff6ff' : '#f8fafc',
+                      border: isSelected ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                      borderRadius: '7px',
+                      padding: '8px 10px',
+                      cursor: 'pointer',
+                    }}
+                    title={`Click to filter by @${staff.username}`}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <strong style={{ fontSize: '12.5px', color: '#1e293b' }}>@{staff.username}</strong>
+                      <span className="chip sm font-bold" style={{ fontSize: '10px', background: staff.totalActions > 0 ? '#dbeafe' : '#f1f5f9', color: staff.totalActions > 0 ? '#1d4ed8' : '#64748b' }}>
+                        {staff.totalActions}
+                      </span>
                     </div>
-                    <span
-                      className="chip sm font-bold"
-                      style={{
-                        fontSize: '10px',
-                        background: staff.totalActions > 0 ? '#dbeafe' : '#f1f5f9',
-                        color: staff.totalActions > 0 ? '#1d4ed8' : '#64748b',
-                      }}
-                    >
-                      {staff.totalActions} action{staff.totalActions === 1 ? '' : 's'}
-                    </span>
+                    <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#475569' }}>
+                      <span>New: <strong>{staff.created}</strong></span>
+                      <span>Saved: <strong>{staff.updated}</strong></span>
+                      <span>Shared: <strong>{staff.shared}</strong></span>
+                    </div>
                   </div>
-
-                  <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#475569', marginBottom: '6px' }}>
-                    <span>Created: <strong style={{ color: '#16a34a' }}>{staff.created}</strong></span>
-                    <span>Updated: <strong style={{ color: '#2563eb' }}>{staff.updated}</strong></span>
-                    <span>Shared: <strong style={{ color: '#7c3aed' }}>{staff.shared}</strong></span>
-                  </div>
-
-                  <div style={{ fontSize: '10px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {staff.lastActionTime ? (
-                      <>
-                        Last: <span style={{ fontWeight: 600 }}>{staff.lastAction}</span> ({timeAgo(staff.lastActionTime)})
-                      </>
-                    ) : (
-                      <span style={{ fontStyle: 'italic' }}>No activity in selected range</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="card filter-bar mb-3">
-        <div className="search-wrap">
-          <span className="search-icon">{Icon.search}</span>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search by actor, quotation name, or event…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button className="icon-btn sm" onClick={() => setSearch('')}>
-              {Icon.close}
-            </button>
+                )
+              })}
+            </div>
           )}
         </div>
+      )}
 
-        <div className="filter-controls" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {/* Timeframe Date Filter */}
-          <select
-            className="select-input"
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value as any)}
-            title="Filter audit log by date range"
-            style={{ minWidth: '150px' }}
-          >
-            <option value="all">🌐 All History (No Date Limit)</option>
-            <option value="today">📅 Today</option>
-            <option value="7days">🗓️ Past 7 Days</option>
-            <option value="30days">📆 Past 30 Days</option>
-            <option value="90days">⌛ Past 90 Days</option>
-          </select>
-
-          <select
-            className="select-input"
-            value={selectedStaff}
-            onChange={(e) => setSelectedStaff(e.target.value)}
-            title="Filter activity by actor"
-            style={{ minWidth: '160px' }}
-          >
-            <option value="all">👥 All Activity ({logs.length} events)</option>
-            {staffMembers.length > 0 && (
-              <option value="__staff_only__">👤 Staff Members Only (Exclude Admin/Owner)</option>
+      {/* Slim Search Toolbar + Collapsible Filters Box */}
+      <div className="card minimal-toolbar-card">
+        <div className="minimal-toolbar-row">
+          <div className="search-wrap minimal-search-wrap">
+            <span className="search-icon">{Icon.search}</span>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search user, quotation name, or event…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button className="icon-btn sm" onClick={() => setSearch('')} title="Clear search">
+                {Icon.close}
+              </button>
             )}
-            {staffMembers.map((staff) => (
-              <option key={staff} value={staff}>
-                &nbsp;&nbsp;↳ 👤 @{staff}
-              </option>
-            ))}
-            <option value="__leadership__">👑 Admin &amp; Owner Actions Only</option>
-          </select>
+          </div>
 
-          <select
-            className="select-input"
-            value={filterAction}
-            onChange={(e) => setFilterAction(e.target.value)}
+          <button
+            type="button"
+            className="btn ghost sm minimal-pill-btn"
+            onClick={() => setFiltersOpen((o) => !o)}
+            style={{
+              borderColor: filtersOpen || activityFilterCount > 0 ? '#2563eb' : '#e2e8f0',
+              background: filtersOpen || activityFilterCount > 0 ? '#eff6ff' : '#ffffff',
+              color: filtersOpen || activityFilterCount > 0 ? '#1d4ed8' : '#334155',
+            }}
           >
-            <option value="all">All Event Types</option>
-            {securityAlertsCount > 0 && (
-              <option value="security_alerts">🛡️ Security Incidents Only ({securityAlertsCount})</option>
-            )}
-            <option value="project_created">Project Created</option>
-            <option value="pdf_downloaded">📄 PDF Downloads &amp; Saves</option>
-            <option value="project_updated">Project Updated</option>
-            <option value="project_duplicated">Project Duplicated</option>
-            <option value="project_recalculated">Project Recalculated</option>
-            <option value="template_published">Template Published</option>
-            <option value="project_archived">Project Archived</option>
-            <option value="project_deleted">Project Deleted</option>
-            <option value="member_joined">Member Joined</option>
-            <option value="member_role_changed">Role Changed</option>
-            <option value="join_requested">Join Requested</option>
-            <option value="member_rejected">Request Rejected</option>
-            <option value="join_code_rotated">Join Code Rotated</option>
-          </select>
+            <span>🎛 Filters</span>
+            {activityFilterCount > 0 && <span className="minimal-count-dot">{activityFilterCount}</span>}
+          </button>
         </div>
+
+        {filtersOpen && (
+          <div className="minimal-filters-box">
+            <div className="minimal-filter-group">
+              <span className="minimal-filter-label">Date Range</span>
+              <select className="select-input compact" value={dateRange} onChange={(e) => setDateRange(e.target.value as any)}>
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="7days">Last 7 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="90days">Last 90 Days</option>
+              </select>
+            </div>
+
+            <div className="minimal-filter-group">
+              <span className="minimal-filter-label">User</span>
+              <select className="select-input compact" value={selectedStaff} onChange={(e) => setSelectedStaff(e.target.value)}>
+                <option value="all">All Users ({logs.length})</option>
+                {staffMembers.length > 0 && <option value="__staff_only__">Staff Only</option>}
+                {staffMembers.map((staff) => (
+                  <option key={staff} value={staff}>@{staff}</option>
+                ))}
+                <option value="__leadership__">Admins &amp; Owners</option>
+              </select>
+            </div>
+
+            <div className="minimal-filter-group">
+              <span className="minimal-filter-label">Event Type</span>
+              <select className="select-input compact" value={filterAction} onChange={(e) => setFilterAction(e.target.value)}>
+                <option value="all">All Events</option>
+                {securityAlertsCount > 0 && <option value="security_alerts">Security Incidents ({securityAlertsCount})</option>}
+                <option value="project_created">Created</option>
+                <option value="project_updated">Saved / Updated</option>
+                <option value="pdf_downloaded">PDF Downloaded</option>
+                <option value="project_duplicated">Revised / Copied</option>
+                <option value="project_recalculated">Recalculated</option>
+                <option value="template_published">Template Published</option>
+                <option value="project_archived">Archived</option>
+                <option value="project_deleted">Deleted</option>
+                <option value="member_joined">Member Joined</option>
+                <option value="member_role_changed">Role Changed</option>
+                <option value="join_requested">Join Requested</option>
+                <option value="member_rejected">Request Rejected</option>
+                <option value="join_code_rotated">Code Rotated</option>
+              </select>
+            </div>
+
+            {activityFilterCount > 0 && (
+              <button
+                type="button"
+                className="link-inline tiny"
+                style={{ marginLeft: 'auto' }}
+                onClick={() => {
+                  setDateRange('all')
+                  setSelectedStaff('all')
+                  setFilterAction('all')
+                }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Activity Timeline List */}
@@ -583,17 +550,30 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
                 projectMap,
                 projectRevisionsMap
               )
-              const hasChanges = Boolean(extracted && extracted.changes && extracted.changes.length > 0)
               const isExpanded = expandedLogIds.has(item.id)
+              const changeCount = extracted?.changes?.length || 0
+              const plainSummaryText = changeCount > 0
+                ? extracted.changes
+                    .slice(0, 2)
+                    .map((c: any) => cleanDiffText(typeof c === 'string' ? c : (c?.diff || `${c?.label || ''}: ${c?.oldVal || ''} → ${c?.newVal || ''}`)))
+                    .join(' · ')
+                : ''
+              const exactDateShort = new Date(item.created_at).toLocaleString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
 
               return (
                 <div
                   key={item.id}
-                  className={`audit-row-container ${isExpanded ? 'is-expanded' : ''}`}
+                  className={`audit-row-container minimal-audit-row ${isExpanded ? 'is-expanded' : ''}`}
                 >
-                  {/* Clean, Non-Cluttered Primary Summary Row */}
+                  {/* Minimal, Plain-English Summary Row with Full Info */}
                   <div
                     className="audit-summary-row"
+                    style={{ padding: '10px 14px' }}
                     onClick={() => toggleExpand(item.id)}
                     role="button"
                     tabIndex={0}
@@ -604,114 +584,75 @@ export function ActivityPage({ session, org, onOpenProject }: Props) {
                       }
                     }}
                   >
-                    {/* Status Icon */}
                     <div className="audit-icon-col">
-                      <span className={`audit-badge ${badgeClass}`}>{getActionIcon(item.action)}</span>
+                      <span className={`audit-badge ${badgeClass}`} style={{ width: 28, height: 28 }}>{getActionIcon(item.action)}</span>
                     </div>
 
-                    {/* Middle Content */}
-                    <div className="audit-middle-col">
-                      <div className="audit-actor-line">
+                    <div className="audit-middle-col" style={{ gap: 3 }}>
+                      <div className="audit-actor-line" style={{ fontSize: '13px', color: '#0f172a', gap: 5 }}>
                         <strong className="audit-user">{item.user_name}</strong>
-                        <span className="audit-action-label">{label}</span>
+                        <span className="audit-action-label" style={{ color: '#475569' }}>{label}</span>
                         {item.details?.client_name && (
-                          <span className="audit-project-pill" style={{ color: '#d97706', borderColor: '#fde68a', background: '#fffbeb' }}>
-                            “{item.details.client_name}”
-                          </span>
+                          <strong style={{ color: '#b45309' }}>“{item.details.client_name}”</strong>
                         )}
                         {item.details?.name && !item.details?.client_name && (
-                          <span
-                            className="audit-project-pill"
+                          <button
+                            type="button"
+                            className="link-inline"
+                            style={{ fontSize: '13px', fontWeight: 700 }}
                             onClick={(e) => {
                               if (item.project_id && onOpenProject) {
                                 e.stopPropagation()
                                 onOpenProject(item.project_id)
                               }
                             }}
-                            title={item.project_id ? 'Click to open project in calculator' : undefined}
+                            title={item.project_id ? 'Open quotation in calculator' : undefined}
                           >
-                            “{item.details.name}”
+                            {item.details.name}
+                          </button>
+                        )}
+                        {item.action === 'client_conflict' && item.details?.existing_owner && (
+                          <span className="tiny" style={{ color: '#b45309', fontWeight: 600 }}>
+                            (Owner: @{item.details.existing_owner}{item.details?.gst ? ` · GST ${item.details.gst}` : ''})
                           </span>
                         )}
                       </div>
 
-                      {/* Clean Sub-Metadata Badges */}
-                      <div className="audit-meta-pills">
-                        {item.action === 'client_conflict' && (
-                          <>
-                            {item.details?.existing_owner && (
-                              <span className="chip warn sm" style={{ fontWeight: 600 }}>
-                                Handled by: @{item.details.existing_owner}
-                              </span>
-                            )}
-                            {item.details?.gst && (
-                              <span className="version-pill">
-                                GST: {item.details.gst}
-                              </span>
-                            )}
-                          </>
-                        )}
-                        {item.details?.template_version && (
-                          <span className="version-pill">Template v{item.details.template_version}</span>
-                        )}
-                        {item.details?.total !== undefined && Number(item.details.total) > 0 && (
-                          <span className="audit-total-pill">Total: {inr(Number(item.details.total))}</span>
-                        )}
-                        {item.details?.old_version && item.details?.new_version && (
-                          <span className="chip warn sm">
-                            v{item.details.old_version} → v{item.details.new_version}
+                      <div className="tiny muted" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: '11.5px' }}>
+                        {plainSummaryText && (
+                          <span style={{ color: '#334155', fontWeight: 500, maxWidth: '520px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {plainSummaryText}{changeCount > 2 ? ` (+${changeCount - 2} more)` : ''}
                           </span>
                         )}
-                        {item.details?.new_role && (
-                          <span className="chip primary sm">Role: {item.details.new_role}</span>
-                        )}
-
-                        {/* Interactive Changes Counter Pill */}
-                        {hasChanges && (
-                          <span
-                            className={`audit-changes-tag ${isExpanded ? 'active' : ''}`}
-                            title="Click to view full modification details"
-                          >
-                            📝 {extracted.changes.length} change{extracted.changes.length > 1 ? 's' : ''}{' '}
-                            <span className="tag-arrow">{isExpanded ? '▴' : '▾'}</span>
-                          </span>
-                        )}
-
-                        {/* Device Badge */}
-                        <span className="audit-device-pill" title={`Device: ${devInfo.label}`}>
-                          <span>{devInfo.icon}</span> {devInfo.label}
-                        </span>
+                        {plainSummaryText && <span>·</span>}
+                        <span>{exactDateShort}</span>
+                        {item.details?.template_version && <span>· v{item.details.template_version}</span>}
+                        {item.details?.new_role && <span>· Role: {item.details.new_role}</span>}
+                        <span>· {devInfo.label}</span>
+                        <span title={netInfo.tooltip}>· {netInfo.ip || netInfo.label}</span>
                       </div>
                     </div>
 
-                    {/* Right Meta & Expand Action */}
-                    <div className="audit-right-col" onClick={(e) => e.stopPropagation()}>
-                      {/* Network & IP pill */}
-                      <span
-                        className={`audit-network-pill ${netInfo.networkType}`}
-                        title={netInfo.tooltip}
-                      >
-                        <span>{netInfo.icon}</span> {netInfo.label}
-                      </span>
-
-                      {/* Timestamp */}
+                    <div className="audit-right-col" onClick={(e) => e.stopPropagation()} style={{ gap: 10 }}>
+                      {item.details?.total !== undefined && Number(item.details.total) > 0 && (
+                        <strong style={{ fontSize: '12.5px', color: '#15803d', whiteSpace: 'nowrap' }}>
+                          {inr(Number(item.details.total))}
+                        </strong>
+                      )}
                       <span
                         className="audit-time-label"
-                        title={new Date(item.created_at).toLocaleString('en-IN', {
-                          dateStyle: 'full',
-                          timeStyle: 'medium',
-                        })}
+                        style={{ fontSize: '11px', color: '#64748b' }}
+                        title={new Date(item.created_at).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'medium' })}
                       >
                         {timeAgo(item.created_at)}
                       </span>
-
-                      {/* Toggle button */}
                       <button
-                        className={`btn sm ${isExpanded ? 'primary' : 'ghost'} audit-expand-btn`}
+                        className={`btn sm ${isExpanded ? 'primary' : 'ghost'} minimal-pill-btn`}
+                        style={{ height: '26px !important', padding: '0 8px !important', fontSize: '11.5px !important' }}
                         onClick={() => toggleExpand(item.id)}
                         aria-expanded={isExpanded}
                       >
-                        {isExpanded ? 'Hide Details ▴' : 'View Changes ▾'}
+                        {isExpanded ? 'Hide ▴' : 'Details ▾'}
                       </button>
                     </div>
                   </div>

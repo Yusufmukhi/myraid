@@ -19,9 +19,10 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
   const [myProjects, setMyProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Date range filtering for Owner & Admin
+  // Date range filtering for Owner & Admin (collapsed behind Filter button for minimal UI)
   type TimeRange = 'overall' | 'year' | 'month'
   const [timeRange, setTimeRange] = useState<TimeRange>('overall')
+  const [analyticsFilterOpen, setAnalyticsFilterOpen] = useState(false)
   const [showCode, setShowCode] = useState(false)
   const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().slice(0, 7))
@@ -186,14 +187,25 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
       }
     }
 
-    const wonPct = total > 0 ? ((won / total) * 100).toFixed(1) : '0'
-    const lostPct = total > 0 ? ((lost / total) * 100).toFixed(1) : '0'
+    const decidedCount = won + lost
+    const decidedVal = wonVal + lostVal
+    const fmtPct = (num: number, den: number) => {
+      if (den <= 0) return '0'
+      const raw = (num / den) * 100
+      return Number.isInteger(Math.round(raw * 10) / 10)
+        ? String(Math.round(raw))
+        : raw.toFixed(1)
+    }
+    const winPct = fmtPct(won, decidedCount)
+    const lossPct = fmtPct(lost, decidedCount)
     const negotiatingPct = total > 0 ? ((negotiating / total) * 100).toFixed(1) : '0'
 
     return {
       total,
       won,
       lost,
+      decidedCount,
+      decidedVal,
       negotiating,
       quoted,
       approved: won,
@@ -203,9 +215,11 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
       negotiatingVal,
       quotedVal,
       approvedVal: wonVal,
-      wonPct,
-      approvedPct: wonPct,
-      lostPct,
+      wonPct: winPct,
+      approvedPct: winPct,
+      winPct,
+      lossPct,
+      lostPct: lossPct,
       negotiatingPct,
     }
   }, [filteredDashboardProjects])
@@ -232,159 +246,168 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
     ? myProjects.slice(0, 5)
     : s.recent_projects
 
+  const rangeLabel = timeRange === 'overall' ? 'All Time' : timeRange === 'year' ? `Year ${selectedYear}` : selectedMonth
+
   return (
-    <div className="dashboard-page">
-      {/* Streamlined Header Bar */}
-      <div className="card row between p-3 mb-2">
-        <div className="row gap">
-          <h2 style={{ fontSize: '18px' }}>{org.name}</h2>
-          {isAdminOrOwner && (
-            <>
-              <span
-                className="chip primary font-mono cursor-pointer"
-                onClick={() => setShowCode(!showCode)}
-                title="Click to reveal or hide organization join code"
-              >
-                Code: {showCode ? org.code : '••••••••'}
-              </span>
-              <span className="version-pill">Default: v{s.current_template_version}</span>
-            </>
-          )}
-        </div>
-        <div className="row gap">
-          <button className="btn primary sm" onClick={onNewProject}>
-            {Icon.plus} New Project
-          </button>
-          <button className="btn ghost sm" onClick={() => onNavigate('projects')}>
-            {Icon.folder} {isAdminOrOwner ? 'All Projects' : 'My Projects'}
-          </button>
-        </div>
-      </div>
-
-      {/* Owner & Admin Time Range Controls */}
-      {isAdminOrOwner && (
-        <div
-          className="card p-2 mb-3"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 12,
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: 10,
-            padding: '10px 16px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.05em' }}>
-              Quotation Analytics:
-            </span>
-            <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
-              <button
-                type="button"
-                className={`btn sm ${timeRange === 'overall' ? 'primary' : 'ghost'}`}
-                onClick={() => setTimeRange('overall')}
-                style={{ padding: '3px 12px', fontSize: 11.5, fontWeight: 700 }}
-              >
-                Overall (All Time)
-              </button>
-              <button
-                type="button"
-                className={`btn sm ${timeRange === 'year' ? 'primary' : 'ghost'}`}
-                onClick={() => setTimeRange('year')}
-                style={{ padding: '3px 12px', fontSize: 11.5, fontWeight: 700 }}
-              >
-                By Year
-              </button>
-              <button
-                type="button"
-                className={`btn sm ${timeRange === 'month' ? 'primary' : 'ghost'}`}
-                onClick={() => setTimeRange('month')}
-                style={{ padding: '3px 12px', fontSize: 11.5, fontWeight: 700 }}
-              >
-                By Month
-              </button>
-            </div>
-
-            {timeRange === 'year' && (
-              <select
-                className="select sm"
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                style={{ fontSize: 12, padding: '3px 8px', fontWeight: 600, borderRadius: 6 }}
-              >
-                {availableYears.map((y) => (
-                  <option key={y} value={y}>Year {y}</option>
-                ))}
-              </select>
-            )}
-
-            {timeRange === 'month' && (
-              <select
-                className="select sm"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                style={{ fontSize: 12, padding: '3px 8px', fontWeight: 600, borderRadius: 6 }}
-              >
-                {availableMonths.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
+    <div className="dashboard-page minimal-dashboard">
+      {/* Compact Minimal Header Bar */}
+      <div className="card minimal-toolbar-card">
+        <div className="minimal-toolbar-row" style={{ justifyContent: 'space-between' }}>
+          <div className="row gap" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0f172a' }}>{org.name}</h2>
+            {isAdminOrOwner && (
+              <>
+                <span
+                  className="chip primary sm font-mono cursor-pointer"
+                  onClick={() => setShowCode(!showCode)}
+                  title="Click to reveal or hide organization join code"
+                  style={{ fontSize: '11px' }}
+                >
+                  Code: {showCode ? org.code : '••••••••'}
+                </span>
+                <span className="version-pill" style={{ fontSize: '11px' }}>Default: v{s.current_template_version}</span>
+              </>
             )}
           </div>
 
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => onNavigate('staff_analytics')}
-            style={{ fontWeight: 700, fontSize: 12, border: '1px solid #cbd5e1', padding: '4px 12px', borderRadius: 6 }}
-          >
-            👥 Staff Performance Breakdown →
-          </button>
+          <div className="row gap" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+            {isAdminOrOwner && (
+              <>
+                <button
+                  type="button"
+                  className="btn ghost sm minimal-pill-btn"
+                  onClick={() => setAnalyticsFilterOpen((o) => !o)}
+                  title="Filter dashboard KPIs by Overall, Year, or Month"
+                  style={{
+                    borderColor: analyticsFilterOpen || timeRange !== 'overall' ? '#2563eb' : '#e2e8f0',
+                    background: analyticsFilterOpen || timeRange !== 'overall' ? '#eff6ff' : '#ffffff',
+                    color: analyticsFilterOpen || timeRange !== 'overall' ? '#1d4ed8' : '#334155',
+                  }}
+                >
+                  <span>📅 {rangeLabel}</span>
+                  <span style={{ fontSize: '9px', opacity: 0.7 }}>{analyticsFilterOpen ? '▲' : '▼'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm minimal-pill-btn"
+                  onClick={() => onNavigate('staff_analytics')}
+                >
+                  👥 Staff Stats
+                </button>
+              </>
+            )}
+            <button className="btn ghost sm minimal-pill-btn" onClick={() => onNavigate('projects')}>
+              {Icon.folder} {isAdminOrOwner ? 'Projects' : 'My Projects'}
+            </button>
+            <button className="btn primary sm" onClick={onNewProject} style={{ height: '32px', padding: '0 12px', fontSize: '12.5px' }}>
+              {Icon.plus} New Project
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Primary KPI Row */}
-      <div className="kpis">
+        {/* Collapsible Timeframe Box (Opens on Button Click) */}
+        {isAdminOrOwner && analyticsFilterOpen && (
+          <div className="minimal-filters-box" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span className="minimal-filter-label">Period</span>
+              <div className="status-tabs">
+                <button
+                  type="button"
+                  className={`status-tab ${timeRange === 'overall' ? 'active' : ''}`}
+                  onClick={() => setTimeRange('overall')}
+                >
+                  Overall (All Time)
+                </button>
+                <button
+                  type="button"
+                  className={`status-tab ${timeRange === 'year' ? 'active' : ''}`}
+                  onClick={() => setTimeRange('year')}
+                >
+                  By Year
+                </button>
+                <button
+                  type="button"
+                  className={`status-tab ${timeRange === 'month' ? 'active' : ''}`}
+                  onClick={() => setTimeRange('month')}
+                >
+                  By Month
+                </button>
+              </div>
+
+              {timeRange === 'year' && (
+                <select
+                  className="select-input compact"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                >
+                  {availableYears.map((y) => (
+                    <option key={y} value={y}>Year {y}</option>
+                  ))}
+                </select>
+              )}
+
+              {timeRange === 'month' && (
+                <select
+                  className="select-input compact"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                >
+                  {availableMonths.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="link-inline tiny"
+              onClick={() => setAnalyticsFilterOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Compact Primary KPI Row */}
+      <div className="kpis minimal-kpis">
         {isAdminOrOwner ? (
           <>
             <div className="kpi primary">
               <span>Total Quotations</span>
               <strong>{conversionStats.total}</strong>
-              <small>Total Pipeline: {inr(conversionStats.totalVal)}</small>
+              <small>Pipeline: {inr(conversionStats.totalVal)}</small>
             </div>
             <div className="kpi kpi-won">
               <span style={{ color: '#166534' }}>Won</span>
               <strong style={{ color: '#15803d' }}>
                 {conversionStats.won}
-                <span className="metric-pill won">+{conversionStats.wonPct}%</span>
+                {conversionStats.decidedCount > 0 && (
+                  <span className="metric-pill won">{conversionStats.winPct}% Win</span>
+                )}
               </strong>
-              <small style={{ color: '#166534' }}>Won: {inr(conversionStats.wonVal)}</small>
+              <small style={{ color: '#166534' }}>{inr(conversionStats.wonVal)}</small>
             </div>
             <div className="kpi kpi-negotiating">
               <span style={{ color: '#1e40af' }}>Negotiating</span>
-              <strong style={{ color: '#2563eb' }}>
-                {conversionStats.negotiating}
-                <span className="metric-pill negotiating">{conversionStats.negotiatingPct}%</span>
-              </strong>
-              <small style={{ color: '#1e40af' }}>Negotiating: {inr(conversionStats.negotiatingVal)}</small>
+              <strong style={{ color: '#2563eb' }}>{conversionStats.negotiating}</strong>
+              <small style={{ color: '#1e40af' }}>{inr(conversionStats.negotiatingVal)}</small>
             </div>
             <div className="kpi kpi-quoted">
               <span style={{ color: '#b45309' }}>Quoted</span>
-              <strong style={{ color: '#d97706' }}>
-                {conversionStats.quoted}
-              </strong>
-              <small style={{ color: '#b45309' }}>Quoted: {inr(conversionStats.quotedVal)}</small>
+              <strong style={{ color: '#d97706' }}>{conversionStats.quoted}</strong>
+              <small style={{ color: '#b45309' }}>{inr(conversionStats.quotedVal)}</small>
             </div>
             <div className="kpi kpi-loss">
               <span style={{ color: '#991b1b' }}>Loss</span>
               <strong style={{ color: '#dc2626' }}>
                 {conversionStats.lost}
-                <span className="metric-pill loss">{conversionStats.lostPct}%</span>
+                {conversionStats.decidedCount > 0 && (
+                  <span className="metric-pill loss">{conversionStats.lossPct}% Loss</span>
+                )}
               </strong>
-              <small style={{ color: '#991b1b' }}>Lost: {inr(conversionStats.lostVal)}</small>
+              <small style={{ color: '#991b1b' }}>{inr(conversionStats.lostVal)}</small>
             </div>
           </>
         ) : (
@@ -561,56 +584,55 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
         </div>
       )}
 
-      {/* Visual Conversion Progress Bar for Admin & Owner */}
-      {isAdminOrOwner && conversionStats.total > 0 && (
-        <div className="card p-3 mb-3" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#475569', letterSpacing: '0.04em' }}>
-              Quotation Conversion Overview
-            </span>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>
-              {timeRange === 'overall' ? 'All Time' : timeRange === 'year' ? `Year ${selectedYear}` : selectedMonth}
+      {/* Quotation Conversion Summary — Strictly Won vs Loss */}
+      {isAdminOrOwner && (conversionStats.decidedCount > 0 || conversionStats.total > 0) && (
+        <div className="card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#475569', letterSpacing: '0.04em' }}>
+                Quotation Conversion (Won vs Loss)
+              </span>
+              {conversionStats.decidedCount > 0 && (
+                <span className="tiny muted">({conversionStats.decidedCount} closed)</span>
+              )}
+            </div>
+            <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>
+              {rangeLabel}
             </span>
           </div>
+
           <div style={{ height: 8, width: '100%', background: '#f1f5f9', borderRadius: 999, overflow: 'hidden', display: 'flex' }}>
-            <div
-              style={{ width: `${conversionStats.wonPct}%`, background: '#10b981', height: '100%' }}
-              title={`Won: ${conversionStats.won} (${conversionStats.wonPct}%)`}
-            />
-            <div
-              style={{ width: `${conversionStats.negotiatingPct}%`, background: '#3b82f6', height: '100%' }}
-              title={`Negotiating: ${conversionStats.negotiating} (${conversionStats.negotiatingPct}%)`}
-            />
-            <div
-              style={{ width: `${conversionStats.lostPct}%`, background: '#ef4444', height: '100%' }}
-              title={`Loss: ${conversionStats.lost} (${conversionStats.lostPct}%)`}
-            />
-            <div
-              style={{
-                width: `${Math.max(0, 100 - Number(conversionStats.wonPct) - Number(conversionStats.negotiatingPct) - Number(conversionStats.lostPct))}%`,
-                background: '#f59e0b',
-                height: '100%',
-              }}
-              title={`Quoted: ${conversionStats.quoted}`}
-            />
+            {conversionStats.decidedCount > 0 && (
+              <>
+                <div
+                  style={{ width: `${conversionStats.winPct}%`, background: '#10b981', height: '100%' }}
+                  title={`Win: ${conversionStats.won} (${conversionStats.winPct}%)`}
+                />
+                <div
+                  style={{ width: `${conversionStats.lossPct}%`, background: '#ef4444', height: '100%' }}
+                  title={`Loss: ${conversionStats.lost} (${conversionStats.lossPct}%)`}
+                />
+              </>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11.5, color: '#475569', fontWeight: 500, flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-              Won: <strong>{conversionStats.won} ({conversionStats.wonPct}%)</strong>
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />
-              Negotiating: <strong>{conversionStats.negotiating} ({conversionStats.negotiatingPct}%)</strong>
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-              Quoted: <strong>{conversionStats.quoted}</strong>
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
-              Loss: <strong>{conversionStats.lost} ({conversionStats.lostPct}%)</strong>
-            </span>
+
+          <div style={{ display: 'flex', gap: 18, marginTop: 8, fontSize: 12, color: '#334155', fontWeight: 500, flexWrap: 'wrap', alignItems: 'center' }}>
+            {conversionStats.decidedCount === 0 ? (
+              <span className="tiny muted">No Won or Loss quotations recorded yet in {rangeLabel}.</span>
+            ) : (
+              <>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                  Win: <strong style={{ color: '#15803d' }}>{conversionStats.won} ({conversionStats.winPct}%)</strong>
+                  <span className="tiny muted">· {inr(conversionStats.wonVal)}</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                  Loss: <strong style={{ color: '#dc2626' }}>{conversionStats.lost} ({conversionStats.lossPct}%)</strong>
+                  <span className="tiny muted">· {inr(conversionStats.lostVal)}</span>
+                </span>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -732,19 +754,28 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
                   <p className="tiny muted">No recent activity recorded</p>
                 </div>
               ) : (
-                <div className="activity-timeline">
-                  {s.recent_activity.slice(0, 6).map((act) => (
-                    <div key={act.id} className="activity-item">
+                <div className="activity-timeline minimal-activity-feed">
+                  {s.recent_activity.slice(0, 7).map((act) => (
+                    <div key={act.id} className="activity-item minimal-activity-item">
                       <div className="act-bullet" />
                       <div className="act-content">
-                        <div className="act-header">
-                          <span className="act-user">{act.user_name}</span>
-                          <span className="act-action">{formatAction(act.action)}</span>
-                          <span className="act-time muted tiny">{timeAgo(act.created_at)}</span>
+                        <div className="act-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                          <span style={{ fontSize: '12.5px', color: '#0f172a' }}>
+                            <strong>{act.user_name}</strong>{' '}
+                            <span style={{ color: '#475569' }}>{formatAction(act.action)}</span>
+                            {act.details?.name ? (
+                              <> <strong style={{ color: '#1d4ed8' }}>{act.details.name}</strong></>
+                            ) : null}
+                          </span>
+                          <span className="act-time muted tiny" style={{ whiteSpace: 'nowrap' }}>{timeAgo(act.created_at)}</span>
                         </div>
-                        {act.details?.name && (
-                          <div className="act-detail">
-                            {act.details.name} {act.details.template_version ? `(v${act.details.template_version})` : ''}
+                        {(act.details?.total || act.details?.buyer_name || act.details?.template_version) && (
+                          <div className="tiny muted" style={{ marginTop: 2 }}>
+                            {[
+                              act.details?.buyer_name,
+                              act.details?.total ? inr(Number(act.details.total)) : null,
+                              act.details?.template_version ? `v${act.details.template_version}` : null,
+                            ].filter(Boolean).join(' · ')}
                           </div>
                         )}
                       </div>
@@ -763,24 +794,39 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
 function formatAction(action: string) {
   switch (action) {
     case 'project.created':
-      return 'created project'
+    case 'project_created':
+      return 'created'
     case 'project.updated':
-      return 'saved project'
+    case 'project_updated':
+      return 'updated'
     case 'project.recalculated':
-      return 'recalculated project'
+    case 'project_recalculated':
+      return 'recalculated'
     case 'project.duplicated':
-      return 'duplicated project'
+    case 'project_duplicated':
+      return 'revised / copied'
     case 'project.archived':
-      return 'archived project'
+    case 'project_archived':
+      return 'archived'
     case 'project.restored':
-      return 'restored project'
+    case 'project_restored':
+      return 'restored'
+    case 'project_deleted':
+      return 'deleted'
+    case 'pdf_downloaded':
+      return 'downloaded PDF'
+    case 'pdf_saved':
+      return 'saved PDF details'
     case 'template.published':
-      return 'published new template'
+    case 'template_published':
+      return 'published template'
     case 'template.set_default':
-      return 'switched default template'
+      return 'set default template'
     case 'member_joined':
-      return 'joined organisation'
+      return 'joined team'
+    case 'member_role_changed':
+      return 'changed role'
     default:
-      return action.replace(/_/g, ' ')
+      return action.replace(/[_.]/g, ' ')
   }
 }
