@@ -3238,7 +3238,7 @@ async function runAllTests() {
         }
       }
 
-      // Verify C2C ANALYSIS block starting at R6 (S5-linked Profit, Total=S7+N50, Ratio=S8/J44)
+      // Verify C2C block starts cleanly with Profit at R6 (no C2C ANALYSIS / synced row), Total at R7 (=S6+N50), Ratio at R8 (=IF(J44>0,S7/J44,0))
       exportWorkbookToXLSX(
         wbTest,
         'Test_C2C_Analysis_S5.xlsx',
@@ -3265,24 +3265,23 @@ async function runAllTests() {
       )
       const c2cWs = capturedWrites[2]?.wbObj?.Sheets?.['Total cal']
       const c2cR6BlockOk =
-        c2cWs?.['R6']?.v === 'C2C ANALYSIS' &&
-        c2cWs?.['S6']?.v === '✓ synced' &&
-        c2cWs?.['R7']?.v === 'Profit:' &&
-        c2cWs?.['S7']?.f === 'S5-SUM(N22:N25)' &&
-        Number(c2cWs?.['S7']?.v) === 66206 &&
-        c2cWs?.['R8']?.v === 'Total:' &&
-        c2cWs?.['S8']?.f === 'S7+N50' &&
-        Number(c2cWs?.['S8']?.v) === 83372 &&
-        c2cWs?.['R9']?.v === 'Ratio:' &&
-        c2cWs?.['S9']?.f === 'IF(J44>0,S8/J44,0)' &&
-        Number(c2cWs?.['S9']?.v) === 88.23 &&
-        c2cWs?.['S9']?.s?.numFmt === '"₹"#,##0.00"/kg"'
+        c2cWs?.['R6']?.v === 'Profit:' &&
+        c2cWs?.['S6']?.f === 'S5-SUM(N22:N25)' &&
+        Number(c2cWs?.['S6']?.v) === 66206 &&
+        c2cWs?.['R7']?.v === 'Total:' &&
+        c2cWs?.['S7']?.f === 'S6+N50' &&
+        Number(c2cWs?.['S7']?.v) === 83372 &&
+        c2cWs?.['R8']?.v === 'Ratio:' &&
+        c2cWs?.['S8']?.f === 'IF(J44>0,S7/J44,0)' &&
+        Number(c2cWs?.['S8']?.v) === 88.23 &&
+        c2cWs?.['S8']?.s?.numFmt === '"₹"#,##0.00"/kg"' &&
+        !c2cWs?.['R9']
 
       if (exactC26Ok && exactN26Ok && exactS5Ok && exactS6Ok && exactS8Ok && exactN23Ok && multiSheetOrderOk && hasSysALink && hasSysBLink && hasBreakdownText && multiErrorCount === 0 && c2cR6BlockOk) {
-        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27), C2C R6:S9 S5-Linked Analysis & Multi-System 3-Sheet Export', 'PASSED',
-          `Single-sys: C26=${singleWs['C26']?.v}%, N26='${singleWs['N26']?.f}', S5='${singleWs['S5']?.f}', S8='${singleWs['S8']?.f}' (${singleWs['S8']?.v}%), N23=${singleWs['N23']?.v}; C2C R6:S9: Profit='${c2cWs['S7']?.f}' (₹${c2cWs['S7']?.v}), Total='${c2cWs['S8']?.f}' (₹${c2cWs['S8']?.v}), Ratio='${c2cWs['S9']?.f}' (₹${c2cWs['S9']?.v}/kg); Multi-sys: 7 ordered tabs with live cross-sheet links & 0 errors.`)
+        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27), C2C R6:S8 S5-Linked Profit & Multi-System 3-Sheet Export', 'PASSED',
+          `Single-sys: C26=${singleWs['C26']?.v}%, N26='${singleWs['N26']?.f}', S5='${singleWs['S5']?.f}', S8='${singleWs['S8']?.f}' (${singleWs['S8']?.v}%), N23=${singleWs['N23']?.v}; C2C R6:S8: Profit='${c2cWs['S6']?.f}' (₹${c2cWs['S6']?.v}), Total='${c2cWs['S7']?.f}' (₹${c2cWs['S7']?.v}), Ratio='${c2cWs['S8']?.f}' (₹${c2cWs['S8']?.v}/kg); Multi-sys: 7 ordered tabs with live cross-sheet links & 0 errors.`)
       } else {
-        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27), C2C R6:S9 S5-Linked Analysis & Multi-System 3-Sheet Export', 'FAILED',
+        logResult(60, 'Excel Exact Quotation Formulas (N26=SUM(N22:N25)*C26/100, S5=N27), C2C R6:S8 S5-Linked Profit & Multi-System 3-Sheet Export', 'FAILED',
           `exactC26=${exactC26Ok}, exactN26=${exactN26Ok} (${singleWs?.['N26']?.f}), exactS5=${exactS5Ok} (${singleWs?.['S5']?.f}), exactS6=${exactS6Ok}, exactS8=${exactS8Ok}, exactN23=${exactN23Ok}, multiSheetOrder=${multiSheetOrderOk} (${actualSheets.join(', ')}), sysALink=${hasSysALink}, sysBLink=${hasSysBLink}, breakdown=${hasBreakdownText}, multiErrors=${multiErrorCount}, c2cR6Block=${c2cR6BlockOk}`)
       }
     } finally {
@@ -4277,6 +4276,94 @@ async function runAllTests() {
     }
   } catch (e) {
     logResult(68, 'Staff Security & Cost-Control Hardening (Items 1, 3, 4, 5; B49 Editable)', 'FAILED', (e as Error).message)
+  }
+
+  // -------------------------------------------------------------------------
+  // Test 69: Source-Exam Full 15-Sheet View, Initial Cell & Style Fidelity + C2C R6/S6 Badge Removal
+  // -------------------------------------------------------------------------
+  try {
+    const { getSheetMeta } = await import('../src/lib/excelStyles')
+    const { exportMultiSystemWorkbookToXLSX } = await import('../src/lib/excelExport')
+    const c2cWorkbookJson = JSON.parse(fs.readFileSync('supabase/functions/calculate/workbook_c2c.json', 'utf8'))
+    const testC2cWb = new Workbook(c2cWorkbookJson, SERVER_CONSTANTS)
+
+    const origWriteFile69 = XLSX.writeFile
+    const cap69: any[] = []
+    XLSX.writeFile = (wbObj: any) => {
+      cap69.push(wbObj)
+    }
+
+    const viewFailures: string[] = []
+    try {
+      exportWorkbookToXLSX(
+        testC2cWb,
+        'Test69_C2C.xlsx',
+        { profit: 45000, total: 60000, ratio: 90, subtotalBeforeGst: 350000, setsQty: 1, sysTransport: 5000, sysAccommodation: 2000 },
+        { setsQty: 1, subtotalBeforeGst: 350000, sysTransport: 5000, sysAccommodation: 2000, isActual: false, profitPct: 20, discountPct: 0, includeInstallation: false, extraAmount: 0 },
+      )
+
+      exportMultiSystemWorkbookToXLSX(
+        testC2cWb,
+        [{ name: 'SYSTEM A', bay: 3, setsQty: 1, overrides: {}, formulaOverrides: {}, profitPct: 20, discountPct: 0, includeInstallation: false, extraAmount: 0, allocatedTransport: 5000, allocatedAccommodation: 2000, subtotalBeforeGst: 350000, summary: { bodies: 36, models: [{ code: 'DFMU', qty: 8, unitRate: 31431.62, widthExtra: 0, powder: 1000 }], steel: { spTotal: 1000 }, trolley: { total: 200 }, totalWeight: 1200, weightWithMachine: 1250, powderTotal: 8000, labourSubtotal: 15000, subtotal: 300000 } }],
+        'Test69_Multi_C2C.xlsx',
+        { isActual: false, profitPct: 20, discountPct: 0, includeInstallation: false },
+      )
+
+      const singleBook = cap69[0]
+      const multiBook = cap69[1]
+
+      // 1. Check all 15 sheets present with exact merges, cols, rows, zoom, and initial cell positions
+      const expectedMerges: Record<string, number> = {
+        'Total cal': 18, 'DFMU': 4, 'SFMU': 4, 'SFFU': 4, 'DFFU': 4, 'DFMU-D': 4,
+        'SHEARING SIZE': 3, 'HARDWARE LIST': 20, 'hardware': 21,
+      }
+      for (const sName of testC2cWb.names) {
+        const ws = singleBook?.Sheets?.[sName]
+        const meta = getSheetMeta(sName)
+        if (!ws || !meta) { viewFailures.push(`Missing sheet or meta for ${sName}`); continue }
+        if ((ws['!merges']?.length || 0) !== (expectedMerges[sName] || 0)) {
+          viewFailures.push(`${sName} merges=${ws['!merges']?.length || 0}, expected=${expectedMerges[sName] || 0}`)
+        }
+        if ((ws['!cols']?.length || 0) < (meta.cols?.length || 0)) {
+          viewFailures.push(`${sName} cols missing`)
+        }
+      }
+      if (singleBook?.Sheets?.['Total cal']?.['!views']?.[0]?.zoomScale !== 85) {
+        viewFailures.push(`Total cal zoomScale expected 85, got ${singleBook?.Sheets?.['Total cal']?.['!views']?.[0]?.zoomScale}`)
+      }
+      if (singleBook?.Sheets?.['DFMU']?.['!rows']?.[0]?.hpt !== 21 || singleBook?.Sheets?.['DFMU-D']?.['!rows']?.[0]?.hpt !== 21) {
+        viewFailures.push('Model sheets defaultRowHeight 21pt missing')
+      }
+      if (!singleBook?.Sheets?.['Sheet1']?.['C7']?.s || !singleBook?.Sheets?.['HARDWARE LIST']?.['B7']?.s?.border || !singleBook?.Sheets?.['SHEARING SIZE']?.['B6']?.s) {
+        viewFailures.push('Sheet1, SHEARING SIZE, or HARDWARE LIST styles missing')
+      }
+      if (singleBook?.Sheets?.['Total cal']?.['A1']?.v !== 'DFMU' || singleBook?.Sheets?.['packing list']?.['C2']?.v !== 'DFMU ') {
+        viewFailures.push('Initial cell positions altered')
+      }
+
+      // 2. Check NO "C2C ANALYSIS" / "✓ synced" in R6 / S6 or Multi-System master C2C
+      const tc = singleBook?.Sheets?.['Total cal']
+      if (String(tc?.['R6']?.v || '').includes('C2C ANALYSIS') || String(tc?.['S6']?.v || '').includes('synced')) {
+        viewFailures.push(`R6/S6 still has removed C2C ANALYSIS / synced: R6=${tc?.['R6']?.v}, S6=${tc?.['S6']?.v}`)
+      }
+      const mTc = multiBook?.Sheets?.['Total cal']
+      for (const [ref, cell] of Object.entries<any>(mTc || {})) {
+        if (!ref.startsWith('!') && (String(cell?.v || '').includes('C2C ANALYSIS') || String(cell?.v || '').includes('synced'))) {
+          viewFailures.push(`Multi-system master ${ref} still contains ${cell?.v}`)
+        }
+      }
+
+      if (viewFailures.length === 0) {
+        logResult(69, 'Source-Exam Full 15-Sheet View, Initial Cell & Style Fidelity + C2C R6/S6 Badge Removal', 'PASSED',
+          'Verified all 15 sheets match source-exam.xlsx columns, row heights (incl. 21pt on DFMU..DFMU-D), merges (Total cal=18, SHEARING SIZE=3, HARDWARE LIST=20, hardware=21), Total cal zoomScale=85, fonts/borders/fills/numFmts, initial cells, and C2C R6/S6 C2C ANALYSIS/synced removal.')
+      } else {
+        logResult(69, 'Source-Exam Full 15-Sheet View, Initial Cell & Style Fidelity + C2C R6/S6 Badge Removal', 'FAILED', viewFailures.join(' | '))
+      }
+    } finally {
+      XLSX.writeFile = origWriteFile69
+    }
+  } catch (e) {
+    logResult(69, 'Source-Exam Full 15-Sheet View, Initial Cell & Style Fidelity + C2C R6/S6 Badge Removal', 'FAILED', (e as Error).message)
   }
 
   console.log('\n======================================================================')

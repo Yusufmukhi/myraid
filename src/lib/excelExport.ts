@@ -307,9 +307,9 @@ function buildStyledWorksheet(
         // N29 (r=28, c=13): SALES (Incl. GST)
         if (r === 28 && c === 13) { rowArr.push(grandTotalSales); continue }
 
-        // R5:S9 summary cards:
+        // R5:S13 summary cards:
         // - Actual Export: R5=Subtotal Before GST (=N27), R6=Profit Amount (=N26), R7=Quotation Sales (=N27 / =S11), R8=Profit Margin % (=C26), R9:R13=Discount & GST
-        // - C2C Export: R5=Subtotal Before GST (quotation before GST), R6=C2C ANALYSIS ('✓ synced'), R7=Profit: (=S5-SUM(N22:N25)), R8=Total: (=S7+N50), R9=Ratio: (=IF(J44>0,S8/J44,0))
+        // - C2C Export: R5=Subtotal Before GST (quotation before GST), R6=Profit: (=S5-SUM(N22:N25)), R7=Total: (=S6+N50), R8=Ratio: (=IF(J44>0,S7/J44,0))
         if (r === 4 && c === 17) { rowArr.push('Subtotal Before GST'); continue }
         if (r === 4 && c === 18) { rowArr.push(c2cData ? (options?.subtotalBeforeGst ?? c2cData.subtotalBeforeGst ?? subtotalWithProfit) : subtotalWithProfit); continue }
 
@@ -341,7 +341,7 @@ function buildStyledWorksheet(
             if (r === 9 && c === 18) { rowArr.push(grandTotalSales); continue }
           }
         } else {
-          // C2C ANALYSIS block starting from R6
+          // C2C profit summary starting directly at R6 (without R6/S6 badge row)
           const c2cBeforeGst = Number(options?.subtotalBeforeGst ?? c2cData?.subtotalBeforeGst ?? subtotalWithProfit)
           const c2cProfitCached = c2cData?.profit !== undefined
             ? Math.round(c2cData.profit)
@@ -355,14 +355,12 @@ function buildStyledWorksheet(
             ? Number(c2cData.ratio.toFixed(2))
             : Number((c2cWeightVal > 0 ? c2cTotalCached / c2cWeightVal : 0).toFixed(2))
 
-          if (r === 5 && c === 17) { rowArr.push('C2C ANALYSIS'); continue }
-          if (r === 5 && c === 18) { rowArr.push('✓ synced'); continue }
-          if (r === 6 && c === 17) { rowArr.push('Profit:'); continue }
-          if (r === 6 && c === 18) { rowArr.push(c2cProfitCached); continue }
-          if (r === 7 && c === 17) { rowArr.push('Total:'); continue }
-          if (r === 7 && c === 18) { rowArr.push(c2cTotalCached); continue }
-          if (r === 8 && c === 17) { rowArr.push('Ratio:'); continue }
-          if (r === 8 && c === 18) { rowArr.push(c2cRatioCached); continue }
+          if (r === 5 && c === 17) { rowArr.push('Profit:'); continue }
+          if (r === 5 && c === 18) { rowArr.push(c2cProfitCached); continue }
+          if (r === 6 && c === 17) { rowArr.push('Total:'); continue }
+          if (r === 6 && c === 18) { rowArr.push(c2cTotalCached); continue }
+          if (r === 7 && c === 17) { rowArr.push('Ratio:'); continue }
+          if (r === 7 && c === 18) { rowArr.push(c2cRatioCached); continue }
         }
 
         // Row 22: O22 (c=14) SET label, P22 (c=15) sets quantity value
@@ -481,15 +479,20 @@ function buildStyledWorksheet(
           continue
         }
         if (r === 5 && c === 18) {
-          if (isActualExport) applyFormula(r, c, 'N26')
+          if (isActualExport) {
+            applyFormula(r, c, 'N26')
+          } else {
+            // C2C Profit = Quotation Before GST (S5) - C2C Direct Cost Base (SUM(N22:N25) [+ K25])
+            applyFormula(r, c, totalExtraAmountSum > 0 ? 'S5-(SUM(N22:N25)+K25)' : 'S5-SUM(N22:N25)')
+          }
           continue
         }
         if (r === 6 && c === 18) {
           if (isActualExport) {
             applyFormula(r, c, discountPct > 0 ? 'S11' : 'N27')
           } else {
-            // C2C Profit = Quotation Before GST (S5) - C2C Direct Cost Base (SUM(N22:N25) [+ K25])
-            applyFormula(r, c, totalExtraAmountSum > 0 ? 'S5-(SUM(N22:N25)+K25)' : 'S5-SUM(N22:N25)')
+            // C2C Total = Profit (S6) + C2C Labour Charges (N50)
+            applyFormula(r, c, 'S6+N50')
           }
           continue
         }
@@ -497,14 +500,9 @@ function buildStyledWorksheet(
           if (isActualExport) {
             applyFormula(r, c, 'C26')
           } else {
-            // C2C Total = Profit (S7) + C2C Labour Charges (N50)
-            applyFormula(r, c, 'S7+N50')
+            // C2C Ratio = Total (S7) / Total Steel Weight (J44)
+            applyFormula(r, c, 'IF(J44>0,S7/J44,0)')
           }
-          continue
-        }
-        if (!isActualExport && r === 8 && c === 18) {
-          // C2C Ratio = Total (S8) / Total Steel Weight (J44)
-          applyFormula(r, c, 'IF(J44>0,S8/J44,0)')
           continue
         }
         if (isActualExport && (c === 17 || c === 18) && r >= 8 && r <= 12) {
@@ -579,9 +577,22 @@ function buildStyledWorksheet(
   if (meta?.merges && meta.merges.length > 0) {
     ws['!merges'] = meta.merges
   }
+  const mergedCellSet = new Set<string>()
+  for (const m of meta?.merges || []) {
+    for (let mr = m.s.r; mr <= m.e.r; mr++) {
+      for (let mc = m.s.c; mc <= m.e.c; mc++) {
+        mergedCellSet.add(addr(mr, mc))
+      }
+    }
+  }
+  const isModelMatrixSheet = ['DFMU', 'SFMU', 'SFFU', 'DFFU', 'DFMU-D'].includes(sheetName)
   if (meta?.styles) {
     for (const [cellRef, style] of Object.entries(meta.styles)) {
-      if (ws[cellRef]) ws[cellRef].s = style
+      if (ws[cellRef]) {
+        ws[cellRef].s = style
+      } else if (mergedCellSet.has(cellRef) || (!isModelMatrixSheet && (style.fill || style.border))) {
+        ws[cellRef] = { t: 's', v: '', s: style }
+      }
     }
   }
 
@@ -620,29 +631,12 @@ function buildStyledWorksheet(
       styleLabel('R8')
       styleMoney('S8', 'DBEAFE', '1E3A8A', '0.00"%"')
     } else {
-      // C2C ANALYSIS card styling from R6:S9
-      if (ws['R6']) {
-        ws['R6'].s = {
-          font: { bold: true, color: { rgb: '1E3A8A' }, sz: 10 },
-          fill: { fgColor: { rgb: 'DBEAFE' } },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: THIN_BORDER,
-        }
-      }
-      if (ws['S6']) {
-        ws['S6'].s = {
-          font: { bold: true, color: { rgb: '166534' }, sz: 10 },
-          fill: { fgColor: { rgb: '92D050' } },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: THIN_BORDER,
-        }
-      }
+      // C2C profit summary R6:S8 (Profit -> Total -> Ratio, no C2C ANALYSIS/synced row)
+      styleMoney('S6', '92D050', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
       styleLabel('R7')
       styleMoney('S7', 'E2EFDA', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
       styleLabel('R8')
-      styleMoney('S8', 'E2EFDA', '166534', '"₹"#,##0;[Red]-"₹"#,##0;"-"')
-      styleLabel('R9')
-      styleMoney('S9', 'DBEAFE', '1E3A8A', '"₹"#,##0.00"/kg"')
+      styleMoney('S8', 'DBEAFE', '1E3A8A', '"₹"#,##0.00"/kg"')
     }
 
     if (isActualExport) {
@@ -695,14 +689,96 @@ function buildStyledWorksheet(
   }
 
   if (isShearing) {
-    ws['!pageSetup'] = { paperSize: 9, orientation: 'portrait' }
+    ws['!pageSetup'] = meta?.pageSetup || { paperSize: 9, orientation: 'portrait' }
     ws['!margins'] = { left: 0.7, right: 0.7, top: 0.2, bottom: 0.2, header: 0.3, footer: 0.3 }
   } else {
-    ws['!margins'] = { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }
+    if (meta?.pageSetup) ws['!pageSetup'] = meta.pageSetup
+    ws['!margins'] = meta?.margins || { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }
   }
 
-  ws['!views'] = [{ showGridLines: true }]
+  ws['!views'] = [{
+    showGridLines: true,
+    ...(meta?.zoomScale ? { zoomScale: meta.zoomScale } : {}),
+  }]
+  if (meta?.defaultRowHeight) {
+    ws['!sheetFormat'] = { defaultRowHeight: meta.defaultRowHeight }
+  }
   return ws
+}
+
+/**
+ * Patches generated .xlsx ZIP XML in browser downloads so Excel receives exact
+ * per-sheet zoomScale (e.g. 85% on Total cal), sheetFormatPr defaultRowHeight (e.g. 21pt on model sheets),
+ * showGridLines, and pageSetup flags that xlsx-js-style strips by default.
+ * Falls back to XLSX.writeFile in Node/test runs so test mocks intercept `book` directly.
+ */
+function saveStyledWorkbook(book: any, filename: string) {
+  const cleanFileName = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
+  if (typeof window === 'undefined' || typeof document === 'undefined' || typeof Blob === 'undefined' || !XLSX.CFB) {
+    XLSX.writeFile(book, cleanFileName)
+    return
+  }
+  try {
+    const bin = XLSX.write(book, { bookType: 'xlsx', type: 'binary', cellStyles: true })
+    const cfb = XLSX.CFB.read(bin, { type: 'binary' })
+    const dec = new TextDecoder()
+    const enc = new TextEncoder()
+
+    book.SheetNames.forEach((sName: string, idx: number) => {
+      const ws = book.Sheets[sName]
+      const targetSuffix = `xl/worksheets/sheet${idx + 1}.xml`
+      const entryIdx = cfb.FullPaths.findIndex((p: string) => p.replace(/\\/g, '/').endsWith(targetSuffix))
+      if (entryIdx < 0 || !cfb.FileIndex[entryIdx]?.content) return
+
+      let xml = dec.decode(new Uint8Array(cfb.FileIndex[entryIdx].content))
+      const zoom = ws?.['!views']?.[0]?.zoomScale
+      const viewAttrs: string[] = []
+      if (idx === 0) viewAttrs.push('tabSelected="1"')
+      viewAttrs.push('showGridLines="1"')
+      if (zoom && zoom !== 100) viewAttrs.push(`zoomScale="${zoom}" zoomScaleNormal="${zoom}"`)
+      viewAttrs.push('workbookViewId="0"')
+      xml = xml.replace(/<sheetView\b[^>]*\/>/, `<sheetView ${viewAttrs.join(' ')}/>`)
+
+      const defHpt = ws?.['!sheetFormat']?.defaultRowHeight
+      if (defHpt && !xml.includes('<sheetFormatPr')) {
+        xml = xml.replace('</sheetViews>', `</sheetViews><sheetFormatPr defaultRowHeight="${defHpt}"/>`)
+      }
+
+      const ps = ws?.['!pageSetup']
+      if (ps && !xml.includes('<pageSetup')) {
+        const psAttrs: string[] = []
+        if (ps.paperSize) psAttrs.push(`paperSize="${ps.paperSize}"`)
+        if (ps.orientation) psAttrs.push(`orientation="${ps.orientation}"`)
+        if (psAttrs.length > 0) {
+          const psTag = `<pageSetup ${psAttrs.join(' ')}/>`
+          if (/<pageMargins\b[^>]*\/>/.test(xml)) {
+            xml = xml.replace(/(<pageMargins\b[^>]*\/>)/, `$1${psTag}`)
+          } else if (xml.includes('<ignoredErrors')) {
+            xml = xml.replace('<ignoredErrors', `${psTag}<ignoredErrors`)
+          } else {
+            xml = xml.replace('</worksheet>', `${psTag}</worksheet>`)
+          }
+        }
+      }
+
+      cfb.FileIndex[entryIdx].content = enc.encode(xml)
+    })
+
+    const patchedArr = XLSX.CFB.write(cfb, { fileType: 'zip', type: 'array' })
+    const blob = new Blob([new Uint8Array(patchedArr)], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = cleanFileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch {
+    XLSX.writeFile(book, cleanFileName)
+  }
 }
 
 /**
@@ -731,8 +807,7 @@ export function exportWorkbookToXLSX(
     }
   })
 
-  const cleanFileName = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
-  XLSX.writeFile(book, cleanFileName)
+  saveStyledWorkbook(book, filename)
 }
 
 /**
@@ -1040,12 +1115,6 @@ export function exportMultiSystemWorkbookToXLSX(
 
   if (!globalOptions.isActual) {
     masterRows.push([])
-    const c2cHeaderRowIdx = masterRows.length
-    masterRows.push(['C2C ANALYSIS', null, '✓ synced'])
-    masterStyles.push(
-      { r: c2cHeaderRowIdx, c: 0, s: { font: { bold: true, color: { rgb: '1E3A8A' }, sz: 10 }, fill: { fgColor: { rgb: 'DBEAFE' } }, border: THIN_BORDER } },
-      { r: c2cHeaderRowIdx, c: 2, s: { font: { bold: true, color: { rgb: '166534' }, sz: 10 }, fill: { fgColor: { rgb: '92D050' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: THIN_BORDER } },
-    )
 
     const s5Expr = systemSheetsMeta.map(({ tcTab }) => quoteRef(tcTab, 'S5')).join('+')
     const s5RowIdx = masterRows.length
@@ -1285,6 +1354,5 @@ export function exportMultiSystemWorkbookToXLSX(
     wb.setFormulaOverrides(origFormulaOverrides)
   }
 
-  const cleanFileName = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
-  XLSX.writeFile(book, cleanFileName)
+  saveStyledWorkbook(book, filename)
 }
