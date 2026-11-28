@@ -932,7 +932,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                 const count = Array.isArray(shared) ? shared.length : 0
                 if (isSharedToMe) {
                   return (
-                    <span className="chip purple sm" title={`Shared with you by ${p.created_by || 'teammate'}`}>
+                    <span className="chip sm" style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' }} title={`Shared with you by ${p.created_by || 'teammate'}`}>
                       Shared with you
                     </span>
                   )
@@ -1531,8 +1531,8 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
             {/* Pipeline Funnel Header */}
             <div
               style={{
-                padding: '12px 16px',
-                background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                padding: '14px 18px',
+                background: '#ffffff',
                 borderBottom: '1px solid #e2e8f0',
                 display: 'flex',
                 alignItems: 'center',
@@ -1541,25 +1541,25 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                 gap: '12px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' }}>
                 <div>
                   <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Active Pipeline Value
                   </span>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
                     {inr(Math.round(pipelineData.activePipelineTotal))}
                   </div>
                 </div>
-                <div style={{ width: '1px', height: '28px', background: '#cbd5e1' }} />
+                <div style={{ width: '1px', height: '28px', background: '#e2e8f0' }} />
                 <div>
                   <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Won Deals Total
                   </span>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#15803d' }}>
                     {inr(Math.round(pipelineData.totals.won))}
                   </div>
                 </div>
-                <div style={{ width: '1px', height: '28px', background: '#cbd5e1' }} />
+                <div style={{ width: '1px', height: '28px', background: '#e2e8f0' }} />
                 <div>
                   <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Total Opportunities
@@ -1569,8 +1569,8 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                   </div>
                 </div>
               </div>
-              <div className="tiny text-muted" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>💡 Drag &amp; drop cards between columns or use the stage selector to advance deals</span>
+              <div className="tiny text-muted">
+                Drag cards between columns or change stage cleanly
               </div>
             </div>
 

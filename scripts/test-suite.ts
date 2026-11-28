@@ -2707,7 +2707,7 @@ async function runAllTests() {
     const hasRescheduleFn = wsCode.includes('handleRescheduleReminder')
     const hasDateTimeInput = wsCode.includes('type="datetime-local"') && wsCode.includes('rescheduleDateTimeInput')
     const hasPresets = wsCode.includes('Tomorrow 10 AM') && wsCode.includes('Tomorrow 3 PM')
-    const hasBannerExtendBtn = calcCode.includes('📅 Extend Date &amp; Time') || calcCode.includes('Extend Date & Time')
+    const hasBannerExtendBtn = calcCode.includes('Extend Date &amp; Time') || calcCode.includes('Extend Date & Time')
 
     if (hasWorkspaceCreatedProp && hasCalcCreatedProp && hasInitialEditCheck && hasTabSwitchReset && hasOpenProjectReset &&
         hasRescheduleFn && hasDateTimeInput && hasPresets && hasBannerExtendBtn) {
@@ -4498,6 +4498,47 @@ async function runAllTests() {
     }
   } catch (e) {
     logResult(71, 'Minimal Template Versioning, Rate/Formula Sync & Edge Authority', 'FAILED', (e as Error).message)
+  }
+
+  // -------------------------------------------------------------------------
+  // Test 72: Staff KPI Strip (No Wt with Machine, Total right of Bodies), Auto-Open PDF, Password Change Session Safety & Minimal UI
+  // -------------------------------------------------------------------------
+  try {
+    const calcSrc72 = fs.readFileSync('src/components/pages/CalculatorPage.tsx', 'utf8')
+    const memSrc72 = fs.readFileSync('src/components/pages/MembersPage.tsx', 'utf8')
+    const dashSrc72 = fs.readFileSync('src/components/pages/Dashboard.tsx', 'utf8')
+    const schemaSrc72 = fs.readFileSync('supabase/schema.sql', 'utf8')
+    const staffUiFailures: string[] = []
+
+    const wtIdx = calcSrc72.indexOf('label="WT WITH MACHINE"')
+    const adminWrapIdx = calcSrc72.lastIndexOf('isAdminOrOwner && (', wtIdx)
+    if (wtIdx === -1 || adminWrapIdx === -1 || wtIdx - adminWrapIdx > 200) {
+      staffUiFailures.push('WT WITH MACHINE widget is not gated inside {isAdminOrOwner && ...}')
+    }
+    if (!calcSrc72.includes('{!isAdminOrOwner && (\n          <TotalQuotationAmountWidget') && !calcSrc72.includes('{!isAdminOrOwner && (\r\n          <TotalQuotationAmountWidget')) {
+      staffUiFailures.push('TotalQuotationAmountWidget not positioned immediately next to Total Bodies for staff')
+    }
+    if (!calcSrc72.includes('useState<boolean>(() => !isAdminOrOwner && !isNewlyCreated)') || !calcSrc72.includes('setShowOfficialQuotation(true)')) {
+      staffUiFailures.push('CalculatorPage missing auto-open Official Quotation PDF when staff opens a quotation')
+    }
+    if (memSrc72.includes('await api.login(session.username')) {
+      staffUiFailures.push('MembersPage still calls api.login during staff password reset (wipes admin session)')
+    }
+    if (!schemaSrc72.includes('p_admin_password text default null') || !schemaSrc72.includes("case when public._get_role(uid, p_org) in ('owner', 'admin') then u.email else null end")) {
+      staffUiFailures.push('schema.sql missing atomic admin password check or email masking in org_members_list')
+    }
+    if (dashSrc72.includes('linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)')) {
+      staffUiFailures.push('Dashboard.tsx still has noisy gradient on staff dashboard card')
+    }
+
+    if (staffUiFailures.length === 0) {
+      logResult(72, 'Staff KPI Layout, Direct PDF Open, Password Reset Session Safety & Minimal UI', 'PASSED',
+        'Verified WT WITH MACHINE hidden for staff with Total Quotation Amount directly next to Total Bodies, staff quotation opening directly to Official PDF, session-safe password reset via RPC, email masking, and clean minimal neutral styling.')
+    } else {
+      logResult(72, 'Staff KPI Layout, Direct PDF Open, Password Reset Session Safety & Minimal UI', 'FAILED', staffUiFailures.join(' | '))
+    }
+  } catch (e) {
+    logResult(72, 'Staff KPI Layout, Direct PDF Open, Password Reset Session Safety & Minimal UI', 'FAILED', (e as Error).message)
   }
 
   console.log('\n======================================================================')

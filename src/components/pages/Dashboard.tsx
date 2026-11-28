@@ -424,7 +424,7 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
             </div>
             <div className="kpi">
               <span>Shared with Me</span>
-              <strong style={{ color: '#7c3aed' }}>{sharedCount}</strong>
+              <strong>{sharedCount}</strong>
               <small>Shared Collaborations</small>
             </div>
           </>
@@ -436,11 +436,11 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
         <div
           className="card staff-dashboard-card mb-3"
           style={{
-            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-            border: '1px solid #cbd5e1',
-            borderRadius: '10px',
-            padding: '16px 20px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '14px',
+            padding: '18px 22px',
+            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
           }}
         >
           <div
@@ -448,61 +448,57 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: '14px',
+              marginBottom: '16px',
               flexWrap: 'wrap',
               gap: '8px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '22px' }}>📊</span>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
-                  My Performance Dashboard
-                </h3>
-                <span className="tiny text-muted">Personal sales metrics & conversion for @{session.username}</span>
-              </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                My Performance
+              </h3>
+              <span className="tiny text-muted">Sales summary &amp; conversion for @{session.username}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span
-                className="chip primary sm font-bold"
-                style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}
+                className="chip sm"
+                style={{ fontSize: '11px', background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0', borderRadius: '999px' }}
               >
-                👤 Staff Member
+                Staff
               </span>
               <button
                 type="button"
                 className="btn ghost sm"
                 onClick={() => onNavigate('projects')}
-                style={{ fontSize: '11.5px', padding: '3px 10px', fontWeight: 600 }}
+                style={{ fontSize: '12px', padding: '4px 12px', fontWeight: 600, borderRadius: '9px' }}
               >
-                Go to Projects →
+                All Quotations →
               </button>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
             {/* My Quotations */}
             <div
               className="kpi-mini-card"
               style={{
                 background: '#ffffff',
                 border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '12px 14px',
+                borderRadius: '12px',
+                padding: '14px 16px',
                 cursor: 'pointer',
-                transition: 'transform 0.1s ease',
               }}
               onClick={() => onNavigate('projects')}
-              title="Click to view all my quotations in projects tab"
+              title="View all quotations"
             >
               <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 My Quotations
               </span>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#1e40af', marginTop: '2px' }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
                 {staffStats.count}
               </div>
-              <span style={{ fontSize: '10px', color: '#0284c7', fontWeight: 600 }}>
-                {staffStats.activeCount} currently active
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
+                {staffStats.activeCount} active
               </span>
             </div>
 
@@ -512,18 +508,18 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
               style={{
                 background: '#ffffff',
                 border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '12px 14px',
+                borderRadius: '12px',
+                padding: '14px 16px',
               }}
-              title="Total combined quotation value created by me"
+              title="Total combined quotation value"
             >
               <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Total Quoted Value
               </span>
-              <div style={{ fontSize: '19px', fontWeight: 800, color: '#16a34a', marginTop: '2px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
                 {inr(Math.round(staffStats.totalVal))}
               </div>
-              <span style={{ fontSize: '10px', color: '#64748b' }}>
+              <span style={{ fontSize: '11px', color: '#64748b' }}>
                 across {staffStats.count} quotation{staffStats.count === 1 ? '' : 's'}
               </span>
             </div>
@@ -534,26 +530,26 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
               style={{
                 background: '#ffffff',
                 border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '12px 14px',
+                borderRadius: '12px',
+                padding: '14px 16px',
               }}
               title="Win/Loss ratio of closed quotations"
             >
               <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Won / Loss Ratio
+                Won / Loss
               </span>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '2px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                <span style={{ color: '#16a34a' }}>{staffStats.wonCount}W</span>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', marginTop: '4px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ color: '#15803d' }}>{staffStats.wonCount}W</span>
                 <span style={{ color: '#cbd5e1' }}>/</span>
-                <span style={{ color: '#dc2626' }}>{staffStats.lossCount}L</span>
+                <span style={{ color: '#b91c1c' }}>{staffStats.lossCount}L</span>
                 {staffStats.wonCount + staffStats.lossCount > 0 && (
-                  <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 700 }}>
+                  <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>
                     ({staffStats.winRate}%)
                   </span>
                 )}
               </div>
-              <span style={{ fontSize: '10px', color: '#64748b' }}>
-                {staffStats.wonCount + staffStats.lossCount === 0 ? 'No closed quotations yet' : (staffStats.wonCount + staffStats.lossCount) + ' decided'}
+              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                {staffStats.wonCount + staffStats.lossCount === 0 ? 'No closed deals yet' : (staffStats.wonCount + staffStats.lossCount) + ' decided'}
               </span>
             </div>
 
@@ -561,23 +557,23 @@ export function Dashboard({ session, org, onOpenProject, onNewProject, onNavigat
             <div
               className="kpi-mini-card"
               style={{
-                background: staffStats.remindersCount > 0 ? '#fffbeb' : '#ffffff',
-                border: '1px solid ' + (staffStats.remindersCount > 0 ? '#fde68a' : '#e2e8f0'),
-                borderRadius: '8px',
-                padding: '12px 14px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '14px 16px',
                 cursor: 'pointer',
               }}
               onClick={() => onNavigate('projects')}
-              title="Click to view quotations with active reminders in projects tab"
+              title="View quotations with active follow-up reminders"
             >
-              <span style={{ fontSize: '10.5px', fontWeight: 700, color: staffStats.remindersCount > 0 ? '#b45309' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Pending Follow-Ups
+              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Follow-Ups
               </span>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: staffStats.remindersCount > 0 ? '#d97706' : '#64748b', marginTop: '2px' }}>
-                🔔 {staffStats.remindersCount}
+              <div style={{ fontSize: '22px', fontWeight: 800, color: staffStats.remindersCount > 0 ? '#b45309' : '#0f172a', marginTop: '4px' }}>
+                {staffStats.remindersCount}
               </div>
-              <span style={{ fontSize: '10px', color: staffStats.remindersCount > 0 ? '#b45309' : '#94a3b8', fontWeight: 600 }}>
-                {staffStats.remindersCount > 0 ? 'Active alarm reminders' : 'No pending alarms'}
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
+                {staffStats.remindersCount > 0 ? 'Pending reminders' : 'No pending alarms'}
               </span>
             </div>
           </div>

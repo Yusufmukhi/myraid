@@ -66,7 +66,7 @@ export function Navigation({
             <span className="nav-icon">{Icon.users}</span>
             <span className="nav-text">Shared Quotations</span>
             {typeof sharedCount === 'number' && (
-              <span className="nav-badge" style={{ background: '#7c3aed', color: '#fff' }}>
+              <span className="nav-badge">
                 {sharedCount}
               </span>
             )}

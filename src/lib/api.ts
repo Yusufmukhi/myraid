@@ -261,14 +261,23 @@ export const api = {
   orgMembers: (token: string, org: string) => rpc<Member[]>('org_members_list', { p_token: token, p_org: org }),
   orgUpdateRole: (token: string, org: string, userId: string, role: string) =>
     rpc<void>('org_update_member_role', { p_token: token, p_org: org, p_user_id: userId, p_new_role: role }),
+  verifyPassword: (token: string, password: string) =>
+    rpc<boolean>('app_verify_password', { p_token: token, p_password: password }),
   orgRemoveMember: (token: string, org: string, userId: string) =>
     rpc<void>('org_remove_member', { p_token: token, p_org: org, p_user_id: userId }),
-  orgAdminChangeMemberPassword: (token: string, org: string, userId: string, newPassword: string) =>
+  orgAdminChangeMemberPassword: (
+    token: string,
+    org: string,
+    userId: string,
+    newPassword: string,
+    adminPassword?: string,
+  ) =>
     rpc<{ success: boolean; username: string; user_id: string }>('org_admin_change_member_password', {
       p_token: token,
       p_org: org,
       p_user_id: userId,
       p_new_password: newPassword,
+      p_admin_password: adminPassword ?? null,
     }),
   orgLeave: (token: string, org: string) => rpc<void>('org_leave', { p_token: token, p_org: org }),
   orgJoinRequests: (token: string, org: string) =>

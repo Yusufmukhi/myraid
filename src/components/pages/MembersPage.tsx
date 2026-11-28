@@ -133,10 +133,9 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
 
     setChangingRole(true)
     try {
-      // 1. Re-authenticate admin/owner with their password
-      try {
-        await api.login(session.username, adminRolePassword.trim())
-      } catch {
+      // 1. Verify admin password without wiping active session
+      const ok = await api.verifyPassword(session.token, adminRolePassword.trim())
+      if (!ok) {
         toast('Incorrect password. Member role was not changed.', 'err')
         setChangingRole(false)
         return
@@ -173,10 +172,9 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
 
     setDeletingMember(true)
     try {
-      // 1. Re-authenticate admin/owner with their password
-      try {
-        await api.login(session.username, adminConfirmPassword.trim())
-      } catch {
+      // 1. Verify admin password without wiping active session
+      const ok = await api.verifyPassword(session.token, adminConfirmPassword.trim())
+      if (!ok) {
         toast('Incorrect password. Member was not removed.', 'err')
         setDeletingMember(false)
         return
@@ -208,17 +206,14 @@ export function MembersPage({ session, org, onOrgLeave }: Props) {
 
     setSavingPassword(true)
     try {
-      // 1. Re-authenticate admin/owner with their password
-      try {
-        await api.login(session.username, adminChangePasswordAuth.trim())
-      } catch {
-        toast('Incorrect password. Member password was not changed.', 'err')
-        setSavingPassword(false)
-        return
-      }
-
-      // 2. Verified! Update target member password
-      await api.orgAdminChangeMemberPassword(session.token, org.id, changePasswordMember.id, pwd)
+      // Authorize admin password & update target member password in one atomic RPC (never calling api.login which invalidates active admin session)
+      await api.orgAdminChangeMemberPassword(
+        session.token,
+        org.id,
+        changePasswordMember.id,
+        pwd,
+        adminChangePasswordAuth.trim(),
+      )
       toast(`Password updated for ${changePasswordMember.username}!`)
       copy(
         `Login credentials for ${changePasswordMember.username}:\nPortal: ${window.location.origin}\nUsername: ${changePasswordMember.username}\nNew Password: ${pwd}`,

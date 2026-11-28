@@ -456,36 +456,36 @@ function C2CAnalysisWidget({
       title="Cut-to-Cut Calculation (Rate Rs 79/kg)&#10;Line 1: Profit (Actual Before GST - C2C Direct Cost Base)&#10;Line 2: Total (Profit + C2C Labour)&#10;Line 3: Ratio (Total / C2C Weight)&#10;Direct Cost Base includes: Ex-Works + Transport + Accommodation + Installation + Extra"
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-        <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7c3aed', letterSpacing: '0.04em' }}>
+        <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>
           {systemsCount > 1 ? `C2C ANALYSIS (${systemsCount} SYS)` : 'C2C ANALYSIS'}
         </span>
         {serverCalculating ? (
-          <span style={{ fontSize: '9px', fontWeight: 700, color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
             <span className="spinner xs" style={{ width: 8, height: 8 }} /> calculating…
           </span>
         ) : (
-          <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>✓ synced</span>
+          <span style={{ fontSize: '9px', fontWeight: 700, color: '#15803d' }}>✓ synced</span>
         )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-        <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
+        <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Profit:</span>
         <span style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
-          {serverCalculating ? <span style={{ fontSize: '11px', color: '#15803d', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(profit))}
+          {serverCalculating ? <span style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(profit))}
         </span>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-        <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
-        <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8', fontFamily: 'monospace' }}>
-          {serverCalculating ? <span style={{ fontSize: '11px', color: '#1d4ed8', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(total))}
+        <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total:</span>
+        <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>
+          {serverCalculating ? <span style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>calculating…</span> : inr(Math.round(total))}
         </span>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap' }}>
-        <span style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
-        <span style={{ fontSize: '13px', fontWeight: 800, color: '#7c3aed', fontFamily: 'monospace' }}>
-          ₹{ratio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#6b21a8' }}>/kg</span>
+        <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Ratio:</span>
+        <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>
+          ₹{ratio.toFixed(2)}<span style={{ fontSize: '10px', fontWeight: 600, color: '#64748b' }}>/kg</span>
         </span>
       </div>
     </div>
@@ -807,7 +807,19 @@ export function CalculatorPage({
 
   const [showShareModal, setShowShareModal] = useState(false)
 
-  const [showOfficialQuotation, setShowOfficialQuotation] = useState(false)
+  const [showOfficialQuotation, setShowOfficialQuotation] = useState<boolean>(() => !isAdminOrOwner && !isNewlyCreated)
+  const autoOpenedPdfRef = useRef<string | null>(!isAdminOrOwner && !isNewlyCreated ? project.id : null)
+  useEffect(() => {
+    if (!isAdminOrOwner && !isNewlyCreated) {
+      if (autoOpenedPdfRef.current !== project.id) {
+        autoOpenedPdfRef.current = project.id
+        setShowOfficialQuotation(true)
+      }
+    } else {
+      autoOpenedPdfRef.current = null
+      setShowOfficialQuotation(false)
+    }
+  }, [project.id, isAdminOrOwner, isNewlyCreated])
   const [expandedPerSetBreakdown, setExpandedPerSetBreakdown] = useState<Record<number, boolean>>({})
   const togglePerSetBreakdown = (idx: number) => {
     setExpandedPerSetBreakdown((prev) => ({ ...prev, [idx]: !prev[idx] }))
@@ -3508,34 +3520,35 @@ export function CalculatorPage({
   const isStaffRateLocked = !isAdminOrOwner && isSharedLocked
   const [isEditingMode, setIsEditingMode] = useState<boolean>(() => {
     if (isNewlyCreated && isAdminOrOwner) return true
-    if (isAdminOrOwner) {
-      try {
-        const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
-        if (createdId && createdId === project.id) {
-          return true
-        }
-      } catch {}
-    }
+    if (isNewlyCreated && !isApprovedLocked && !isStaffRateLocked) return true
+    try {
+      const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
+      if (createdId && createdId === project.id && !isApprovedLocked && !isStaffRateLocked) {
+        return true
+      }
+    } catch {}
     return false
   })
 
-  // Only enable editing automatically on initial project creation for Admin/Owner; all subsequent opens default to disabled
+  // Enable editing automatically on initial project creation; subsequent visits default to locked until toggled
   useEffect(() => {
     if (isNewlyCreated && isAdminOrOwner) {
       setIsEditingMode(true)
       return
     }
-    if (isAdminOrOwner) {
-      try {
-        const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
-        if (createdId && createdId === project.id) {
-          setIsEditingMode(true)
-          return
-        }
-      } catch {}
+    if (isNewlyCreated && !isApprovedLocked && !isStaffRateLocked) {
+      setIsEditingMode(true)
+      return
     }
+    try {
+      const createdId = sessionStorage.getItem('apollo_just_created_proj_id')
+      if (createdId && createdId === project.id && !isApprovedLocked && !isStaffRateLocked) {
+        setIsEditingMode(true)
+        return
+      }
+    } catch {}
     setIsEditingMode(false)
-  }, [project.id, isNewlyCreated, isAdminOrOwner])
+  }, [project.id, isNewlyCreated, isAdminOrOwner, isApprovedLocked, isStaffRateLocked])
 
   // Clear creation flag on cleanup so subsequent visits to this project default to disabled
   useEffect(() => {
@@ -4278,26 +4291,27 @@ export function CalculatorPage({
         <div
           style={{
             margin: '0 20px 14px 20px',
-            background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-            border: '1.5px solid #f59e0b',
-            borderRadius: '8px',
-            padding: '10px 16px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderLeft: '3px solid #d97706',
+            borderRadius: '12px',
+            padding: '12px 18px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             flexWrap: 'wrap',
             gap: '10px',
-            boxShadow: '0 2px 4px rgba(245, 158, 11, 0.1)',
+            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '22px' }}>⏰</span>
+            <span style={{ color: '#d97706', display: 'inline-flex' }}>{Icon.clock}</span>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#92400e' }}>
-                Follow-Up Alarm Reminder: <strong>{new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                Follow-Up Reminder: <strong>{new Date(reminder.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(reminder.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong>
               </div>
-              <div style={{ fontSize: '12px', color: '#78350f', marginTop: '2px' }}>
-                📌 <em>{reminder.note || 'Follow up with client on quotation'}</em>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                {reminder.note || 'Follow up with client on quotation'}
               </div>
             </div>
           </div>
@@ -4306,10 +4320,10 @@ export function CalculatorPage({
               type="button"
               className="btn xs ghost"
               onClick={() => setShowReminderModal(true)}
-              style={{ color: '#92400e', borderColor: '#fcd34d', fontWeight: 700, fontSize: '11px', background: '#fff' }}
+              style={{ color: '#334155', borderColor: '#cbd5e1', fontWeight: 600, fontSize: '11.5px', background: '#fff', borderRadius: 8 }}
               title="Reschedule with custom date and time"
             >
-              📅 Extend Date &amp; Time
+              Extend Date &amp; Time
             </button>
             <button
               type="button"
@@ -4321,7 +4335,7 @@ export function CalculatorPage({
                 const formatted = `${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}T${pad(nextDate.getHours())}:${pad(nextDate.getMinutes())}`
                 handleSaveReminder(formatted, reminder.note)
               }}
-              style={{ color: '#92400e', borderColor: '#fcd34d', fontWeight: 700, fontSize: '11px', background: '#fff' }}
+              style={{ color: '#334155', borderColor: '#cbd5e1', fontWeight: 600, fontSize: '11.5px', background: '#fff', borderRadius: 8 }}
               title="Quick extend 1 day"
             >
               +1 Day
@@ -4330,9 +4344,9 @@ export function CalculatorPage({
               type="button"
               className="btn xs ghost text-danger"
               onClick={handleClearReminder}
-              style={{ borderColor: '#fcd34d', fontSize: '11px', background: '#fff' }}
+              style={{ borderColor: '#cbd5e1', fontSize: '11.5px', background: '#fff', borderRadius: 8 }}
             >
-              ✕ Dismiss
+              Dismiss
             </button>
           </div>
         </div>
@@ -4414,24 +4428,22 @@ export function CalculatorPage({
           </>
         )}
 
-        {/* WT WITH MACHINE WIDGET */}
-        <KpiCard
-          label="WT WITH MACHINE"
-          singleVal={displaySummary.weightWithMachine}
-          allVal={displayAllSystemsTotals.weightWithMachine}
-          format="kg"
-          highlight="highlight-mech"
-          activeSysName={activeSysName}
-          activeSysQty={activeSysQty}
-          activeSysUnit={activeSysUnit}
-          isMultiSystem={isMultiSystem}
-          serverCalculating={serverCalculating}
-          subLabel={isAdminOrOwner ? "C2C Total + Mech" : "Total + Mechanism"}
-        />
-
-        {/* LABOUR, POWDER COATING & C2C ANALYSIS WIDGETS */}
+        {/* WT WITH MACHINE & COSTING WIDGETS (Admin / Owner ONLY — hidden from Staff) */}
         {isAdminOrOwner && (
           <>
+            <KpiCard
+              label="WT WITH MACHINE"
+              singleVal={displaySummary.weightWithMachine}
+              allVal={displayAllSystemsTotals.weightWithMachine}
+              format="kg"
+              highlight="highlight-mech"
+              activeSysName={activeSysName}
+              activeSysQty={activeSysQty}
+              activeSysUnit={activeSysUnit}
+              isMultiSystem={isMultiSystem}
+              serverCalculating={serverCalculating}
+              subLabel="C2C Total + Mech"
+            />
             <KpiCard
               label="LABOUR"
               singleVal={displaySummary.labourSubtotal}
@@ -4466,7 +4478,7 @@ export function CalculatorPage({
           </>
         )}
 
-        {/* STAFF TOTAL QUOTATION AMOUNT WIDGET */}
+        {/* STAFF TOTAL QUOTATION AMOUNT WIDGET (Positioned directly next to Total Bodies) */}
         {!isAdminOrOwner && (
           <TotalQuotationAmountWidget
             activeSysSales={kpiActiveSysSales}
@@ -4487,29 +4499,29 @@ export function CalculatorPage({
       {/* Quotation Locked After Sharing Alerts */}
       {isStaffRateLocked && (
         <div
-          className="card warn mb-3"
+          className="card mb-3"
           style={{
-            background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-            border: '1.5px solid #f59e0b',
-            borderRadius: '8px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderLeft: '3px solid #d97706',
+            borderRadius: '12px',
             padding: '12px 18px',
-            boxShadow: '0 2px 4px rgba(245, 158, 11, 0.08)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '22px' }}>🔒</span>
+              <span style={{ color: '#d97706', display: 'inline-flex' }}>{Icon.lock}</span>
               <div>
-                <strong style={{ fontSize: '13.5px', color: '#92400e', display: 'block' }}>
-                  Quotation Locked After Sharing
+                <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
+                  Quotation Locked
                 </strong>
-                <span style={{ fontSize: '12px', color: '#78350f' }}>
-                  This quotation has been shared with the client. Rates, matrix specifications, dimensions, and freight charges are locked. Contact an Administrator to approve modifications or revise.
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Rates, matrix dimensions, and freight charges are locked. Contact an Administrator to unlock or revise.
                 </span>
               </div>
             </div>
             <span className="chip warn sm font-bold" style={{ fontSize: '11px' }}>
-              Read-Only for Staff
+              Read-Only
             </span>
           </div>
         </div>
@@ -4517,24 +4529,24 @@ export function CalculatorPage({
 
       {isAdminOrOwner && isSharedLocked && (
         <div
-          className="card info mb-3"
+          className="card mb-3"
           style={{
-            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-            border: '1.5px solid #3b82f6',
-            borderRadius: '8px',
-            padding: '10px 18px',
-            boxShadow: '0 2px 4px rgba(37, 99, 235, 0.08)',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderLeft: '3px solid #2563eb',
+            borderRadius: '12px',
+            padding: '12px 18px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '20px' }}>🛡️</span>
+              <span style={{ color: '#2563eb', display: 'inline-flex' }}>{Icon.shield}</span>
               <div>
-                <strong style={{ fontSize: '13px', color: '#1e40af', display: 'block' }}>
-                  Quotation Locked for Staff (Admin Editing Enabled)
+                <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
+                  Locked for Staff (Admin Edit Access Active)
                 </strong>
-                <span style={{ fontSize: '11.5px', color: '#1d4ed8' }}>
-                  Staff members cannot modify this quotation. As an Administrator, you retain full edit access or can unlock it for staff.
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Staff cannot modify this quotation. You have full edit access or can unlock it for staff.
                 </span>
               </div>
             </div>
@@ -4699,9 +4711,9 @@ export function CalculatorPage({
 
                 style={{
 
-                  width: '48px',
+                  width: '52px',
 
-                  height: '24px',
+                  height: '28px',
 
                   textAlign: 'center',
 
@@ -4709,11 +4721,11 @@ export function CalculatorPage({
 
                   fontSize: '13px',
 
-                  color: '#0c4a6e',
+                  color: '#0f172a',
 
-                  border: '1px solid #7dd3fc',
+                  border: '1px solid #cbd5e1',
 
-                  borderRadius: '4px',
+                  borderRadius: '8px',
 
                   background: '#ffffff',
 
@@ -5710,7 +5722,7 @@ export function CalculatorPage({
 
                 <span className="c-lbl">Installation</span>
 
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: isApprovedLocked ? 'not-allowed' : 'pointer', margin: 0 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: (isApprovedLocked || isStaffRateLocked || !isEditingMode) ? 'not-allowed' : 'pointer', margin: 0 }}>
 
                   <input
 
@@ -6915,55 +6927,55 @@ export function CalculatorPage({
 
 
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
 
-              <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Ex-Works Total (N22)</div>
 
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{inr2(c2cSummary.subtotal)}</div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{inr2(c2cSummary.subtotal)}</div>
 
               </div>
 
-              <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Steel Weight (J44)</div>
 
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{kg(c2cSummary.totalWeight)}</div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{kg(c2cSummary.totalWeight)}</div>
 
               </div>
 
-              <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Weight + Mach (J45)</div>
 
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{kg(c2cSummary.weightWithMachine)}</div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{kg(c2cSummary.weightWithMachine)}</div>
 
               </div>
 
-              <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Total Labour (N50)</div>
 
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{inr2(c2cSummary.labourSubtotal)}</div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{inr2(c2cSummary.labourSubtotal)}</div>
 
               </div>
 
-              <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Powder Coating (E39)</div>
 
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{inr2(c2cSummary.powderTotal)}</div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{inr2(c2cSummary.powderTotal)}</div>
 
               </div>
 
-              <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>C2C Direct Cost Base</div>
 
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#581c87', fontFamily: 'monospace' }}>{inr2(c2cSummary.costBase)}</div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{inr2(c2cSummary.costBase)}</div>
 
-                <div style={{ fontSize: '9.5px', color: '#7c3aed', marginTop: '3px' }}>
+                <div style={{ fontSize: '9.5px', color: '#64748b', marginTop: '3px' }}>
                   Ex-Works ({inr(c2cSummary.subtotal)}) + Trans ({inr(c2cSummary.transport || 0)}) + Acc ({inr(c2cSummary.accommodation || 0)}) + Inst ({inr(c2cSummary.installation || 0)}){(c2cSummary.extraAmount || 0) > 0 ? ` + Extra (${inr((c2cSummary.extraAmount || 0) * (c2cSummary.models?.reduce((a, m) => a + m.qty, 0) || 1))})` : ''}
                 </div>
 
@@ -6977,25 +6989,25 @@ export function CalculatorPage({
 
             <div style={{ marginTop: '12px', overflowX: 'auto' }}>
 
-              <table className="tbl" style={{ width: '100%', fontSize: '12px', background: '#fff', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+              <table className="tbl" style={{ width: '100%', fontSize: '12px', background: '#fff', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
 
                 <thead>
 
-                  <tr style={{ background: '#f5f3ff', color: '#581c87', textAlign: 'left' }}>
+                  <tr style={{ background: '#f8fafc', color: '#475569', textAlign: 'left' }}>
 
-                    <th style={{ padding: '8px 10px' }}>Model</th>
+                    <th style={{ padding: '10px 12px' }}>Model</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Qty</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Qty</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Actual Unit Rate</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Actual Unit Rate</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#7c3aed' }}>C2C Unit Rate</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#0f172a' }}>C2C Unit Rate</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Actual Total</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Actual Total</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#7c3aed' }}>C2C Total</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#0f172a' }}>C2C Total</th>
 
-                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#15803d' }}>Unit Diff (Profit)</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#15803d' }}>Unit Diff (Profit)</th>
 
                   </tr>
 

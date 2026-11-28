@@ -422,11 +422,8 @@ export function ClientRelationsPage({
         <div className="cr-kpi-card">
           <div className="cr-kpi-top">
             <span className="cr-kpi-label">Active Pipeline</span>
-            <div className="cr-kpi-icon-wrap" style={{ background: '#fef3c7', color: '#d97706' }}>
-              💼
-            </div>
           </div>
-          <div className="cr-kpi-value" style={{ color: '#b45309' }}>
+          <div className="cr-kpi-value" style={{ color: '#0f172a' }}>
             {inr(summaryMetrics.totalPipeline)}
           </div>
           <div className="cr-kpi-desc">Quoted &amp; negotiating quotation value</div>
@@ -435,11 +432,8 @@ export function ClientRelationsPage({
         <div className="cr-kpi-card">
           <div className="cr-kpi-top">
             <span className="cr-kpi-label">Won Revenue</span>
-            <div className="cr-kpi-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
-              🏆
-            </div>
           </div>
-          <div className="cr-kpi-value" style={{ color: '#059669' }}>
+          <div className="cr-kpi-value" style={{ color: '#15803d' }}>
             {inr(summaryMetrics.totalWon)}
           </div>
           <div className="cr-kpi-desc">Successfully converted business</div>
