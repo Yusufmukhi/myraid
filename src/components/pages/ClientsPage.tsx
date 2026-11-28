@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Member, Org, Session, api } from '../../lib/api'
 import {
+  countUniqueSharedStaff,
   deleteClientFromDirectory,
   fetchClientsFromSupabase,
   getSavedClients,
@@ -64,17 +65,28 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
   const [customShareStaffInput, setCustomShareStaffInput] = useState('')
 
   useEffect(() => {
-    if (isOwnerOrAdmin && session.token && org.id) {
+    if (org.role !== 'viewer' && session.token && org.id) {
       api
         .orgMembers(session.token, org.id)
         .then((members) => {
           if (Array.isArray(members)) {
-            setOrgStaffMembers(members.filter((m) => m.username !== session.username))
+            setOrgStaffMembers(
+              members.filter((m) => m.username !== session.username && m.role !== 'viewer'),
+            )
           }
         })
         .catch(() => {})
     }
-  }, [isOwnerOrAdmin, session.token, org.id, session.username])
+  }, [org.role, session.token, org.id, session.username])
+
+  const canManageClientShare =
+    isOwnerOrAdmin ||
+    isCreatingNew ||
+    Boolean(
+      editingClient &&
+        ((session.username && editingClient.created_by === session.username) ||
+          (session.user_id && editingClient.created_by === session.user_id)),
+    )
 
   const [formData, setFormData] = useState<{
     name: string
@@ -328,7 +340,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
         : editingClient?.profit_margin_pct !== undefined
         ? editingClient.profit_margin_pct
         : 25,
-      shared_with: isOwnerOrAdmin
+      shared_with: canManageClientShare
         ? Array.isArray(formData.shared_with)
           ? formData.shared_with
           : []
@@ -787,7 +799,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                               .join(' · ')
                           : 'Standard'}
                       </span>
-                      {isOwnerOrAdmin && (
+                      {(isOwnerOrAdmin || (client.shared_with && client.shared_with.length > 0)) && (
                         <span
                           style={{
                             fontSize: '10px',
@@ -805,7 +817,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                           {client.shared_with?.includes('all')
                             ? 'All Staff'
                             : client.shared_with && client.shared_with.length > 0
-                            ? `${client.shared_with.length} Staff`
+                            ? `Shared (${countUniqueSharedStaff(client.shared_with)} Staff)`
                             : 'Private'}
                         </span>
                       )}
@@ -1288,7 +1300,7 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
               </button>
             </div>
 
-            {/* Owner & Admin Confidential Controls */}
+            {/* Owner & Admin Confidential Profit Controls */}
             {isOwnerOrAdmin && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 14px' }}>
@@ -1329,104 +1341,107 @@ export function ClientsPage({ session, org, onCreateQuotationWithClient, onNavig
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
 
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px' }}>
-                  <label className="tiny font-bold" style={{ color: '#0f172a', display: 'block', marginBottom: '2px', fontSize: '12px' }}>
-                    Share Client Access with Staff
+            {/* Share Client & Auto-Share Quotations with Staff */}
+            {canManageClientShare && (
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', marginTop: '4px' }}>
+                <label className="tiny font-bold" style={{ color: '#0f172a', display: 'block', marginBottom: '2px', fontSize: '12px' }}>
+                  Share Client &amp; Quotations with Staff
+                </label>
+                <span className="tiny muted" style={{ display: 'block', marginBottom: '8px', fontSize: '11px' }}>
+                  Selected staff members can view this client and will automatically receive any quotation created for this client.
+                </span>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: '#1e293b' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.shared_with.includes('all')}
+                      onChange={(e) => {
+                        setFormData({
+                          ...formData,
+                          shared_with: e.target.checked ? ['all'] : [],
+                        })
+                      }}
+                    />
+                    <span>Share with All Staff Members</span>
                   </label>
-                  <span className="tiny muted" style={{ display: 'block', marginBottom: '8px', fontSize: '11px' }}>
-                    Choose which staff members can view this client and create quotations.
-                  </span>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: '#1e293b' }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.shared_with.includes('all')}
-                        onChange={(e) => {
-                          setFormData({
-                            ...formData,
-                            shared_with: e.target.checked ? ['all'] : [],
-                          })
-                        }}
-                      />
-                      <span>Share with All Staff Members</span>
-                    </label>
-
-                    {!formData.shared_with.includes('all') && (
-                      <div>
-                        {orgStaffMembers.length > 0 ? (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {orgStaffMembers.map((m) => {
-                              const isSelected =
-                                formData.shared_with.includes(m.username) ||
-                                Boolean(m.user_id && formData.shared_with.includes(m.user_id))
-                              return (
-                                <button
-                                  key={m.username}
-                                  type="button"
-                                  onClick={() => {
-                                    const next = isSelected
-                                      ? formData.shared_with.filter(
-                                          (u) => u !== m.username && (!m.user_id || u !== m.user_id),
-                                        )
-                                      : [
-                                          ...formData.shared_with,
-                                          m.username,
-                                          ...(m.user_id ? [m.user_id] : []),
-                                        ]
-                                    setFormData({ ...formData, shared_with: next })
-                                  }}
-                                  style={{
-                                    padding: '4px 10px',
-                                    borderRadius: '16px',
-                                    fontSize: '11px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    border: isSelected ? '1px solid #2563eb' : '1px solid #cbd5e1',
-                                    background: isSelected ? '#eff6ff' : '#ffffff',
-                                    color: isSelected ? '#1d4ed8' : '#475569',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <span>{isSelected ? '✓' : '+'}</span>
-                                  <span>@{m.username}</span>
-                                  <span style={{ fontSize: '9px', opacity: 0.7 }}>({m.role})</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <input
-                              type="text"
-                              placeholder="Enter staff username to share (e.g. staff1)"
-                              className="option-input-field"
-                              value={customShareStaffInput}
-                              onChange={(e) => setCustomShareStaffInput(e.target.value)}
-                              style={{ height: '32px', fontSize: '12px', flex: 1 }}
-                            />
-                            <button
-                              type="button"
-                              className="btn ghost sm"
-                              onClick={() => {
-                                const val = customShareStaffInput.trim()
-                                if (val && !formData.shared_with.includes(val)) {
-                                  setFormData({ ...formData, shared_with: [...formData.shared_with, val] })
-                                  setCustomShareStaffInput('')
-                                }
-                              }}
-                              style={{ height: '32px', fontSize: '11px' }}
-                            >
-                              + Add Staff
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  {!formData.shared_with.includes('all') && (
+                    <div>
+                      {orgStaffMembers.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {orgStaffMembers.map((m) => {
+                            const isSelected =
+                              formData.shared_with.includes(m.username) ||
+                              Boolean(m.user_id && formData.shared_with.includes(m.user_id))
+                            return (
+                              <button
+                                key={m.username}
+                                type="button"
+                                onClick={() => {
+                                  const next = isSelected
+                                    ? formData.shared_with.filter(
+                                        (u) => u !== m.username && (!m.user_id || u !== m.user_id),
+                                      )
+                                    : [
+                                        ...formData.shared_with,
+                                        m.username,
+                                        ...(m.user_id ? [m.user_id] : []),
+                                      ]
+                                  setFormData({ ...formData, shared_with: next })
+                                }}
+                                style={{
+                                  padding: '4px 10px',
+                                  borderRadius: '16px',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  border: isSelected ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                                  background: isSelected ? '#eff6ff' : '#ffffff',
+                                  color: isSelected ? '#1d4ed8' : '#475569',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <span>{isSelected ? '✓' : '+'}</span>
+                                <span>@{m.username}</span>
+                                <span style={{ fontSize: '9px', opacity: 0.7 }}>({m.role})</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="Enter staff username to share (e.g. staff1)"
+                            className="option-input-field"
+                            value={customShareStaffInput}
+                            onChange={(e) => setCustomShareStaffInput(e.target.value)}
+                            style={{ height: '32px', fontSize: '12px', flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            onClick={() => {
+                              const val = customShareStaffInput.trim()
+                              if (val && !formData.shared_with.includes(val)) {
+                                setFormData({ ...formData, shared_with: [...formData.shared_with, val] })
+                                setCustomShareStaffInput('')
+                              }
+                            }}
+                            style={{ height: '32px', fontSize: '11px' }}
+                          >
+                            + Add Staff
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

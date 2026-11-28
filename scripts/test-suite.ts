@@ -4366,6 +4366,67 @@ async function runAllTests() {
     logResult(69, 'Source-Exam Full 15-Sheet View, Initial Cell & Style Fidelity + C2C R6/S6 Badge Removal', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 70: Client "Share With" -> Auto-Share Quotations Created/Linked for That Client
+  // -------------------------------------------------------------------------
+  try {
+    const {
+      mergeClientSharedWith,
+      isQuotationSharedWithUser,
+      countUniqueSharedStaff,
+    } = await import('../src/lib/clientDirectory')
+
+    const shareFailures: string[] = []
+
+    const merged1 = mergeClientSharedWith(['staffB', 'uuid-b', 'staffB'], ['staffA'])
+    if (JSON.stringify(merged1) !== JSON.stringify(['staffA', 'staffB', 'uuid-b'])) {
+      shareFailures.push(`mergeClientSharedWith failed: ${JSON.stringify(merged1)}`)
+    }
+    if (!isQuotationSharedWithUser(['staffB', 'uuid-b'], 'staffB', 'uuid-b')) {
+      shareFailures.push('Exact staff match failed')
+    }
+    if (isQuotationSharedWithUser(['staffB'], 'staffC', 'uuid-c')) {
+      shareFailures.push('Unshared staffC must not match staffB quotation')
+    }
+    if (!isQuotationSharedWithUser(['all'], 'staffC', 'uuid-c')) {
+      shareFailures.push('Wildcard all must match active staff')
+    }
+    if (countUniqueSharedStaff(['staffB', '11111111-1111-1111-1111-111111111111']) !== 1) {
+      shareFailures.push('countUniqueSharedStaff should ignore UUID duplicate and return 1')
+    }
+
+    const clientsPageSrc = fs.readFileSync('src/components/pages/ClientsPage.tsx', 'utf8')
+    const wsSrc70 = fs.readFileSync('src/components/Workspace.tsx', 'utf8')
+    const calcSrc70 = fs.readFileSync('src/components/pages/CalculatorPage.tsx', 'utf8')
+    const projSrc70 = fs.readFileSync('src/components/pages/ProjectsPage.tsx', 'utf8')
+    const patch70Src = fs.readFileSync('supabase/patch_client_auto_share_quotations.sql', 'utf8')
+    const schema70Src = fs.readFileSync('supabase/schema.sql', 'utf8')
+
+    if (!clientsPageSrc.includes('canManageClientShare') || !clientsPageSrc.includes('Share Client &amp; Quotations with Staff')) {
+      shareFailures.push('ClientsPage missing creator/admin share panel')
+    }
+    if (!wsSrc70.includes('mergeClientSharedWith(cl.shared_with)') || !wsSrc70.includes('isQuotationSharedWithUser(shared')) {
+      shareFailures.push('Workspace.tsx missing auto-share inheritance on quotation create')
+    }
+    if (!calcSrc70.includes('mergeClientSharedWith(linkedClient.shared_with') || !projSrc70.includes('isQuotationSharedWithUser')) {
+      shareFailures.push('CalculatorPage or ProjectsPage missing shared_with inheritance/matching')
+    }
+    for (const [lbl, sText] of [['schema.sql', schema70Src], ['patch_client_auto_share_quotations.sql', patch70Src]] as const) {
+      if (!sText.includes("p.summary->'shared_with' ? 'all'") || !sText.includes('v_client_shared') || !sText.includes('or existing.id is null or existing.created_by = u_name')) {
+        shareFailures.push(`${lbl} missing DB client auto-share / wildcard 'all' rules`)
+      }
+    }
+
+    if (shareFailures.length === 0) {
+      logResult(70, 'Client "Share With" -> Auto-Share Quotations Created/Linked for Client', 'PASSED',
+        'Verified ClientsPage create/edit Share With option (for Owner/Admin and client creators), automatic shared_with inheritance in Workspace create, Calculator PDF link, and Postgres project_create/client_upsert + wildcard all matching.')
+    } else {
+      logResult(70, 'Client "Share With" -> Auto-Share Quotations Created/Linked for Client', 'FAILED', shareFailures.join(' | '))
+    }
+  } catch (e) {
+    logResult(70, 'Client "Share With" -> Auto-Share Quotations Created/Linked for Client', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

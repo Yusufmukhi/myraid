@@ -21,7 +21,13 @@ import { cleanOverrides, extractTemplateDefaults, summarize, filterCutToCutOverr
 import { buildOfficialQtnNo, formatInitialProjectName, formatPdfDate, getFiscalYear, parseRevision } from '../lib/revision'
 import { detectMultiSystemChanges } from '../lib/auditDiff'
 import { cleanCopiedText, fuzzyTextMatch } from '../lib/cleanText'
-import { getSavedClients, fetchClientsFromSupabase, SavedClient } from '../lib/clientDirectory'
+import {
+  getSavedClients,
+  fetchClientsFromSupabase,
+  isQuotationSharedWithUser,
+  mergeClientSharedWith,
+  SavedClient,
+} from '../lib/clientDirectory'
 import { Navigation, NavTab } from './Navigation'
 import { ActivityPage } from './pages/ActivityPage'
 import { ApprovalsPage } from './pages/ApprovalsPage'
@@ -296,7 +302,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         const userProjects = !isAdminOrOwner
           ? list.filter((p) => {
               const shared = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
-              const isShared = Array.isArray(shared) && (shared.includes(session.username) || (session.user_id && shared.includes(session.user_id)))
+              const isShared = isQuotationSharedWithUser(shared, session.username, session.user_id)
               const isMine = p.created_by === session.user_id || p.created_by === session.username
               if (isMine) return true
               if (isShared) return p.status?.toLowerCase() !== 'approved'
@@ -454,10 +460,12 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
         const cl = savedClients.find((c) => c.id === targetClientId)
         if (cl) {
           const clientMargin = cl.profit_margin_pct !== undefined ? cl.profit_margin_pct : 25
+          const inheritedSharedWith = mergeClientSharedWith(cl.shared_with)
           initialSummary = {
             client_id: cl.id,
             profit_pct: clientMargin,
             include_full_proposal: cl.include_full_proposal !== undefined ? Boolean(cl.include_full_proposal) : false,
+            ...(inheritedSharedWith.length > 0 ? { shared_with: inheritedSharedWith } : {}),
             client_info: {
               buyer_name: cl.name,
               buyer_address: cl.address,
@@ -474,8 +482,14 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       } else if (cleanedSearchTerm) {
         const matched = savedClients.find((c) => fuzzyTextMatch(c.name, cleanedSearchTerm))
         const clientMargin = matched && matched.profit_margin_pct !== undefined ? matched.profit_margin_pct : 25
+        const inheritedSharedWith = matched ? mergeClientSharedWith(matched.shared_with) : []
         initialSummary = {
-          ...(matched ? { client_id: matched.id, profit_pct: clientMargin, include_full_proposal: matched.include_full_proposal !== undefined ? Boolean(matched.include_full_proposal) : false } : {}),
+          ...(matched ? {
+            client_id: matched.id,
+            profit_pct: clientMargin,
+            include_full_proposal: matched.include_full_proposal !== undefined ? Boolean(matched.include_full_proposal) : false,
+            ...(inheritedSharedWith.length > 0 ? { shared_with: inheritedSharedWith } : {}),
+          } : {}),
           client_info: {
             buyer_name: matched ? matched.name : cleanedSearchTerm,
           },
@@ -784,7 +798,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       // If approved, automatically remove from the shared side
       if (p.status?.toLowerCase() === 'approved') return false
       const shared = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
-      const isShared = Array.isArray(shared) && (shared.includes(session.username) || (session.user_id && shared.includes(session.user_id)))
+      const isShared = isQuotationSharedWithUser(shared, session.username, session.user_id)
       const isCreatedByOther = p.created_by !== session.username && p.created_by !== session.user_id
       return isShared && isCreatedByOther
     })
@@ -796,7 +810,7 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
       if (p.is_archived) return false
       if (isAdminOrOwner) return true
       const shared = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
-      const isShared = Array.isArray(shared) && (shared.includes(session.username) || (session.user_id && shared.includes(session.user_id)))
+      const isShared = isQuotationSharedWithUser(shared, session.username, session.user_id)
       const isMine = p.created_by === session.user_id || p.created_by === session.username
       if (isMine) return true
       if (isShared) {

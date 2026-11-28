@@ -15,7 +15,7 @@ import { detectMultiSystemChanges } from '../../lib/auditDiff'
 
 import { fetchClientIp, getCachedClientIp } from '../../lib/clientInfo'
 
-import { getSavedClients } from '../../lib/clientDirectory'
+import { getSavedClients, mergeClientSharedWith } from '../../lib/clientDirectory'
 
 import { Icon, Spinner, useUI } from '../ui'
 
@@ -2753,14 +2753,20 @@ export function CalculatorPage({
       // Preserve last saved calculator specs/inputs when calculator has unsaved changes (or staff rate-locked after share);
       // only persist non-financial PDF client info, body items, and layout/technical settings.
       const savedBaseSummary = project.summary || {}
+      const resolvedClientId = clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || ''
+      const linkedClient = resolvedClientId ? getSavedClients(org.id).find((c) => c.id === resolvedClientId) : undefined
+      const mergedShared = linkedClient?.shared_with?.length
+        ? mergeClientSharedWith(linkedClient.shared_with, savedBaseSummary.shared_with)
+        : savedBaseSummary.shared_with
       const updatedSummary = {
         ...savedBaseSummary,
         ...cleanExtraSettings,
         client_info: {
           ...clientInfo,
-          client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
+          client_id: resolvedClientId,
         },
-        client_id: clientInfo.client_id || savedBaseSummary.client_id || (project as any).client_id || '',
+        client_id: resolvedClientId,
+        ...(mergedShared ? { shared_with: mergedShared } : {}),
         ...(isStaffRateLocked ? {} : { quotation_items: items }),
         body_items: bodyItems,
         quotation_mode: cleanExtraSettings.quotation_mode || savedBaseSummary.quotation_mode || quotationMode,
@@ -2859,6 +2865,10 @@ export function CalculatorPage({
     const finalSales = Math.round(Number(allSystemsTotals.sales || (summary.sales * activeSysQty)) || 0)
 
     const targetClientId = clientInfo.client_id || project.summary?.client_id || (project as any).client_id || ''
+    const linkedClientFull = targetClientId ? getSavedClients(org.id).find((c) => c.id === targetClientId) : undefined
+    const mergedSharedFull = linkedClientFull?.shared_with?.length
+      ? mergeClientSharedWith(linkedClientFull.shared_with, project.summary?.shared_with)
+      : project.summary?.shared_with
 
     const updatedSummary = {
       ...project.summary,
@@ -2867,6 +2877,7 @@ export function CalculatorPage({
         client_id: targetClientId,
       },
       client_id: targetClientId,
+      ...(mergedSharedFull ? { shared_with: mergedSharedFull } : {}),
       quotation_items: items,
       body_items: bodyItems,
       quotation_mode: cleanExtraSettings.quotation_mode || quotationMode,

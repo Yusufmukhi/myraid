@@ -459,3 +459,56 @@ export function deleteClientFromDirectory(clientId: string, orgId?: string): boo
 export function harvestClientsFromProjects(_projects: any[], _orgId?: string): number {
   return 0
 }
+
+/**
+ * Merges a client's configured shared_with list (e.g. ['staffB'] or ['all']) with any existing
+ * quotation shared_with list so quotations created/linked for that client auto-share seamlessly.
+ */
+export function mergeClientSharedWith(
+  clientSharedWith?: string[] | null,
+  existingSharedWith?: string[] | null,
+): string[] {
+  const seen = new Set<string>()
+  for (const list of [existingSharedWith, clientSharedWith]) {
+    if (!Array.isArray(list)) continue
+    for (const item of list) {
+      const clean = String(item || '').trim()
+      if (clean) seen.add(clean)
+    }
+  }
+  return Array.from(seen)
+}
+
+/**
+ * Checks if a quotation's shared_with list grants access to a given staff username / user_id
+ * (including wildcard 'all').
+ */
+export function isQuotationSharedWithUser(
+  sharedWith: string[] | undefined | null,
+  username?: string | null,
+  userId?: string | null,
+): boolean {
+  if (!Array.isArray(sharedWith) || sharedWith.length === 0) return false
+  const uLower = (username || '').trim().toLowerCase()
+  const idLower = (userId || '').trim().toLowerCase()
+  return sharedWith.some((entry) => {
+    const clean = String(entry || '').trim().toLowerCase()
+    return (
+      clean === 'all' ||
+      clean === '*' ||
+      (Boolean(uLower) && clean === uLower) ||
+      (Boolean(idLower) && clean === idLower)
+    )
+  })
+}
+
+/**
+ * Counts distinct human entries in a shared_with list (ignores UUID duplicates paired with usernames).
+ */
+export function countUniqueSharedStaff(sharedWith?: string[] | null): number {
+  if (!Array.isArray(sharedWith) || sharedWith.length === 0) return 0
+  if (sharedWith.includes('all')) return 1
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const names = sharedWith.filter((s) => s && !uuidRe.test(s.trim()))
+  return names.length > 0 ? new Set(names.map((s) => s.toLowerCase())).size : new Set(sharedWith).size
+}

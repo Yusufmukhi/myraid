@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { api, Org, Project, ProjectStatus, Session, tokenStore } from '../../lib/api'
 import { deleteProject } from '../../lib/permissions'
 import { inr, timeAgo } from '../../lib/format'
-import { getSavedClients } from '../../lib/clientDirectory'
+import { getSavedClients, isQuotationSharedWithUser } from '../../lib/clientDirectory'
 import {
   buildOfficialQtnNo,
   formatPdfDate,
@@ -218,8 +218,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
       if (!showArchived && p.is_archived) continue
       const sharedList = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
       const isSharedWithMe =
-        Array.isArray(sharedList) &&
-        (sharedList.includes(session.username) || (session.user_id ? sharedList.includes(session.user_id) : false)) &&
+        isQuotationSharedWithUser(sharedList, session.username, session.user_id) &&
         p.created_by !== session.username &&
         p.created_by !== session.user_id
 
@@ -243,8 +242,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
       .filter((p) => {
         const sharedList = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
         const isSharedWithMe =
-          Array.isArray(sharedList) &&
-          (sharedList.includes(session.username) || (session.user_id ? sharedList.includes(session.user_id) : false)) &&
+          isQuotationSharedWithUser(sharedList, session.username, session.user_id) &&
           p.created_by !== session.username &&
           p.created_by !== session.user_id
 
@@ -929,8 +927,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
               {(() => {
                 const shared = (p.summary?.shared_with || (p as any).shared_with) as string[] | undefined
                 const isSharedToMe =
-                  Array.isArray(shared) &&
-                  (shared.includes(session.username) || (session.user_id && shared.includes(session.user_id))) &&
+                  isQuotationSharedWithUser(shared, session.username, session.user_id) &&
                   p.created_by !== session.username
                 const count = Array.isArray(shared) ? shared.length : 0
                 if (isSharedToMe) {
@@ -1807,8 +1804,7 @@ export function ProjectsPage({ session, org, currentProjectId, onOpenProject, on
                             {folder.revisions.some((r) => {
                               const shared = (r.summary?.shared_with || (r as any).shared_with) as string[] | undefined
                               return (
-                                Array.isArray(shared) &&
-                                (shared.includes(session.username) || (session.user_id && shared.includes(session.user_id))) &&
+                                isQuotationSharedWithUser(shared, session.username, session.user_id) &&
                                 r.created_by !== session.username
                               )
                             }) && (
