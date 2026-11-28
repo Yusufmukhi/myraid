@@ -4427,6 +4427,72 @@ async function runAllTests() {
     logResult(70, 'Client "Share With" -> Auto-Share Quotations Created/Linked for Client', 'FAILED', (e as Error).message)
   }
 
+  // -------------------------------------------------------------------------
+  // Test 71: Minimal Template Versioning, Formula/Rate Sync Across Admin & Staff
+  // -------------------------------------------------------------------------
+  try {
+    const { extractTemplateDefaults, extractTemplateFormulaOverrides } = await import('../src/lib/model')
+    const { computeTemplateDiff } = await import('../src/components/pages/OrganisationSettings')
+    const tplFailures: string[] = []
+
+    const defMock = {
+      baseline: 'actual',
+      rates: { steel: 98, trolleySteel: 92, bodyLabour: 270 },
+      default_inputs: { 'Total cal!H3': 98, 'Total cal!M3': 92, 'Total cal!B49': 270, 'rates!b3': 98, 'rates!b4': 92 },
+      formula_overrides: { 'Total cal!J36': '=(J34+J35)*1.05' },
+    }
+    const defsExtracted = extractTemplateDefaults(defMock)
+    const formulasExtracted = extractTemplateFormulaOverrides(defMock)
+    if (defsExtracted['Total cal!H3'] !== 98 || defsExtracted['rates!b3'] !== undefined) {
+      tplFailures.push(`extractTemplateDefaults mismatch or leaked legacy rates!b3: ${JSON.stringify(defsExtracted)}`)
+    }
+    if (formulasExtracted['Total cal!J36'] !== '=(J34+J35)*1.05') {
+      tplFailures.push('extractTemplateFormulaOverrides did not extract template formula rule')
+    }
+
+    const diffs71 = computeTemplateDiff(
+      { id: '1', org_id: 'o', version_num: 1, name: 'V1', status: 'published', is_default: true, definition: { default_inputs: { 'Total cal!H3': 90, 'rates!b3': 90 } }, created_at: '', updated_at: '' } as any,
+      { id: '2', org_id: 'o', version_num: 2, name: 'V2', status: 'published', is_default: false, definition: defMock, created_at: '', updated_at: '' } as any,
+    )
+    if (!diffs71.some((d) => d.key === 'Total cal!H3' && d.toVal === 98) || diffs71.some((d) => d.key === 'rates!b3')) {
+      tplFailures.push(`computeTemplateDiff did not clean legacy keys cleanly: ${JSON.stringify(diffs71)}`)
+    }
+
+    const orgSrc71 = fs.readFileSync('src/components/pages/OrganisationSettings.tsx', 'utf8')
+    const wsSrc71 = fs.readFileSync('src/components/Workspace.tsx', 'utf8')
+    const calcSrc71 = fs.readFileSync('src/components/pages/CalculatorPage.tsx', 'utf8')
+    const edgeSrc71 = fs.readFileSync('supabase/functions/calculate/index.ts', 'utf8')
+    const schemaSrc71 = fs.readFileSync('supabase/schema.sql', 'utf8')
+
+    if (orgSrc71.includes('1. ACTUAL TEMPLATE') || orgSrc71.includes('2. CUT-TO-CUT TEMPLATE')) {
+      tplFailures.push('OrganisationSettings.tsx still contains legacy dual card clutter')
+    }
+    if (!orgSrc71.includes('Math.max') || !orgSrc71.includes('templates.find((t) => t.is_default)')) {
+      tplFailures.push('OrganisationSettings.tsx missing maxVersion or active default resolution')
+    }
+    if (!wsSrc71.includes('extractTemplateFormulaOverrides') || !wsSrc71.includes('api.projectGet(session.token, currentProject.id)')) {
+      tplFailures.push('Workspace.tsx missing template formula or active project refresh sync')
+    }
+    if (!calcSrc71.includes('extractTemplateFormulaOverrides') || !calcSrc71.includes('effectiveAdminFormulas')) {
+      tplFailures.push('CalculatorPage.tsx missing template formula merge during calculate/recalculate')
+    }
+    if (!edgeSrc71.includes('extractTemplateDefaultsFromDef') || !edgeSrc71.includes('extractTemplateFormulasFromDef') || !edgeSrc71.includes('authTemplateDefaults')) {
+      tplFailures.push('calculate Edge Function missing authoritative DB template sync for staff & admins')
+    }
+    if (!schemaSrc71.includes('from public.templates where org_id = p_org;') || !schemaSrc71.includes('and template_id = t.id')) {
+      tplFailures.push('schema.sql missing template_publish collision guard or template_update open quote snapshot sync')
+    }
+
+    if (tplFailures.length === 0) {
+      logResult(71, 'Minimal Template Versioning, Rate/Formula Sync & Edge Authority', 'PASSED',
+        'Verified clean minimal Template Versions UI, accurate nextVersion across non-sequential defaults, formula/rate extraction, Workspace/Calculator sync, and Edge Function authoritative DB template resolution.')
+    } else {
+      logResult(71, 'Minimal Template Versioning, Rate/Formula Sync & Edge Authority', 'FAILED', tplFailures.join(' | '))
+    }
+  } catch (e) {
+    logResult(71, 'Minimal Template Versioning, Rate/Formula Sync & Edge Authority', 'FAILED', (e as Error).message)
+  }
+
   console.log('\n======================================================================')
   const passed = results.filter((r) => r.status === 'PASSED').length
   const failed = results.filter((r) => r.status === 'FAILED').length

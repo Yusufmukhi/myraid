@@ -6,7 +6,7 @@ import { Overrides, Workbook } from '../../lib/engine'
 
 import { count, inr, inr2, kg } from '../../lib/format'
 
-import { cleanOverrides, extractTemplateDefaults, summarize, Summary, filterCutToCutOverrides } from '../../lib/model'
+import { cleanOverrides, extractTemplateDefaults, extractTemplateFormulaOverrides, summarize, Summary, filterCutToCutOverrides } from '../../lib/model'
 
 import { exportWorkbookToXLSX, exportMultiSystemWorkbookToXLSX, MultiSystemExcelEntry } from '../../lib/excelExport'
 import { cleanCopiedNumber, cleanCopiedText } from '../../lib/cleanText'
@@ -1594,7 +1594,7 @@ export function CalculatorPage({
 
 
 
-  // Synchronize template defaults to wb whenever project changes
+  // Synchronize template defaults & formula overrides to wb/c2cWb whenever project changes
 
   useEffect(() => {
 
@@ -1604,9 +1604,13 @@ export function CalculatorPage({
 
       let defs: Record<string, number | null> = {}
 
+      let tplFormulas: Record<string, string> = {}
+
       if (project.template_snapshot?.definition) {
 
         defs = extractTemplateDefaults(project.template_snapshot.definition)
+
+        tplFormulas = extractTemplateFormulaOverrides(project.template_snapshot.definition)
 
       } else {
 
@@ -1620,6 +1624,8 @@ export function CalculatorPage({
 
             defs = extractTemplateDefaults(matching.definition)
 
+            tplFormulas = extractTemplateFormulaOverrides(matching.definition)
+
           }
 
         } catch {
@@ -1632,13 +1638,17 @@ export function CalculatorPage({
 
       if (active) {
 
+        const mergedFormulas = { ...tplFormulas, ...(project.formula_overrides || {}) }
+
         wb.setTemplateDefaults(defs)
 
-        if (project.formula_overrides) {
+        wb.setFormulaOverrides(mergedFormulas)
 
-          wb.setFormulaOverrides(project.formula_overrides)
+        c2cWb?.setTemplateDefaults(filterCutToCutOverrides(defs))
 
-        }
+        c2cWb?.setFormulaOverrides({ ...mergedFormulas, ...(project.summary?.c2c_formula_overrides || {}) })
+
+        setWbVersion((v) => v + 1)
 
       }
 
@@ -1652,7 +1662,7 @@ export function CalculatorPage({
 
     }
 
-  }, [project.id, project.template_id, project.template_version, project.template_snapshot, org.id, session.token, wb])
+  }, [project.id, project.template_id, project.template_version, project.template_snapshot, org.id, session.token, wb, c2cWb])
 
 
 
@@ -2293,13 +2303,21 @@ export function CalculatorPage({
 
 
 
-      // Get template defaults if available
+      // Get template defaults & formula overrides if available
 
       const tplDefaults = project.template_snapshot?.definition
 
         ? extractTemplateDefaults(project.template_snapshot)
 
         : {}
+
+      const tplFormulas = project.template_snapshot?.definition
+
+        ? extractTemplateFormulaOverrides(project.template_snapshot)
+
+        : {}
+
+      const effectiveAdminFormulas = isAdminOrOwner ? { ...tplFormulas, ...formulaOverrides } : formulaOverrides
 
 
 
@@ -2325,7 +2343,7 @@ export function CalculatorPage({
           inputs: currentClean,
           active_system_idx: activeSystemIdx,
 
-          formula_overrides: formulaOverrides,
+          formula_overrides: effectiveAdminFormulas,
 
           template_defaults: tplDefaults,
 
@@ -2675,15 +2693,88 @@ export function CalculatorPage({
 
       const newDef = targetTpl.definition ?? {}
 
-      wb.setTemplateDefaults(newDef.default_inputs ?? {})
+      const newDefs = extractTemplateDefaults(newDef)
 
-      if (newDef.formula_overrides) {
+      const newTplFormulas = extractTemplateFormulaOverrides(newDef)
 
-        wb.setFormulaOverrides({ ...newDef.formula_overrides, ...formulaOverrides })
+      const mergedFormulas = { ...newTplFormulas, ...formulaOverrides }
+
+      const activeSysC2C = systems[activeSystemIdx]?.c2c_overrides || {}
+      const activeSysC2CFormulas = systems[activeSystemIdx]?.c2c_formula_overrides || {}
+      const mergedC2COv = { ...(project.summary?.c2c_overrides || {}), ...activeSysC2C }
+      const mergedC2CFO = { ...(project.summary?.c2c_formula_overrides || {}), ...activeSysC2CFormulas }
+
+      wb.setTemplateDefaults(newDefs)
+
+      wb.setFormulaOverrides(mergedFormulas)
+
+      c2cWb?.setTemplateDefaults(filterCutToCutOverrides(newDefs))
+
+      c2cWb?.setFormulaOverrides({ ...mergedFormulas, ...mergedC2CFO })
+
+      let newSummary: any = summarize(wb, profitPct, discountPct, includeInstallation, extraAmount)
+
+      let newTotal = newSummary.sales
+
+
+
+      try {
+
+        const serverRes = await api.serverCalculate(session.token, {
+
+          org_id: org.id,
+
+          project_id: project.id,
+
+          inputs: overrides,
+
+          active_system_idx: activeSystemIdx,
+
+          formula_overrides: mergedFormulas,
+
+          template_defaults: newDefs,
+
+          profit_pct: profitPct,
+
+          discount_pct: discountPct,
+
+          include_installation: includeInstallation,
+
+          extra_amount: extraAmount,
+
+          systems: systems.length > 0 ? systems : undefined,
+
+          c2c_overrides: Object.keys(mergedC2COv).length > 0 ? mergedC2COv : undefined,
+
+          c2c_formula_overrides: Object.keys(mergedC2CFO).length > 0 ? mergedC2CFO : undefined,
+
+        })
+
+        if (serverRes?.summary) {
+
+          newSummary = {
+
+            ...newSummary,
+
+            ...serverRes.summary,
+
+            ...(serverRes.c2c_summary ? { c2c_summary: serverRes.c2c_summary } : {}),
+
+          }
+
+          if (typeof serverRes.computed_total === 'number' && serverRes.computed_total > 0) {
+
+            newTotal = serverRes.computed_total
+
+          }
+
+        }
+
+      } catch {
+
+        // Fall back to local workbook summary if edge calculation unavailable
 
       }
-
-      const newSummary = summarize(wb, profitPct, discountPct, includeInstallation)
 
 
 
@@ -2699,7 +2790,7 @@ export function CalculatorPage({
 
         formulaOverrides,
 
-        newSummary.sales,
+        newTotal,
 
         newSummary,
 

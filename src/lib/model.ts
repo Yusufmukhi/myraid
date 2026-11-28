@@ -258,22 +258,19 @@ export function extractTemplateDefaults(snapshotOrDef: any): Record<string, numb
   const defaults: Record<string, number | null> = {}
 
   if (def.default_inputs && typeof def.default_inputs === 'object') {
-    Object.assign(defaults, def.default_inputs)
+    for (const [k, v] of Object.entries(def.default_inputs)) {
+      if (k === 'rates!b3' || k === 'rates!b4') continue
+      defaults[k] = v as number | null
+    }
   }
   if (def.rates && typeof def.rates === 'object') {
     if (def.rates.steel !== undefined && def.rates.steel !== null) {
       const s = Number(def.rates.steel)
-      if (!isNaN(s)) {
-        defaults['Total cal!H3'] = s
-        defaults['rates!b3'] = s
-      }
+      if (!isNaN(s)) defaults['Total cal!H3'] = s
     }
     if (def.rates.trolleySteel !== undefined && def.rates.trolleySteel !== null) {
       const t = Number(def.rates.trolleySteel)
-      if (!isNaN(t)) {
-        defaults['Total cal!M3'] = t
-        defaults['rates!b4'] = t
-      }
+      if (!isNaN(t)) defaults['Total cal!M3'] = t
     }
     if (def.rates.bodyLabour !== undefined && def.rates.bodyLabour !== null) {
       const l = Number(def.rates.bodyLabour)
@@ -281,6 +278,18 @@ export function extractTemplateDefaults(snapshotOrDef: any): Record<string, numb
     }
   }
   return defaults
+}
+
+/** Extracts template formula overrides from a template definition or snapshot. */
+export function extractTemplateFormulaOverrides(snapshotOrDef: any): Record<string, string> {
+  if (!snapshotOrDef) return {}
+  const def = snapshotOrDef.definition || snapshotOrDef
+  if (!def?.formula_overrides || typeof def.formula_overrides !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(def.formula_overrides)) {
+    if (typeof v === 'string' && v.trim()) out[k] = v
+  }
+  return out
 }
 
 /** Overrides that really differ from the workbook defaults (so we only store real changes). */

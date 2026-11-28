@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import data from '../../lib/clientWorkbook.json'
+import c2cData from '../../lib/clientWorkbook_c2c.json'
 import { api, Org, Session, Template } from '../../lib/api'
 import { deleteTemplate, publishTemplate, rollbackTemplateToVersion, updateTemplate } from '../../lib/permissions'
 import { Overrides, SheetData, Workbook } from '../../lib/engine'
 import { inr, timeAgo } from '../../lib/format'
 import { INPUT_GROUPS } from '../../lib/inputs'
-import { cleanOverrides, summarize, Summary } from '../../lib/model'
-import { Icon, NumField, Spinner, useCopy, useUI } from '../ui'
+import { summarize, Summary } from '../../lib/model'
+import { Icon, NumField, Spinner, useUI } from '../ui'
 import { CalculationDetails } from './CalculationDetails'
 
 interface Props {
   session: Session
   org: Org
-  onOrgUpdated: () => void
+  onOrgUpdated: () => void | Promise<void>
 }
 
-type StudioTab = 'sheets' | 'forms' | 'diff'
+type StudioTab = 'forms' | 'sheets' | 'diff'
 
 export interface DiffEntry {
   key: string
@@ -25,12 +26,60 @@ export interface DiffEntry {
   type: 'input' | 'formula' | 'baseline'
 }
 
+const INPUT_LABEL_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {}
+  for (const grp of INPUT_GROUPS) {
+    for (const item of grp.items) {
+      map[item.key] = item.unit ? `${item.label} (${item.unit})` : item.label
+    }
+  }
+  return map
+})()
+
+const LEGACY_MIRROR_KEYS = new Set(['rates!b3', 'rates!b4'])
+
+function cleanTemplateDefaultInputs(raw?: Record<string, any> | null): Overrides {
+  const out: Overrides = {}
+  if (!raw || typeof raw !== 'object') return out
+  for (const [k, v] of Object.entries(raw)) {
+    if (LEGACY_MIRROR_KEYS.has(k)) continue
+    if (v === null || typeof v === 'number') out[k] = v
+    else if (v !== undefined && !isNaN(Number(v))) out[k] = Number(v)
+  }
+  return out
+}
+
+function getTemplateBaseline(tpl?: Template | null): 'actual' | 'c2c' {
+  if (!tpl) return 'actual'
+  if (tpl.definition?.baseline === 'c2c') return 'c2c'
+  if (tpl.name?.toLowerCase().includes('cut-to-cut')) return 'c2c'
+  return 'actual'
+}
+
+function readTemplateRates(tpl?: Template | null) {
+  const def: any = tpl?.definition || {}
+  const inputs = def.default_inputs || {}
+  const isC2C = getTemplateBaseline(tpl) === 'c2c'
+  const steel = Number(inputs['Total cal!H3'] ?? def.rates?.steel ?? (isC2C ? 79 : 90))
+  const trolley = Number(inputs['Total cal!M3'] ?? def.rates?.trolleySteel ?? (isC2C ? 69 : 90))
+  const labour = Number(inputs['Total cal!B49'] ?? def.rates?.bodyLabour ?? 250)
+  return {
+    steel: isNaN(steel) ? (isC2C ? 79 : 90) : steel,
+    trolley: isNaN(trolley) ? (isC2C ? 69 : 90) : trolley,
+    labour: isNaN(labour) ? 250 : labour,
+  }
+}
+
+function stripVersionSuffix(name: string): string {
+  return name.replace(/(?:\s*\(V\d+\)|\s+v\d+)$/gi, '').trim()
+}
+
 export function computeTemplateDiff(baseTpl?: Template | null, targetTpl?: Template | null): DiffEntry[] {
   if (!targetTpl) return []
   const diffs: DiffEntry[] = []
 
-  const baseInputs = baseTpl?.definition?.default_inputs || {}
-  const targetInputs = targetTpl?.definition?.default_inputs || {}
+  const baseInputs = cleanTemplateDefaultInputs(baseTpl?.definition?.default_inputs)
+  const targetInputs = cleanTemplateDefaultInputs(targetTpl?.definition?.default_inputs)
   const allInputKeys = Array.from(new Set([...Object.keys(baseInputs), ...Object.keys(targetInputs)]))
 
   for (const k of allInputKeys) {
@@ -39,8 +88,9 @@ export function computeTemplateDiff(baseTpl?: Template | null, targetTpl?: Templ
     if (vFrom !== vTo) {
       diffs.push({
         key: k,
-        fromVal: vFrom !== undefined && vFrom !== null ? vFrom : '(Standard Default)',
-        toVal: vTo !== undefined && vTo !== null ? vTo : '(Standard Default)',
+        label: INPUT_LABEL_MAP[k] || k,
+        fromVal: vFrom !== undefined && vFrom !== null ? vFrom : '(Default)',
+        toVal: vTo !== undefined && vTo !== null ? vTo : '(Default)',
         type: 'input',
       })
     }
@@ -56,20 +106,22 @@ export function computeTemplateDiff(baseTpl?: Template | null, targetTpl?: Templ
     if (fFrom !== fTo) {
       diffs.push({
         key: k,
-        fromVal: fFrom || '(Standard Formula)',
-        toVal: fTo || '(Standard Formula)',
+        label: `Formula · ${k}`,
+        fromVal: fFrom || '(Default Formula)',
+        toVal: fTo || '(Default Formula)',
         type: 'formula',
       })
     }
   }
 
-  const baseType = baseTpl?.definition?.baseline || (baseTpl?.name?.toLowerCase().includes('cut-to-cut') ? 'c2c' : 'actual')
-  const targetType = targetTpl?.definition?.baseline || (targetTpl?.name?.toLowerCase().includes('cut-to-cut') ? 'c2c' : 'actual')
+  const baseType = getTemplateBaseline(baseTpl)
+  const targetType = getTemplateBaseline(targetTpl)
   if (baseTpl && baseType !== targetType) {
     diffs.push({
-      key: 'Baseline Architecture',
-      fromVal: baseType === 'c2c' ? 'Cut-to-Cut Costing' : 'Actual Quotation',
-      toVal: targetType === 'c2c' ? 'Cut-to-Cut Costing' : 'Actual Quotation',
+      key: 'Baseline Mode',
+      label: 'Baseline Mode',
+      fromVal: baseType === 'c2c' ? 'Cut-to-Cut' : 'Standard Actual',
+      toVal: targetType === 'c2c' ? 'Cut-to-Cut' : 'Standard Actual',
       type: 'baseline',
     })
   }
@@ -77,33 +129,30 @@ export function computeTemplateDiff(baseTpl?: Template | null, targetTpl?: Templ
   return diffs
 }
 
-
 export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const { toast, confirm } = useUI()
-  const copy = useCopy()
 
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
 
-  // Studio / Editor Mode state
+  // Studio / Editor state
   const [editorMode, setEditorMode] = useState(false)
-  const [studioTab, setStudioTab] = useState<StudioTab>('sheets')
+  const [studioTab, setStudioTab] = useState<StudioTab>('forms')
   const [draftName, setDraftName] = useState('')
   const [draftDesc, setDraftDesc] = useState('')
   const [draftOverrides, setDraftOverrides] = useState<Overrides>({})
   const [draftFormulaOverrides, setDraftFormulaOverrides] = useState<Record<string, string>>({})
-
-  // Template Baseline: 'actual' (₹90 rate default workbook) or 'c2c' (₹79 rate Cut-to-Cut workbook)
   const [templateBaseline, setTemplateBaseline] = useState<'actual' | 'c2c'>('actual')
-
-  // Dedicated workbook instances for template draft calculation
-  const [diffModalTemplate, setDiffModalTemplate] = useState<Template | null>(null)
-  const [diffComparisonMode, setDiffComparisonMode] = useState<'prev' | 'initial'>('prev')
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
 
-  // Dedicated workbook instances for template draft calculation (all 15 sheets initialized)
-  const draftWb = useMemo(() => new Workbook(data as unknown as { sheets: SheetData[] }), [])
+  // Diff modal state
+  const [diffModalTemplate, setDiffModalTemplate] = useState<Template | null>(null)
+  const [diffComparisonMode, setDiffComparisonMode] = useState<'prev' | 'initial'>('prev')
+
+  const draftActualWb = useMemo(() => new Workbook(data as unknown as { sheets: SheetData[] }), [])
+  const draftC2CWb = useMemo(() => new Workbook(c2cData as unknown as { sheets: SheetData[] }), [])
+  const activeDraftWb = templateBaseline === 'c2c' ? draftC2CWb : draftActualWb
 
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
 
@@ -111,7 +160,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     try {
       setLoading(true)
       const list = await api.templateList(session.token, org.id)
-      setTemplates(list)
+      setTemplates(Array.isArray(list) ? list : [])
     } catch (e) {
       toast((e as Error).message, 'err')
     } finally {
@@ -123,50 +172,92 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     loadTemplates()
   }, [org.id])
 
-  const currentDefaultTemplate = templates.find((t) => t.is_default) || templates[0]
-  const nextVersion = (org.current_template_version || 1) + 1
+  const publishedTemplates = useMemo(
+    () => templates.filter((t) => t.status === 'published'),
+    [templates],
+  )
+  const currentDefaultTemplate = useMemo(
+    () =>
+      templates.find((t) => t.is_default) ||
+      templates.find((t) => t.version_num === org.current_template_version) ||
+      publishedTemplates[0] ||
+      templates[0],
+    [templates, publishedTemplates, org.current_template_version],
+  )
 
-  // Open Template Studio (Edit existing version in-place or publish new version)
-  const handleOpenStudio = (baseTemplate?: Template, forceBaseline?: 'actual' | 'c2c') => {
+  // Match Postgres template_publish: max(version_num) + 1 across all org templates
+  const nextVersion = useMemo(() => {
+    const maxV = Math.max(
+      org.current_template_version || 1,
+      ...templates.map((t) => t.version_num || 0),
+    )
+    return maxV + 1
+  }, [org.current_template_version, templates])
+
+  const handleOpenStudio = (baseTemplate?: Template, createNewMode = false) => {
     const tpl = baseTemplate || currentDefaultTemplate
-    setEditingTemplate(tpl || null)
+    const initialInputs = cleanTemplateDefaultInputs(tpl?.definition?.default_inputs)
+    const initialFormulas = { ...(tpl?.definition?.formula_overrides || {}) }
+    const baseline = getTemplateBaseline(tpl)
 
-    const initialInputs = tpl?.definition?.default_inputs || {}
-    const initialFormulas = tpl?.definition?.formula_overrides || {}
-    const isC2C = forceBaseline === 'c2c' || tpl?.definition?.baseline === 'c2c' || tpl?.name?.toLowerCase().includes('cut-to-cut')
-
-    setTemplateBaseline(isC2C ? 'c2c' : 'actual')
-
-    setDraftName(tpl?.name || (isC2C ? 'Cut-to-Cut Standards' : 'Default Production Template'))
-    setDraftDesc(tpl?.description || '')
-
-    if (isC2C) {
-      const c2cInputs: Overrides = {
-        'Total cal!H3': 79,
-        'Total cal!M3': 69,
-        'Total cal!J3': 0,
-        ...initialInputs,
-      }
-      setDraftOverrides(c2cInputs)
-      setDraftFormulaOverrides({ ...initialFormulas })
-
-      draftWb.setTemplateDefaults(c2cInputs)
-      draftWb.setFormulaOverrides(initialFormulas)
-      draftWb.setOverrides(c2cInputs)
-    } else {
-      setDraftOverrides({ ...initialInputs })
-      setDraftFormulaOverrides({ ...initialFormulas })
-
-      draftWb.setTemplateDefaults(initialInputs)
-      draftWb.setFormulaOverrides(initialFormulas)
-      draftWb.setOverrides(initialInputs)
+    // Pre-populate rate inputs from definition.rates if not already in default_inputs (e.g. v1)
+    if (tpl && !createNewMode) {
+      const rates = readTemplateRates(tpl)
+      if (initialInputs['Total cal!H3'] === undefined) initialInputs['Total cal!H3'] = rates.steel
+      if (initialInputs['Total cal!M3'] === undefined) initialInputs['Total cal!M3'] = rates.trolley
+      if (initialInputs['Total cal!B49'] === undefined) initialInputs['Total cal!B49'] = rates.labour
+    } else if (tpl && createNewMode) {
+      const rates = readTemplateRates(tpl)
+      if (initialInputs['Total cal!H3'] === undefined) initialInputs['Total cal!H3'] = rates.steel
+      if (initialInputs['Total cal!M3'] === undefined) initialInputs['Total cal!M3'] = rates.trolley
+      if (initialInputs['Total cal!B49'] === undefined) initialInputs['Total cal!B49'] = rates.labour
     }
 
-    setStudioTab('sheets')
+    setEditingTemplate(createNewMode ? null : (tpl || null))
+    setTemplateBaseline(baseline)
+
+    if (createNewMode) {
+      const cleanBase = stripVersionSuffix(tpl?.name || 'Production Standards') || 'Production Standards'
+      setDraftName(`${cleanBase} v${nextVersion}`)
+      setDraftDesc(tpl?.description || '')
+    } else {
+      setDraftName(tpl?.name || `Production Standards v${nextVersion}`)
+      setDraftDesc(tpl?.description || '')
+    }
+
+    setDraftOverrides(initialInputs)
+    setDraftFormulaOverrides(initialFormulas)
+
+    draftActualWb.setTemplateDefaults({})
+    draftActualWb.setFormulaOverrides(initialFormulas)
+    draftActualWb.setOverrides(initialInputs)
+
+    draftC2CWb.setTemplateDefaults({})
+    draftC2CWb.setFormulaOverrides(initialFormulas)
+    draftC2CWb.setOverrides(initialInputs)
+
+    setStudioTab('forms')
     setEditorMode(true)
   }
 
-  // Update cell input in template draft
+  const handleSwitchBaseline = (next: 'actual' | 'c2c') => {
+    if (next === templateBaseline) return
+    setTemplateBaseline(next)
+    setDraftOverrides((prev) => {
+      const updated = { ...prev }
+      if (next === 'c2c') {
+        updated['Total cal!H3'] = 79
+        updated['Total cal!M3'] = 69
+        updated['Total cal!J3'] = 0
+      } else {
+        if (updated['Total cal!H3'] === 79) updated['Total cal!H3'] = 90
+        if (updated['Total cal!M3'] === 69) updated['Total cal!M3'] = 90
+        if (updated['Total cal!J3'] === 0) delete updated['Total cal!J3']
+      }
+      return updated
+    })
+  }
+
   const handleDraftSetInput = (key: string, value: number | null | undefined) => {
     setDraftOverrides((prev) => {
       const next = { ...prev }
@@ -176,172 +267,159 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     })
   }
 
-  // Update formula override in template draft
   const handleDraftSetFormulaOverride = (key: string, formula: string | undefined) => {
     setDraftFormulaOverrides((prev) => {
       const next = { ...prev }
-      if (formula === undefined || !formula.trim()) delete next[key]
+      if (!formula || formula.trim() === '') delete next[key]
       else next[key] = formula
       return next
     })
   }
 
-  // Live recalculate summary for draft template
   const draftSummary: Summary = useMemo(() => {
-    draftWb.setFormulaOverrides(draftFormulaOverrides)
-    draftWb.setOverrides(draftOverrides)
-    return summarize(draftWb)
-  }, [draftOverrides, draftFormulaOverrides, draftWb])
+    activeDraftWb.setTemplateDefaults({})
+    activeDraftWb.setFormulaOverrides(draftFormulaOverrides)
+    activeDraftWb.setOverrides(draftOverrides)
+    return summarize(activeDraftWb)
+  }, [draftOverrides, draftFormulaOverrides, activeDraftWb])
 
-  const modifiedCellsCount = Object.keys(draftOverrides).length + Object.keys(draftFormulaOverrides).length
+  const buildStudioDefinition = (targetVer: number, nm: string) => {
+    activeDraftWb.setTemplateDefaults({})
+    activeDraftWb.setFormulaOverrides(draftFormulaOverrides)
+    activeDraftWb.setOverrides(draftOverrides)
 
-  // Set any published template version as the active default for future projects
-  const handleSetActiveDefault = async (t: Template) => {
-    if (!isAdminOrOwner) {
-      return toast('Only organisation owners and administrators can change the default template.', 'err')
-    }
-    const ok = await confirm({
-      title: `Set Version ${t.version_num} as Active Default?`,
-      body: `Future projects created in ${org.name} will snapshot Version ${t.version_num} (${t.name}) by default. Historical projects will not be affected.`,
-      confirmLabel: `Set as Default (v${t.version_num})`,
-    })
-    if (!ok) return
+    const steelRate = Number(
+      draftOverrides['Total cal!H3'] ??
+        (activeDraftWb.num('Total cal', 'H3') || (templateBaseline === 'c2c' ? 79 : 90)),
+    )
+    const trolleyRate = Number(
+      draftOverrides['Total cal!M3'] ??
+        (activeDraftWb.num('Total cal', 'M3') || (templateBaseline === 'c2c' ? 69 : 90)),
+    )
+    const bodyLabourRate = Number(
+      draftOverrides['Total cal!B49'] ?? (activeDraftWb.num('Total cal', 'B49') || 250),
+    )
 
-    setLoading(true)
-    try {
-      await rollbackTemplateToVersion(session, org, t.id)
-      toast(`Version ${t.version_num} is now the active default template for future projects!`)
-      await loadTemplates()
-      onOrgUpdated()
-    } catch (e) {
-      toast((e as Error).message, 'err')
-    } finally {
-      setLoading(false)
-    }
-  }
+    const cleanedInputs = cleanTemplateDefaultInputs(draftOverrides)
+    cleanedInputs['Total cal!H3'] = steelRate
+    cleanedInputs['Total cal!M3'] = trolleyRate
+    cleanedInputs['Total cal!B49'] = bodyLabourRate
 
-
-  // Permanently delete a non-default template version
-  const handleDeleteTemplate = async (t: Template) => {
-    if (!isAdminOrOwner) {
-      return toast('Only organisation owners and administrators can delete templates.', 'err')
-    }
-    if (t.is_default) {
-      return toast('Cannot delete the active default template. Please set another template as default first.', 'err')
-    }
-    const ok = await confirm({
-      title: `Delete Template Version ${t.version_num}?`,
-      body: `Are you sure you want to delete "${t.name}" (v${t.version_num})? This action cannot be undone.`,
-      confirmLabel: 'Delete Version',
-      danger: true,
-    })
-    if (!ok) return
-
-    setLoading(true)
-    try {
-      await deleteTemplate(session, org, t.id)
-      toast(`Template Version ${t.version_num} has been deleted.`)
-      await loadTemplates()
-      onOrgUpdated()
-    } catch (e) {
-      toast((e as Error).message, 'err')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Save template: either in-place to current version (v1) or as brand new version (v2)
-  const handleSaveTemplate = async (asNewVersion = false) => {
-    if (!isAdminOrOwner) {
-      return toast('Only organisation owners and administrators can save or publish templates.', 'err')
-    }
-    const nm = draftName.trim()
-    if (!nm) return toast('Template name cannot be empty', 'err')
-
-    const steelRate = draftWb.num('Total cal', 'H3') || 90
-    const trolleyRate = draftWb.num('Total cal', 'M3') || 90
-    const bodyLabourRate = draftWb.num('Total cal', 'B49') || 250
-
-    if (steelRate <= 0 || !Number.isFinite(steelRate)) {
-      return toast('Steel rate must be a valid positive number.', 'err')
-    }
-    if (trolleyRate <= 0 || !Number.isFinite(trolleyRate)) {
-      return toast('Trolley rate must be a valid positive number.', 'err')
-    }
-    if (bodyLabourRate <= 0 || !Number.isFinite(bodyLabourRate)) {
-      return toast('Body labour rate must be a valid positive number.', 'err')
-    }
-
-    for (const [cell, val] of Object.entries(draftOverrides)) {
-      if (val !== null && val !== undefined) {
-        if (!Number.isFinite(val)) {
-          return toast(`Cell ${cell} contains an invalid number.`, 'err')
-        }
-        if (val < 0) {
-          return toast(`Cell ${cell} cannot have a negative value (${val}).`, 'err')
-        }
-        if (/wastage|loss/i.test(cell) && val > 100) {
-          return toast(`Cell ${cell} wastage percentage cannot exceed 100%.`, 'err')
-        }
-        if (/density/i.test(cell) && val <= 0) {
-          return toast(`Cell ${cell} density factor must be strictly greater than 0.`, 'err')
-        }
-      }
-    }
-
-    const currentVer = editingTemplate?.version_num || 1
-    const targetVer = asNewVersion ? nextVersion : currentVer
-
-    if (asNewVersion) {
-      const ok = await confirm({
-        title: `Publish as New Template Version ${nextVersion}?`,
-        body: `This will create Version ${nextVersion} as a separate published version and set it as default for newly created projects in ${org.name}.`,
-        confirmLabel: `Publish Version ${nextVersion}`,
-      })
-      if (!ok) return
-    } else {
-      const ok = await confirm({
-        title: `Save Changes to Version ${currentVer}?`,
-        body: `This will save your updates directly to Version ${currentVer} without creating a new version.`,
-        confirmLabel: `Save Version ${currentVer}`,
-      })
-      if (!ok) return
-    }
-
-    setPublishing(true)
-    try {
-      const definition = {
+    return {
+      definition: {
         version: targetVer,
         name: nm,
-        description: draftDesc,
+        description: draftDesc.trim(),
         baseline: templateBaseline,
         rates: {
           steel: steelRate,
           trolleySteel: trolleyRate,
           bodyLabour: bodyLabourRate,
         },
-        default_inputs: {
-          ...draftOverrides,
-          'Total cal!H3': steelRate,
-          'rates!b3': steelRate,
-          'Total cal!M3': trolleyRate,
-          'rates!b4': trolleyRate,
-          'Total cal!B49': bodyLabourRate,
-        },
-        formula_overrides: draftFormulaOverrides,
-      }
+        default_inputs: cleanedInputs,
+        formula_overrides: { ...draftFormulaOverrides },
+      },
+      rates: { steelRate, trolleyRate, bodyLabourRate },
+    }
+  }
 
-      if (asNewVersion || !editingTemplate?.id) {
-        const res = await publishTemplate(session, org, nm, draftDesc, definition)
-        toast(`Successfully published new Template Version ${res.version_num}!`)
-      } else {
-        await updateTemplate(session, org, editingTemplate.id, nm, draftDesc, definition)
-        toast(`Successfully saved changes directly to Version ${currentVer}! (No new version created)`)
-      }
-
-      setEditorMode(false)
+  const handleSetActiveDefault = async (t: Template) => {
+    if (t.is_default) return
+    const ok = await confirm({
+      title: `Activate Template v${t.version_num}?`,
+      body: `New quotations will use "${t.name}" (v${t.version_num}) by default. Existing quotations retain their original version.`,
+      confirmLabel: `Set v${t.version_num} as Default`,
+    })
+    if (!ok) return
+    try {
+      await rollbackTemplateToVersion(session, org, t.id)
+      toast(`Template v${t.version_num} is now active for new quotations.`)
       await loadTemplates()
-      onOrgUpdated()
+      await onOrgUpdated()
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    }
+  }
+
+  const handlePublishDraftRow = async (t: Template) => {
+    const ok = await confirm({
+      title: `Publish Draft "${t.name}"?`,
+      body: `This will publish your draft as Template v${nextVersion} and set it as the active default.`,
+      confirmLabel: `Publish v${nextVersion}`,
+    })
+    if (!ok) return
+    try {
+      const def = {
+        ...(t.definition || {}),
+        version: nextVersion,
+        name: t.name,
+        description: t.description || '',
+      }
+      const res = await publishTemplate(session, org, t.name, t.description || '', def, t.id)
+      toast(`Published Template v${res.version_num} as active default.`)
+      await loadTemplates()
+      await onOrgUpdated()
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    }
+  }
+
+  const handleDeleteTemplate = async (t: Template) => {
+    if (t.is_default) {
+      toast('Switch default to another version before deleting the active template.', 'err')
+      return
+    }
+    const ok = await confirm({
+      title: `Delete Template v${t.version_num}?`,
+      body: `Remove "${t.name}" (v${t.version_num}) from template history? Historical quotations already referencing v${t.version_num} keep their saved snapshot.`,
+      confirmLabel: 'Delete Version',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await deleteTemplate(session, org, t.id)
+      toast(`Deleted template v${t.version_num}.`)
+      await loadTemplates()
+      await onOrgUpdated()
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    }
+  }
+
+  const handleSaveTemplate = async (mode: 'update' | 'publish') => {
+    const nm = draftName.trim() || `Production Standards v${nextVersion}`
+    const targetVer = mode === 'update' && editingTemplate ? editingTemplate.version_num : nextVersion
+    const { definition, rates } = buildStudioDefinition(targetVer, nm)
+
+    if (mode === 'publish') {
+      const ok = await confirm({
+        title: `Publish Template v${targetVer}?`,
+        body: `Sets "${nm}" (Steel ₹${rates.steelRate}/kg · Trolley ₹${rates.trolleyRate}/kg) as the active default for new quotations. Past quotations stay on their own versions.`,
+        confirmLabel: `Publish v${targetVer}`,
+      })
+      if (!ok) return
+    }
+
+    try {
+      setPublishing(true)
+      if (mode === 'update' && editingTemplate) {
+        await updateTemplate(session, org, editingTemplate.id, nm, draftDesc.trim(), definition)
+        toast(`Saved changes to v${editingTemplate.version_num}.`)
+      } else {
+        const res = await publishTemplate(
+          session,
+          org,
+          nm,
+          draftDesc.trim(),
+          definition,
+          editingTemplate?.status === 'draft' ? editingTemplate.id : undefined,
+        )
+        toast(`Published v${res.version_num} as active default.`)
+      }
+      setEditorMode(false)
+      setEditingTemplate(null)
+      await loadTemplates()
+      await onOrgUpdated()
     } catch (e) {
       toast((e as Error).message, 'err')
     } finally {
@@ -349,722 +427,588 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Render: Template Studio (Full All-15-Sheets Editor)
-  // -------------------------------------------------------------------------
-  if (editorMode) {
+  const previewDiffEntries = useMemo(() => {
+    const baselineTpl = editingTemplate || currentDefaultTemplate
+    const pseudoTpl: Template = {
+      id: 'draft',
+      org_id: org.id,
+      version_num: editingTemplate ? editingTemplate.version_num : nextVersion,
+      name: draftName,
+      description: draftDesc,
+      status: 'draft',
+      is_default: false,
+      definition: {
+        version: editingTemplate ? editingTemplate.version_num : nextVersion,
+        baseline: templateBaseline,
+        default_inputs: cleanTemplateDefaultInputs(draftOverrides) as any,
+        formula_overrides: draftFormulaOverrides,
+      },
+      created_by: null,
+      published_by: null,
+      published_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Template
+    return computeTemplateDiff(baselineTpl, pseudoTpl)
+  }, [
+    editingTemplate,
+    currentDefaultTemplate,
+    org.id,
+    nextVersion,
+    draftName,
+    draftDesc,
+    templateBaseline,
+    draftOverrides,
+    draftFormulaOverrides,
+  ])
+
+  const getPreviousTemplate = (t: Template): Template | undefined => {
+    const idx = templates.findIndex((item) => item.id === t.id)
+    if (idx === -1 || idx + 1 >= templates.length) return undefined
+    return templates[idx + 1]
+  }
+
+  const initialV1Template = useMemo(
+    () => templates[templates.length - 1],
+    [templates],
+  )
+
+  const modalDiffEntries = useMemo(() => {
+    if (!diffModalTemplate) return []
+    const base =
+      diffComparisonMode === 'initial'
+        ? initialV1Template
+        : getPreviousTemplate(diffModalTemplate) || initialV1Template
+    if (!base || base.id === diffModalTemplate.id) return []
+    return computeTemplateDiff(base, diffModalTemplate)
+  }, [diffModalTemplate, diffComparisonMode, templates, initialV1Template])
+
+  if (!isAdminOrOwner) {
     return (
-      <div className="template-studio">
-        {/* Big Top Switcher: 1. Actual vs 2. Cut-to-Cut */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '12px',
-            marginBottom: '14px',
-          }}
-        >
-          <button
-            type="button"
-            className="btn"
-            style={{
-              padding: '14px 20px',
-              fontSize: '15px',
-              fontWeight: 700,
-              borderRadius: '10px',
-              border: templateBaseline === 'actual' ? '2.5px solid #2563eb' : '1.5px solid #cbd5e1',
-              background: templateBaseline === 'actual' ? '#eff6ff' : '#ffffff',
-              color: templateBaseline === 'actual' ? '#1e40af' : '#64748b',
-              boxShadow: templateBaseline === 'actual' ? '0 4px 12px rgba(37,99,235,0.12)' : 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-            onClick={() => {
-              setTemplateBaseline('actual')
-              draftWb.setOverrides(draftOverrides)
-            }}
-          >
-            <span style={{ fontSize: '18px' }}>📊</span>
-            <span>1. ACTUAL TEMPLATE</span>
-            {templateBaseline === 'actual' && <span className="chip ok" style={{ fontSize: '11px', padding: '2px 6px' }}>Active</span>}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            style={{
-              padding: '14px 20px',
-              fontSize: '15px',
-              fontWeight: 700,
-              borderRadius: '10px',
-              border: templateBaseline === 'c2c' ? '2.5px solid #7c3aed' : '1.5px solid #cbd5e1',
-              background: templateBaseline === 'c2c' ? '#faf5ff' : '#ffffff',
-              color: templateBaseline === 'c2c' ? '#6d28d9' : '#64748b',
-              boxShadow: templateBaseline === 'c2c' ? '0 4px 12px rgba(124,58,237,0.12)' : 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-            onClick={() => {
-              setTemplateBaseline('c2c')
-              draftWb.setOverrides(draftOverrides)
-            }}
-          >
-            <span style={{ fontSize: '18px' }}>✂️</span>
-            <span>2. CUT-TO-CUT TEMPLATE</span>
-            {templateBaseline === 'c2c' && <span className="chip" style={{ background: '#ede9fe', color: '#6d28d9', fontSize: '11px', padding: '2px 6px' }}>Active</span>}
-          </button>
+      <div className="org-settings-page">
+        <div className="card settings-card">
+          <h3>Restricted Access</h3>
+          <p className="muted mt-2">
+            Only Organisation Owners and Administrators can manage template versions. New quotations automatically use{' '}
+            <strong>Template v{org.current_template_version || 1}</strong>.
+          </p>
         </div>
-
-        {/* Studio Top Control Bar */}
-        <div className="card studio-header mb-3">
-          <div className="row between mb-2">
-            <button className="btn ghost sm" onClick={() => setEditorMode(false)}>
-              ← Back to Organisation Settings
-            </button>
-            <div className="row gap" style={{ alignItems: 'center' }}>
-              <span className="badge-lg">
-                {editingTemplate ? `Editing Version ${editingTemplate.version_num}` : `Publishing Version ${nextVersion}`}
-              </span>
-              <span className="chip" style={{ background: templateBaseline === 'c2c' ? '#ede9fe' : '#dbeafe', color: templateBaseline === 'c2c' ? '#6d28d9' : '#1e40af', fontWeight: 600 }}>
-                {templateBaseline === 'c2c' ? '✂️ Cut-to-Cut Baseline' : '📊 Actual Quotation Baseline'}
-              </span>
-              {editingTemplate?.is_default && (
-                <span className="chip ok" style={{ fontSize: '11px', fontWeight: 600 }}>Active Default</span>
-              )}
-            </div>
-            <div className="row gap" style={{ alignItems: 'center' }}>
-              {editingTemplate && (
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={publishing || !draftName.trim()}
-                  onClick={() => handleSaveTemplate(false)}
-                  title={`Save changes directly to Version ${editingTemplate.version_num} without creating a new version`}
-                  style={{ fontWeight: 700 }}
-                >
-                  {publishing ? <Spinner size={16} /> : <span>💾 Save to v{editingTemplate.version_num}</span>}
-                </button>
-              )}
-              <button
-                type="button"
-                className={editingTemplate ? "btn ghost" : "btn primary"}
-                disabled={publishing || !draftName.trim()}
-                onClick={() => handleSaveTemplate(true)}
-                title={`Publish as a brand new Template Version (Version ${nextVersion})`}
-                style={editingTemplate ? { borderColor: '#2563eb', color: '#1d4ed8', fontWeight: 600 } : { fontWeight: 700 }}
-              >
-                {publishing && !editingTemplate ? <Spinner size={16} /> : <span>➕ Publish as New Version (v{nextVersion})</span>}
-              </button>
-            </div>
-          </div>
-
-          <div className="row gap mt-2">
-            <div className="grow">
-              <input
-                type="text"
-                className="studio-title-input"
-                placeholder="Template Version Name…"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-              />
-              <input
-                type="text"
-                className="studio-desc-input"
-                placeholder="Release notes & rationale for worksheet/rate changes…"
-                value={draftDesc}
-                onChange={(e) => setDraftDesc(e.target.value)}
-              />
-            </div>
-            <div className="studio-kpis row gap">
-              <div className="studio-kpi">
-                <span className="tiny font-bold uppercase muted">Baseline Sales</span>
-                <strong>{inr(draftSummary.sales)}</strong>
-              </div>
-              <div className="studio-kpi">
-                <span className="tiny font-bold uppercase muted">Customized Cells</span>
-                <span className="chip purple font-bold">{modifiedCellsCount} modified</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sub Navigation Tabs */}
-          <div className="studio-tabs mt-3">
-            <button
-              className={`studio-tab-btn ${studioTab === 'sheets' ? 'active' : ''}`}
-              onClick={() => setStudioTab('sheets')}
-            >
-              {Icon.grid} All 15 Excel Sheets
-            </button>
-            <button
-              className={`studio-tab-btn ${studioTab === 'forms' ? 'active' : ''}`}
-              onClick={() => setStudioTab('forms')}
-            >
-              {Icon.calc} Standard Parameters &amp; Rates
-            </button>
-            <button
-              className={`studio-tab-btn ${studioTab === 'diff' ? 'active' : ''}`}
-              onClick={() => setStudioTab('diff')}
-            >
-              {Icon.diff} Changes Diff ({modifiedCellsCount})
-            </button>
-          </div>
-        </div>
-
-        {/* Tab 1: All 15 Excel Sheets Grid */}
-        {studioTab === 'sheets' && (
-          <div className="studio-sheet-view">
-            <div className="alert-banner mb-2">
-              <div className="row gap">
-                {Icon.info}
-                <span>
-                  <strong>Full 15-Sheet Template Editor:</strong> Click any cell on any of the 15 worksheets below to customize its template default value or formula rule.
-                  Values configured here will serve as the default baseline for all new projects.
-                </span>
-              </div>
-            </div>
-            <CalculationDetails
-              wb={draftWb}
-              overrides={draftOverrides}
-              formulaOverrides={draftFormulaOverrides}
-              setInput={handleDraftSetInput}
-              setFormulaOverride={handleDraftSetFormulaOverride}
-              session={session}
-              org={org}
-              isAdminOrOwner={isAdminOrOwner}
-            />
-          </div>
-        )}
-
-        {/* Tab 2: Standard Parameters Form */}
-        {studioTab === 'forms' && (
-          <div className="studio-forms-view card p-4">
-            <div className="card-head mb-3">
-              <div>
-                <h3>Default Parameters &amp; Standard Dimension Baseline</h3>
-                <p className="tiny muted">Quick access to primary rates and cabinet dimensions across Total cal</p>
-              </div>
-              <button
-                className="btn ghost sm"
-                onClick={() => {
-                  setDraftOverrides({})
-                  setDraftFormulaOverrides({})
-                  draftWb.setTemplateDefaults({})
-                  draftWb.setFormulaOverrides({})
-                  toast('Reset draft to workbook factory defaults')
-                }}
-              >
-                {Icon.reset} Reset to Factory Defaults
-              </button>
-            </div>
-
-            <div className="forms-grid">
-              {INPUT_GROUPS.map((g) => (
-                <section key={g.title} className="card p-3">
-                  <header className="mb-2">
-                    <h4 className="tiny font-bold uppercase text-blue">{g.title}</h4>
-                    {g.note && <span className="muted tiny">{g.note}</span>}
-                  </header>
-                  <div className="fields">
-                    {g.items.map((it) => {
-                      const [sheet, a] = [it.key.slice(0, it.key.lastIndexOf('!')), it.key.slice(it.key.lastIndexOf('!') + 1)]
-                      const m = /^([A-Z]+)(\d+)$/.exec(a)!
-                      let c = 0
-                      for (const ch of m[1]) c = c * 26 + ch.charCodeAt(0) - 64
-                      const def = draftWb.raw(sheet, parseInt(m[2], 10) - 1, c - 1)
-                      const defNum = typeof def === 'number' ? def : null
-                      const changed = it.key in draftOverrides
-                      const val = changed ? draftOverrides[it.key] : defNum
-
-                      return (
-                        <label key={it.key} className={`field ${changed ? 'changed' : ''}`}>
-                          <span className="field-label">
-                            {it.label}
-                            {it.hint && <em>{it.hint}</em>}
-                          </span>
-                          <span className="field-input">
-                            <NumField
-                              value={val}
-                              step={it.step}
-                              min={it.min}
-                              onChange={(v) => handleDraftSetInput(it.key, v)}
-                            />
-                            {it.unit && <span className="unit">{it.unit}</span>}
-                            {changed && (
-                              <button
-                                type="button"
-                                className="icon-btn tiny-btn"
-                                title="Reset to standard default"
-                                onClick={() => handleDraftSetInput(it.key, undefined)}
-                              >
-                                {Icon.reset}
-                              </button>
-                            )}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: Changes Diff & Review */}
-        {studioTab === 'diff' && (
-          <div className="studio-diff-view card p-4">
-            <div className="card-head mb-3">
-              <div>
-                <h3>Template Changes Diff Preview</h3>
-                <p className="tiny muted">
-                  Review all cell values and formula overrides customized for Template Version {nextVersion}
-                </p>
-              </div>
-              <span className="chip primary">{modifiedCellsCount} Modified Definitions</span>
-            </div>
-
-            {modifiedCellsCount === 0 ? (
-              <div className="empty p-5">
-                <p>No customized cells yet. This template currently matches the standard baseline.</p>
-                <p className="tiny muted mt-1">Navigate to <strong>All 15 Excel Sheets</strong> or <strong>Standard Parameters</strong> to customize values.</p>
-              </div>
-            ) : (
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Worksheet &amp; Cell</th>
-                    <th>Type</th>
-                    <th>Template Value / Formula</th>
-                    <th className="r">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(draftOverrides).map(([k, v]) => (
-                    <tr key={k}>
-                      <td>
-                        <strong>{k}</strong>
-                      </td>
-                      <td>
-                        <span className="chip ok">Input Value</span>
-                      </td>
-                      <td className="font-bold text-green">{v}</td>
-                      <td className="r">
-                        <button
-                          className="btn ghost sm"
-                          onClick={() => handleDraftSetInput(k, undefined)}
-                        >
-                          {Icon.reset} Revert
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {Object.entries(draftFormulaOverrides).map(([k, f]) => (
-                    <tr key={k}>
-                      <td>
-                        <strong>{k}</strong>
-                      </td>
-                      <td>
-                        <span className="chip purple">Formula Rule</span>
-                      </td>
-                      <td>
-                        <code>{f}</code>
-                      </td>
-                      <td className="r">
-                        <button
-                          className="btn ghost sm"
-                          onClick={() => handleDraftSetFormulaOverride(k, undefined)}
-                        >
-                          {Icon.reset} Revert
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-            <div className="isolation-notice warn mt-4">
-              <strong>Enterprise Version Guarantee:</strong>
-              <p className="tiny mt-1">
-                Publishing Version {nextVersion} will establish these parameters as the default for newly created projects.
-                Existing projects in {org.name} will remain untouched at their respective historical versions.
-              </p>
-            </div>
-          </div>
-        )}
       </div>
     )
   }
 
-  // -------------------------------------------------------------------------
-  // Render: Organisation Settings & Template Version History (Default View)
-  // -------------------------------------------------------------------------
+  // =========================================================================
+  // MINIMAL TEMPLATE STUDIO VIEW
+  // =========================================================================
+  if (editorMode) {
+    const isEditingExisting = Boolean(editingTemplate && editingTemplate.status === 'published')
+    return (
+      <div className="template-studio">
+        <div className="card studio-header tpl-studio-card">
+          <div className="tpl-studio-top">
+            <div className="tpl-studio-identity">
+              <button
+                className="btn ghost sm"
+                onClick={() => {
+                  setEditorMode(false)
+                  setEditingTemplate(null)
+                }}
+              >
+                ← Back
+              </button>
+              <div className="tpl-studio-meta">
+                <div className="tpl-studio-title-row">
+                  <span className="version-pill">
+                    {isEditingExisting ? `Editing v${editingTemplate!.version_num}` : `New v${nextVersion}`}
+                  </span>
+                  <input
+                    className="studio-title-input"
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    placeholder="Template name"
+                  />
+                </div>
+                <input
+                  className="studio-desc-input"
+                  value={draftDesc}
+                  onChange={(e) => setDraftDesc(e.target.value)}
+                  placeholder="Optional release note (e.g. Q4 steel price revision)"
+                />
+              </div>
+            </div>
+
+            <div className="tpl-studio-actions">
+              <div className="studio-kpis">
+                <div className="studio-kpi">
+                  <span className="tiny muted">Base Total</span>
+                  <strong className="mono">{inr(draftSummary.sales)}</strong>
+                </div>
+                <div className="studio-kpi">
+                  <span className="tiny muted">Ex-Works</span>
+                  <strong className="mono">{inr(draftSummary.subtotal)}</strong>
+                </div>
+              </div>
+
+              {isEditingExisting && (
+                <button
+                  className="btn ghost"
+                  disabled={publishing}
+                  onClick={() => handleSaveTemplate('update')}
+                >
+                  Save to v{editingTemplate!.version_num}
+                </button>
+              )}
+
+              <button
+                className="btn primary"
+                disabled={publishing}
+                onClick={() => handleSaveTemplate('publish')}
+              >
+                {publishing ? 'Saving…' : `Publish v${nextVersion}`}
+              </button>
+            </div>
+          </div>
+
+          <div className="tpl-studio-subbar">
+            <div className="studio-tabs" style={{ borderTop: 0, paddingTop: 0 }}>
+              <button
+                className={`studio-tab-btn ${studioTab === 'forms' ? 'active' : ''}`}
+                onClick={() => setStudioTab('forms')}
+              >
+                {Icon.settings} Quick Parameters
+              </button>
+              <button
+                className={`studio-tab-btn ${studioTab === 'sheets' ? 'active' : ''}`}
+                onClick={() => setStudioTab('sheets')}
+              >
+                {Icon.grid} Workbook &amp; Formulas
+              </button>
+              <button
+                className={`studio-tab-btn ${studioTab === 'diff' ? 'active' : ''}`}
+                onClick={() => setStudioTab('diff')}
+              >
+                {Icon.history} Changes ({previewDiffEntries.length})
+              </button>
+            </div>
+
+            <div className="tpl-baseline-toggle" title="Select default sheet architecture for this template">
+              <button
+                type="button"
+                className={`tpl-seg-btn ${templateBaseline === 'actual' ? 'active' : ''}`}
+                onClick={() => handleSwitchBaseline('actual')}
+              >
+                Standard (Actual)
+              </button>
+              <button
+                type="button"
+                className={`tpl-seg-btn ${templateBaseline === 'c2c' ? 'active' : ''}`}
+                onClick={() => handleSwitchBaseline('c2c')}
+              >
+                Cut-to-Cut
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="studio-content">
+          {studioTab === 'forms' && (
+            <div className="forms-grid">
+              {INPUT_GROUPS.map((group) => (
+                <div className="card" key={group.title}>
+                  <div className="card-head">
+                    <h3>{group.title}</h3>
+                    {group.note && <span className="muted tiny">{group.note}</span>}
+                  </div>
+                  <div className="card-body">
+                    {group.items.map((item) => {
+                      const val =
+                        draftOverrides[item.key] !== undefined
+                          ? draftOverrides[item.key]
+                          : (() => {
+                              const [sh, addr] = item.key.split('!')
+                              const numVal = activeDraftWb.num(sh, addr)
+                              return isNaN(numVal) ? null : numVal
+                            })()
+                      return (
+                        <div className="field" key={item.key}>
+                          <label title={item.key}>
+                            {item.label}
+                            {item.unit ? <span className="unit">{item.unit}</span> : null}
+                          </label>
+                          <NumField
+                            value={val as number | null}
+                            step={item.step}
+                            min={item.min}
+                            onChange={(v) => handleDraftSetInput(item.key, v)}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {studioTab === 'sheets' && (
+            <CalculationDetails
+              wb={activeDraftWb}
+              overrides={draftOverrides}
+              formulaOverrides={draftFormulaOverrides}
+              setInput={(k, v) => handleDraftSetInput(k, v)}
+              setFormulaOverride={(k, f) => handleDraftSetFormulaOverride(k, f)}
+              isAdminOrOwner={true}
+              session={session}
+              org={org}
+              initialWorkbookType={templateBaseline}
+            />
+          )}
+
+          {studioTab === 'diff' && (
+            <div className="card">
+              <div className="card-head">
+                <h3>Pending Changes</h3>
+                <span className="muted tiny">
+                  Compared against {editingTemplate ? `v${editingTemplate.version_num}` : 'active default'}
+                </span>
+              </div>
+              <div className="card-body">
+                {previewDiffEntries.length === 0 ? (
+                  <p className="muted tiny">No parameter or formula changes yet.</p>
+                ) : (
+                  <table className="tpl-diff-table">
+                    <thead>
+                      <tr>
+                        <th>Parameter</th>
+                        <th>Previous</th>
+                        <th>Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewDiffEntries.map((d) => (
+                        <tr key={d.key}>
+                          <td>
+                            <div className="font-semibold">{d.label || d.key}</div>
+                            {d.label && d.label !== d.key && (
+                              <div className="tiny muted font-mono">{d.key}</div>
+                            )}
+                          </td>
+                          <td className="mono muted">{String(d.fromVal)}</td>
+                          <td className="mono font-bold text-navy">{String(d.toVal)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // =========================================================================
+  // MINIMAL TEMPLATE VERSIONS LIST VIEW
+  // =========================================================================
+  const activeRates = readTemplateRates(currentDefaultTemplate)
+  const activeCustomInputsCount = currentDefaultTemplate
+    ? Object.keys(cleanTemplateDefaultInputs(currentDefaultTemplate.definition?.default_inputs)).filter(
+        (k) => !['Total cal!H3', 'Total cal!M3', 'Total cal!B49'].includes(k),
+      ).length
+    : 0
+  const activeFormulasCount = Object.keys(
+    currentDefaultTemplate?.definition?.formula_overrides || {},
+  ).length
+
   return (
     <div className="org-settings-page">
-      <div className="page-header">
-        <h2>Template Versioning &amp; Calculation Standards</h2>
-        <p className="muted">
-          Manage calculation standards, steel rates, and immutable template versions across all 15 workbook sheets.
-        </p>
-      </div>
-
-      {/* Top 2 Simple Template Cards: 1. Actual vs 2. Cut-to-Cut */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        {/* Card 1: ACTUAL TEMPLATE */}
-        <div
-          className="card"
-          style={{
-            border: '2px solid #3b82f6',
-            borderRadius: '12px',
-            background: 'linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%)',
-            padding: '20px',
-            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.08)',
-          }}
-        >
-          <div className="row between" style={{ alignItems: 'flex-start', marginBottom: '12px' }}>
-            <div>
-              <div className="row gap" style={{ alignItems: 'center', marginBottom: '6px' }}>
-                <span className="badge-lg" style={{ background: '#dbeafe', color: '#1e40af', fontWeight: 700 }}>
-                  📊 1. ACTUAL TEMPLATE
-                </span>
-                <span className="chip ok" style={{ fontSize: '11px' }}>Customer Baseline</span>
-              </div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', color: '#0f172a' }}>
-                {templates.find(t => t.definition?.baseline !== 'c2c' && !t.name.toLowerCase().includes('cut-to-cut'))?.name || 'Default Production Template V1'}
-              </h3>
-              <p className="tiny muted" style={{ margin: 0 }}>
-                Customer-facing quotation baseline with 25% profit margin and customizable rates across all 15 sheets.
-              </p>
-            </div>
-          </div>
-
-          {isAdminOrOwner && (
-            <button
-              className="btn primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '10px', fontWeight: 600 }}
-              onClick={() => handleOpenStudio(templates.find(t => t.definition?.baseline !== 'c2c' && !t.name.toLowerCase().includes('cut-to-cut')), 'actual')}
-            >
-              ✏️ Open &amp; Customize Actual Template
-            </button>
-          )}
+      {/* Page Header */}
+      <div className="page-head">
+        <div>
+          <h2>Template Versions</h2>
+          <p className="muted">
+            Standard rates and calculation rules used automatically for new quotations.
+          </p>
         </div>
-
-        {/* Card 2: CUT-TO-CUT TEMPLATE */}
-        <div
-          className="card"
-          style={{
-            border: '2px solid #7c3aed',
-            borderRadius: '12px',
-            background: 'linear-gradient(180deg, #faf5ff 0%, #ffffff 100%)',
-            padding: '20px',
-            boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
-          }}
-        >
-          <div className="row between" style={{ alignItems: 'flex-start', marginBottom: '12px' }}>
-            <div>
-              <div className="row gap" style={{ alignItems: 'center', marginBottom: '6px' }}>
-                <span className="badge-lg" style={{ background: '#ede9fe', color: '#6d28d9', fontWeight: 700 }}>
-                  ✂️ 2. CUT-TO-CUT TEMPLATE
-                </span>
-                <span className="chip" style={{ background: '#f3e8ff', color: '#7e22ce', borderColor: '#e9d5ff', fontSize: '11px' }}>
-                  Internal Cost Baseline
-                </span>
-              </div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', color: '#0f172a' }}>
-                {templates.find(t => t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut'))?.name || 'Cut-to-Cut Standards'}
-              </h3>
-              <p className="tiny muted" style={{ margin: 0 }}>
-                Internal confidential costing baseline with minimum material rates and sheared sheet sizes.
-              </p>
-            </div>
-          </div>
-
-          {isAdminOrOwner && (
+        <div className="row gap-2">
+          {currentDefaultTemplate && (
             <button
-              className="btn"
-              style={{ width: '100%', justifyContent: 'center', padding: '10px', fontWeight: 600, background: '#7c3aed', color: '#ffffff', borderColor: '#6d28d9' }}
-              onClick={() => handleOpenStudio(templates.find(t => t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut')), 'c2c')}
+              className="btn ghost"
+              onClick={() => handleOpenStudio(currentDefaultTemplate, false)}
             >
-              ✂️ Open &amp; Customize Cut-to-Cut Template
+              {Icon.edit} Edit v{currentDefaultTemplate.version_num}
             </button>
           )}
+          <button
+            className="btn primary"
+            onClick={() => handleOpenStudio(currentDefaultTemplate, true)}
+          >
+            {Icon.plus} New Version
+          </button>
         </div>
       </div>
 
-      {/* Template Version History Table */}
+      {/* Single Clean Active Default Card */}
+      <div className="card tpl-active-card">
+        <div className="tpl-active-head">
+          <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
+            <span className="tpl-status-pill active">
+              Active Default · v{currentDefaultTemplate?.version_num ?? org.current_template_version ?? 1}
+            </span>
+            <strong style={{ fontSize: 15 }}>
+              {currentDefaultTemplate?.name || 'Default Production Template'}
+            </strong>
+            {getTemplateBaseline(currentDefaultTemplate) === 'c2c' && (
+              <span className="tpl-tag">Cut-to-Cut</span>
+            )}
+          </div>
+          <span className="tiny muted">
+            {currentDefaultTemplate?.published_at
+              ? `Updated ${timeAgo(currentDefaultTemplate.published_at)}`
+              : 'System baseline'}
+          </span>
+        </div>
+
+        {currentDefaultTemplate?.description && (
+          <p className="tiny muted" style={{ margin: '4px 0 0' }}>
+            {currentDefaultTemplate.description}
+          </p>
+        )}
+
+        <div className="tpl-metrics-strip">
+          <div className="tpl-metric">
+            <span className="tiny muted">Steel Rate</span>
+            <strong className="mono">₹{activeRates.steel}/kg</strong>
+          </div>
+          <div className="tpl-metric">
+            <span className="tiny muted">Trolley Rate</span>
+            <strong className="mono">₹{activeRates.trolley}/kg</strong>
+          </div>
+          <div className="tpl-metric">
+            <span className="tiny muted">Body Labour</span>
+            <strong className="mono">₹{activeRates.labour}</strong>
+          </div>
+          <div className="tpl-metric">
+            <span className="tiny muted">Custom Rules</span>
+            <strong className="mono">
+              {activeCustomInputsCount + activeFormulasCount}
+            </strong>
+          </div>
+        </div>
+
+        <div className="tpl-active-foot tiny muted">
+          Past quotations preserve their own template snapshot. Cut-to-Cut internal costing automatically locks steel at ₹79/kg and trolley at ₹69/kg.
+        </div>
+      </div>
+
+      {/* Minimal Version History Table */}
       <div className="card">
         <div className="card-head">
-          <h3>Template Version History</h3>
-          <span className="tiny muted">Audit trail of all published calculation templates</span>
+          <h3>Version History ({templates.length})</h3>
+          <span className="tiny muted">Switch default for future quotations anytime</span>
         </div>
-        <div className="table-wrap">
-          {loading ? (
-            <div className="page-loading">
-              <Spinner size={24} />
-              <p className="muted tiny">Loading template version history…</p>
-            </div>
-          ) : templates.length === 0 ? (
-            <div className="empty">
-              <p>No template versions recorded yet</p>
-            </div>
-          ) : (
-            <table className="tbl">
+
+        {loading ? (
+          <div className="center-pad">
+            <Spinner />
+          </div>
+        ) : templates.length === 0 ? (
+          <div className="card-body">
+            <p className="muted">No template versions saved yet. Click New Version to create v2.</p>
+          </div>
+        ) : (
+          <div className="tpl-table-wrap">
+            <table className="tpl-table">
               <thead>
                 <tr>
                   <th>Version</th>
-                  <th>Template Name &amp; Description</th>
-                  <th>Status</th>
-                  <th>Customized Overrides</th>
-                  <th>Projects Using Version</th>
-                  <th>Publisher</th>
-                  <th>Published Date</th>
-                  {isAdminOrOwner && <th className="r">Actions</th>}
+                  <th>Template</th>
+                  <th>Default Rates</th>
+                  <th>Quotations</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {templates.map((t) => {
-                  const inputCount = Object.keys(t.definition?.default_inputs || {}).length
-                  const formulaCount = Object.keys(t.definition?.formula_overrides || {}).length
+                  const rates = readTemplateRates(t)
+                  const inputsMap = cleanTemplateDefaultInputs(t.definition?.default_inputs)
+                  const formulasMap = t.definition?.formula_overrides || {}
+                  const extraInputs = Object.keys(inputsMap).filter(
+                    (k) => !['Total cal!H3', 'Total cal!M3', 'Total cal!B49'].includes(k),
+                  ).length
+                  const extraRules = extraInputs + Object.keys(formulasMap).length
+                  const hasPrev = Boolean(getPreviousTemplate(t))
+
                   return (
-                    <tr key={t.id} className={t.is_default ? 'highlight-row' : ''}>
+                    <tr key={t.id} className={t.is_default ? 'tpl-row-active' : ''}>
                       <td>
-                        <span className="version-pill">v{t.version_num}</span>
+                        <div className="row gap-2">
+                          <span className="version-pill">v{t.version_num}</span>
+                          {t.is_default && <span className="tpl-tag green">Active</span>}
+                          {t.status === 'draft' && <span className="tpl-tag amber">Draft</span>}
+                        </div>
                       </td>
+
                       <td>
-                        <div className="row gap" style={{ alignItems: 'center' }}>
-                          <strong>{t.name}</strong>
-                          {(t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut')) && (
-                            <span className="chip" style={{ background: '#f5f3ff', color: '#6d28d9', borderColor: '#ddd6fe', fontSize: '11px', padding: '2px 6px' }}>
-                              ✂️ Cut-to-Cut
+                        <div className="font-semibold" style={{ color: 'var(--navy-950)' }}>
+                          {t.name}
+                          {getTemplateBaseline(t) === 'c2c' && (
+                            <span className="tpl-tag" style={{ marginLeft: 6 }}>
+                              Cut-to-Cut
                             </span>
                           )}
                         </div>
-                        {t.description && <div className="tiny muted">{t.description}</div>}
-                      </td>
-                      <td>
-                        {t.is_default ? (
-                          <span className="chip ok">Current Default</span>
-                        ) : t.status === 'published' ? (
-                          <span className="chip primary">Published</span>
+                        {t.description ? (
+                          <div className="tiny muted">{t.description}</div>
                         ) : (
-                          <span className="chip warn">Draft</span>
+                          <div className="tiny muted">
+                            {t.published_by ? `By ${t.published_by} · ` : ''}
+                            {timeAgo(t.published_at || t.created_at)}
+                          </div>
                         )}
                       </td>
-                      <td className="tiny">
-                        <div>{inputCount} customized input{inputCount !== 1 ? 's' : ''}</div>
-                        {formulaCount > 0 && <div className="text-purple">{formulaCount} formula override{formulaCount !== 1 ? 's' : ''}</div>}
-                      </td>
+
                       <td>
-                        <span className="chip muted-chip">
-                          {t.project_count ?? 0} project{(t.project_count ?? 0) !== 1 ? 's' : ''}
-                        </span>
+                        <div className="tpl-rate-chips">
+                          <span className="tpl-rate-chip mono">Steel ₹{rates.steel}</span>
+                          <span className="tpl-rate-chip mono">Trolley ₹{rates.trolley}</span>
+                          <span className="tpl-rate-chip mono">Labour ₹{rates.labour}</span>
+                          {extraRules > 0 && (
+                            <span className="tpl-rate-chip accent">+{extraRules} custom</span>
+                          )}
+                        </div>
                       </td>
-                      <td className="tiny muted">{t.published_by || t.created_by || 'Admin'}</td>
-                      <td className="tiny muted">{t.published_at ? timeAgo(t.published_at) : timeAgo(t.created_at)}</td>
-                      {isAdminOrOwner && (
-                        <td className="r">
-                          <div className="row gap" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+
+                      <td className="tiny muted mono">{t.project_count || 0}</td>
+
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="tpl-row-actions">
+                          {t.status === 'draft' && (
+                            <button
+                              className="btn primary sm"
+                              onClick={() => handlePublishDraftRow(t)}
+                            >
+                              Publish
+                            </button>
+                          )}
+                          {!t.is_default && t.status === 'published' && (
+                            <button
+                              className="btn ghost sm"
+                              onClick={() => handleSetActiveDefault(t)}
+                            >
+                              Set Default
+                            </button>
+                          )}
+                          <button
+                            className="btn ghost sm"
+                            onClick={() => handleOpenStudio(t, false)}
+                            title={`Edit template v${t.version_num}`}
+                          >
+                            Edit
+                          </button>
+                          {hasPrev && (
                             <button
                               className="btn ghost sm"
                               onClick={() => {
                                 setDiffComparisonMode('prev')
                                 setDiffModalTemplate(t)
                               }}
-                              title="View differences from previous or initial version"
+                              title="Compare changes"
                             >
-                              🔍 Differences
+                              Diff
                             </button>
-                            {!t.is_default && t.status === 'published' && (
-                              <button
-                                className="btn primary sm"
-                                onClick={() => handleSetActiveDefault(t)}
-                                title={`Set Version ${t.version_num} as the default template for future projects`}
-                              >
-                                {Icon.check} Set Default
-                              </button>
-                            )}
+                          )}
+                          {!t.is_default && (
                             <button
-                              className="btn ghost sm"
-                              onClick={() => handleOpenStudio(t, (t.definition?.baseline === 'c2c' || t.name.toLowerCase().includes('cut-to-cut')) ? 'c2c' : 'actual')}
-                              title="Create new draft version based on this template"
+                              className="btn ghost sm tpl-del-btn"
+                              onClick={() => handleDeleteTemplate(t)}
+                              title={`Delete v${t.version_num}`}
                             >
-                              ✏️ Edit Version
+                              {Icon.trash}
                             </button>
-                            {!t.is_default && (
-                              <button
-                                className="btn danger sm"
-                                onClick={() => handleDeleteTemplate(t)}
-                                title={`Delete Template Version ${t.version_num}`}
-                              >
-                                {Icon.trash} Delete
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Version Differences & Changelog Modal */}
-      {diffModalTemplate && (() => {
-        const t = diffModalTemplate
-        const prevT = templates.find((p) => p.version_num === t.version_num - 1) || templates.filter(p => p.version_num < t.version_num)[0] || null
-        const initialT = templates.find((p) => p.version_num === 1) || templates[templates.length - 1] || null
-        const activeBaseT = diffComparisonMode === 'prev' ? prevT : initialT
-        const diffs = computeTemplateDiff(activeBaseT, t)
-
-        return (
-          <div
-            className="modal-backdrop"
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(15, 23, 42, 0.6)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999,
-              padding: '16px',
-            }}
-            onClick={() => setDiffModalTemplate(null)}
-          >
-            <div
-              className="card"
-              style={{
-                maxWidth: '780px',
-                width: '100%',
-                maxHeight: '90vh',
-                overflowY: 'auto',
-                padding: '24px',
-                background: '#ffffff',
-                borderRadius: '12px',
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="row between mb-3" style={{ alignItems: 'flex-start' }}>
-                <div>
-                  <div className="row gap" style={{ alignItems: 'center', marginBottom: '4px' }}>
-                    <span className="version-pill" style={{ fontSize: '13px', padding: '3px 8px' }}>v{t.version_num}</span>
-                    <h3 style={{ margin: 0, fontSize: '18px' }}>{t.name} — Differences &amp; Changelog</h3>
-                  </div>
-                  <p className="tiny muted" style={{ margin: 0 }}>
-                    Published by {t.published_by || t.created_by || 'Admin'} {t.published_at ? timeAgo(t.published_at) : ''}
-                    {t.description ? ` · ${t.description}` : ''}
-                  </p>
-                </div>
-                <button className="icon-btn" onClick={() => setDiffModalTemplate(null)} title="Close">
-                  {Icon.close}
-                </button>
+      {/* Minimal Compare Diff Modal */}
+      {diffModalTemplate && (
+        <div className="overlay" onMouseDown={() => setDiffModalTemplate(null)}>
+          <div className="dialog" style={{ maxWidth: 640 }} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="dialog-header" style={{ justifyContent: 'space-between' }}>
+              <div className="row gap-2">
+                {Icon.history}
+                <h3>Template v{diffModalTemplate.version_num} Changes</h3>
               </div>
+              <button
+                className="btn ghost sm"
+                onClick={() => setDiffModalTemplate(null)}
+              >
+                {Icon.close}
+              </button>
+            </div>
 
-              {/* Comparison Mode Switcher */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
-                <button
-                  type="button"
-                  className={`btn sm ${diffComparisonMode === 'prev' ? 'primary' : 'ghost'}`}
-                  style={{ flex: 1, justifyContent: 'center' }}
-                  onClick={() => setDiffComparisonMode('prev')}
-                >
-                  🔄 Differences from Previous Version {prevT ? `(v${prevT.version_num})` : ''}
-                </button>
-                <button
-                  type="button"
-                  className={`btn sm ${diffComparisonMode === 'initial' ? 'primary' : 'ghost'}`}
-                  style={{ flex: 1, justifyContent: 'center' }}
-                  onClick={() => setDiffComparisonMode('initial')}
-                >
-                  ⭐ Differences from Initial Baseline {initialT ? `(v${initialT.version_num})` : '(v1)'}
-                </button>
-              </div>
+            <div className="row gap-2 mt-3" style={{ marginBottom: 12 }}>
+              <button
+                className={`btn sm ${diffComparisonMode === 'prev' ? 'primary' : 'ghost'}`}
+                onClick={() => setDiffComparisonMode('prev')}
+              >
+                vs Previous Version
+              </button>
+              <button
+                className={`btn sm ${diffComparisonMode === 'initial' ? 'primary' : 'ghost'}`}
+                onClick={() => setDiffComparisonMode('initial')}
+              >
+                vs Initial Baseline
+              </button>
+            </div>
 
-              {/* Difference Summary Header */}
-              <div className="card p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div className="row between" style={{ alignItems: 'center' }}>
-                  <span className="tiny font-bold uppercase muted">
-                    Comparing <strong>v{t.version_num}</strong> with {activeBaseT ? <strong>v{activeBaseT.version_num} ({activeBaseT.name})</strong> : 'Baseline'}
-                  </span>
-                  <span className="chip primary" style={{ fontWeight: 600 }}>
-                    {diffs.length} Change{diffs.length !== 1 ? 's' : ''} Found
-                  </span>
-                </div>
-              </div>
+            {modalDiffEntries.length === 0 ? (
+              <p className="muted tiny" style={{ padding: '12px 0' }}>
+                No rate or rule differences recorded against the comparison version.
+              </p>
+            ) : (
+              <table className="tpl-diff-table">
+                <thead>
+                  <tr>
+                    <th>Parameter</th>
+                    <th>Previous</th>
+                    <th>v{diffModalTemplate.version_num} Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modalDiffEntries.map((d) => (
+                    <tr key={d.key}>
+                      <td>
+                        <div className="font-semibold">{d.label || d.key}</div>
+                        {d.label && d.label !== d.key && (
+                          <div className="tiny muted font-mono">{d.key}</div>
+                        )}
+                      </td>
+                      <td className="mono muted">{String(d.fromVal)}</td>
+                      <td className="mono font-bold text-navy">{String(d.toVal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
 
-              {/* Diffs Table */}
-              {diffs.length === 0 ? (
-                <div className="empty p-4 text-center">
-                  <p style={{ margin: 0, fontWeight: 600, color: '#64748b' }}>
-                    {diffComparisonMode === 'prev' && !prevT
-                      ? 'This is the initial template version (Version 1). There is no previous version to compare against.'
-                      : 'No parameter or formula changes recorded between these two versions.'}
-                  </p>
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                  <table className="tbl" style={{ width: '100%', margin: 0, fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc' }}>
-                        <th>Worksheet / Parameter</th>
-                        <th>Type</th>
-                        <th>{diffComparisonMode === 'prev' ? `v${prevT?.version_num || 'Previous'}` : `v${initialT?.version_num || '1'} (Initial)`}</th>
-                        <th>v{t.version_num} (This Version)</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {diffs.map((d) => (
-                        <tr key={d.key}>
-                          <td>
-                            <strong>{d.key}</strong>
-                          </td>
-                          <td>
-                            {d.type === 'input' && <span className="chip ok" style={{ fontSize: '11px' }}>Input Parameter</span>}
-                            {d.type === 'formula' && <span className="chip purple" style={{ fontSize: '11px' }}>Formula Rule</span>}
-                            {d.type === 'baseline' && <span className="chip primary" style={{ fontSize: '11px' }}>Baseline Mode</span>}
-                          </td>
-                          <td style={{ color: '#64748b' }}>
-                            <code>{String(d.fromVal)}</code>
-                          </td>
-                          <td style={{ fontWeight: 700, color: '#16a34a' }}>
-                            <code>{String(d.toVal)}</code>
-                          </td>
-                          <td>
-                            <span className="chip" style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontSize: '11px' }}>
-                              Modified
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div className="row end mt-3">
-                <button className="btn ghost sm" onClick={() => setDiffModalTemplate(null)}>
-                  Close Differences
-                </button>
-              </div>
+            <div className="dialog-foot mt-4">
+              <button className="btn primary sm" onClick={() => setDiffModalTemplate(null)}>
+                Close
+              </button>
             </div>
           </div>
-        )
-      })()}
+        </div>
+      )}
     </div>
   )
 }

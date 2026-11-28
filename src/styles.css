@@ -1502,6 +1502,83 @@ input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(59, 130,
 .forms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
 .text-purple { color: #7e22ce !important; }
 
+/* Minimal Template Versioning UI */
+.tpl-active-card { padding: 18px 20px; border-left: 3px solid var(--green, #16a34a); }
+.tpl-active-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tpl-status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.tpl-status-pill.active { background: #dcfce7; color: #166534; }
+.tpl-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+.tpl-metric { display: flex; flex-direction: column; gap: 2px; }
+.tpl-metric strong { font-size: 15px; font-weight: 700; color: var(--navy-950); }
+.tpl-active-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+
+.tpl-table-wrap { width: 100%; overflow-x: auto; }
+.tpl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tpl-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  font-weight: 700;
+}
+.tpl-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tpl-table tbody tr:last-child td { border-bottom: 0; }
+.tpl-table tbody tr:hover { background: #f8fafc; }
+.tpl-row-active { background: #f0fdf4; }
+.tpl-row-active:hover { background: #ecfdf5 !important; }
+
+.tpl-tag { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #475569; }
+.tpl-tag.green { background: #dcfce7; color: #166534; }
+.tpl-tag.amber { background: #fef3c7; color: #92400e; }
+
+.tpl-rate-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tpl-rate-chip { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; color: var(--ink); font-weight: 600; }
+.tpl-rate-chip.accent { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; }
+
+.tpl-row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+.tpl-del-btn { color: var(--muted); }
+.tpl-del-btn:hover { color: #dc2626 !important; background: #fef2f2 !important; }
+
+.tpl-studio-card { padding: 14px 18px; }
+.tpl-studio-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.tpl-studio-identity { display: flex; align-items: flex-start; gap: 12px; flex: 1; min-width: 260px; }
+.tpl-studio-meta { flex: 1; min-width: 0; }
+.tpl-studio-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tpl-studio-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tpl-studio-subbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+.tpl-baseline-toggle { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 2px; }
+.tpl-seg-btn { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.tpl-seg-btn.active { background: #fff; color: var(--navy-950); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+
+.tpl-diff-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tpl-diff-table th { text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.tpl-diff-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.tpl-diff-table tbody tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 720px) {
+  .tpl-metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 
 /* ==========================================================================
    Horizontal High-Density Calculator Styles (Zero Vertical Scrolling)

@@ -17,7 +17,7 @@ import c2cData from '../lib/clientWorkbook_c2c.json'
 import { api, Member, Org, Project, Session, Template } from '../lib/api'
 import { DEFAULT_NAMED_CONSTANTS, Overrides, SheetData, Workbook } from '../lib/engine'
 import { inr, timeAgo } from '../lib/format'
-import { cleanOverrides, extractTemplateDefaults, summarize, filterCutToCutOverrides } from '../lib/model'
+import { cleanOverrides, extractTemplateDefaults, extractTemplateFormulaOverrides, summarize, filterCutToCutOverrides } from '../lib/model'
 import { buildOfficialQtnNo, formatInitialProjectName, formatPdfDate, getFiscalYear, parseRevision } from '../lib/revision'
 import { detectMultiSystemChanges } from '../lib/auditDiff'
 import { cleanCopiedText, fuzzyTextMatch } from '../lib/cleanText'
@@ -628,31 +628,35 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
     }
   }, [highlightedClientIndex, clientDropdownOpen])
 
-  // Synchronize template defaults to baseWb whenever currentProject changes
+  // Synchronize template defaults & formula overrides to baseWb/c2cWb whenever currentProject changes
   useEffect(() => {
     if (!currentProject) return
     let active = true
     const applyTpl = async () => {
       let defs: Record<string, number | null> = {}
+      let tplFormulas: Record<string, string> = {}
       if (currentProject.template_snapshot?.definition) {
         defs = extractTemplateDefaults(currentProject.template_snapshot.definition)
+        tplFormulas = extractTemplateFormulaOverrides(currentProject.template_snapshot.definition)
       } else {
         try {
           const list = await api.templateList(session.token, org.id)
           const matching = list.find((t) => t.id === currentProject.template_id || t.version_num === currentProject.template_version)
           if (matching?.definition) {
             defs = extractTemplateDefaults(matching.definition)
+            tplFormulas = extractTemplateFormulaOverrides(matching.definition)
           }
         } catch {
           // ignore
         }
       }
       if (active) {
+        const mergedFormulas = { ...tplFormulas, ...(currentProject.formula_overrides || {}) }
         baseWb.setTemplateDefaults(defs)
-        baseWb.setFormulaOverrides(currentProject.formula_overrides || {})
+        baseWb.setFormulaOverrides(mergedFormulas)
         baseWb.setOverrides(currentProject.inputs || {})
         c2cWb.setTemplateDefaults(filterCutToCutOverrides(defs))
-        c2cWb.setFormulaOverrides({ ...(currentProject.formula_overrides || {}), ...(currentProject.summary?.c2c_formula_overrides || {}) })
+        c2cWb.setFormulaOverrides({ ...mergedFormulas, ...(currentProject.summary?.c2c_formula_overrides || {}) })
         c2cWb.setOverrides({ ...filterCutToCutOverrides(currentProject.inputs || {}), ...(currentProject.summary?.c2c_overrides || {}) })
       }
     }
@@ -1635,9 +1639,19 @@ export function Workspace({ session, org, orgs, onSwitchOrg, onAddOrg, onOrgsCha
             <OrganisationSettings
               session={session}
               org={org}
-              onOrgUpdated={() => {
+              onOrgUpdated={async () => {
                 onOrgsChanged()
-                loadProjects()
+                try {
+                  const list = await api.templateList(session.token, org.id)
+                  setAvailableTemplates(list)
+                } catch {}
+                await loadProjects()
+                if (currentProject?.id) {
+                  try {
+                    const fresh = await api.projectGet(session.token, currentProject.id)
+                    setCurrentProject(fresh)
+                  } catch {}
+                }
               }}
             />
           )}
