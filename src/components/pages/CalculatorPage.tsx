@@ -1753,27 +1753,6 @@ export function CalculatorPage({
       toast(`Discount (${discountPct}%) exceeds 10% and is not approved by Owner/Admin. Send a discount request or lower discount to ≤10%.`, 'err')
       return
     }
-    if (!isAdminOrOwner && !isSharedLocked) {
-      const savedSales = Number(project.total || project.summary?.sales || 0)
-      const nextSummary = {
-        ...(project.summary || {}),
-        shared_locked: true,
-        locked_after_share: true,
-      }
-      api.projectUpdate(
-        session.token,
-        project.id,
-        project.name,
-        project.status,
-        project.inputs || {},
-        project.formula_overrides || {},
-        savedSales,
-        nextSummary,
-        `Quotation locked after official quotation opened by @${session.username}`
-      ).then(() => {
-        onProjectUpdated({ ...project, summary: nextSummary, total: savedSales })
-      }).catch(() => {})
-    }
     setShowOfficialQuotation(true)
   }
   const [serverSynced, setServerSynced] = useState(false)

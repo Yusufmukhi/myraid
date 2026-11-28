@@ -4245,6 +4245,9 @@ async function runAllTests() {
     if (!calcSrc.includes('disabled={isApprovedLocked || isStaffRateLocked}') || !calcSrc.includes('disabled={!isAdminOrOwner && (isApprovedLocked || isStaffRateLocked)}')) {
       secFailures.push('CalculatorPage.tsx missing shared/approved locks on discount/status')
     }
+    if (calcSrc.includes('Quotation locked after official quotation opened')) {
+      secFailures.push('CalculatorPage.tsx should NOT auto-lock quotation when staff opens/downloads PDF')
+    }
     if (!edgeSrc.includes('project_id?: string') || !edgeSrc.includes('resolveAuthoritativeStaffProfitPct')) {
       secFailures.push('calculate Edge Function missing authoritative staff checks')
     }
