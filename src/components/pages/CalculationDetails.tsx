@@ -499,24 +499,24 @@ export function CalculationDetails({
           )}
 
           {!hideWorkbookToggle && (c2cWb || serverWb) && (
-            <div style={{ marginLeft: 8, display: 'inline-flex', gap: 4, background: '#f1f5f9', padding: '2px 4px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+            <div style={{ marginLeft: 8, display: 'inline-flex', gap: 3, background: '#f1f5f9', padding: 3, borderRadius: 10, border: '1px solid #e2e8f0' }}>
               <button
                 type="button"
                 className={`btn xs ${workbookType === 'actual' ? 'primary' : 'ghost'}`}
                 onClick={() => setWorkbookType('actual')}
-                style={workbookType === 'actual' ? { background: '#0f172a', color: '#fff', fontSize: '11px', fontWeight: 700 } : { fontSize: '11px' }}
+                style={workbookType === 'actual' ? { background: '#0f172a', color: '#fff', fontSize: '11.5px', fontWeight: 700, borderRadius: 8, padding: '4px 10px' } : { fontSize: '11.5px', borderRadius: 8, padding: '4px 10px', borderColor: 'transparent' }}
                 title="Actual Quotation Engineering Sheets"
               >
-                📊 Actual Quotation
+                Actual Quotation
               </button>
               <button
                 type="button"
                 className={`btn xs ${workbookType === 'c2c' ? 'primary' : 'ghost'}`}
                 onClick={() => setWorkbookType('c2c')}
-                style={workbookType === 'c2c' ? { background: '#7c3aed', color: '#fff', fontSize: '11px', fontWeight: 700 } : { fontSize: '11px', color: '#7c3aed' }}
+                style={workbookType === 'c2c' ? { background: '#6d28d9', color: '#fff', fontSize: '11.5px', fontWeight: 700, borderRadius: 8, padding: '4px 10px' } : { fontSize: '11.5px', color: '#6d28d9', borderRadius: 8, padding: '4px 10px', borderColor: 'transparent' }}
                 title="Cut-to-Cut Cost Engineering Sheets"
               >
-                ✂️ Cut-to-Cut Sheet
+                Cut-to-Cut Sheet
               </button>
             </div>
           )}

@@ -4467,8 +4467,8 @@ async function runAllTests() {
     if (orgSrc71.includes('1. ACTUAL TEMPLATE') || orgSrc71.includes('2. CUT-TO-CUT TEMPLATE')) {
       tplFailures.push('OrganisationSettings.tsx still contains legacy dual card clutter')
     }
-    if (!orgSrc71.includes('Math.max') || !orgSrc71.includes('templates.find((t) => t.is_default)') || !orgSrc71.includes('getFullWorksheets') || !orgSrc71.includes('hideWorkbookToggle={true}')) {
-      tplFailures.push('OrganisationSettings.tsx missing maxVersion, active default resolution, full worksheets preview load, or duplicate toggle suppression')
+    if (!orgSrc71.includes('Math.max') || !orgSrc71.includes('templates.find((t) => t.is_default)') || !orgSrc71.includes('getFullWorksheets') || !orgSrc71.includes('c2cWb={draftC2CWb}')) {
+      tplFailures.push('OrganisationSettings.tsx missing maxVersion, active default resolution, full worksheets preview load, or single C2C sheet viewer')
     }
     if (!wsSrc71.includes('extractTemplateFormulaOverrides') || !wsSrc71.includes('api.projectGet(session.token, currentProject.id)')) {
       tplFailures.push('Workspace.tsx missing template formula or active project refresh sync')

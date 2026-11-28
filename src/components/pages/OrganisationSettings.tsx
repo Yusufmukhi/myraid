@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import data from '../../lib/clientWorkbook.json'
+import c2cData from '../../lib/clientWorkbook_c2c.json'
 import { api, Org, Session, Template } from '../../lib/api'
 import { deleteTemplate, publishTemplate, rollbackTemplateToVersion, updateTemplate } from '../../lib/permissions'
 import { Overrides, SheetData, Workbook } from '../../lib/engine'
 import { inr, timeAgo } from '../../lib/format'
 import { INPUT_GROUPS } from '../../lib/inputs'
-import { summarize, Summary } from '../../lib/model'
+import { filterCutToCutOverrides, summarize, Summary } from '../../lib/model'
 import { Icon, NumField, Spinner, useUI } from '../ui'
 import { CalculationDetails } from './CalculationDetails'
 
@@ -150,10 +151,11 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const [diffComparisonMode, setDiffComparisonMode] = useState<'prev' | 'initial'>('prev')
 
   const draftActualWb = useMemo(() => new Workbook(data as unknown as { sheets: SheetData[] }), [])
+  const draftC2CWb = useMemo(() => new Workbook(c2cData as unknown as { sheets: SheetData[] }), [])
 
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
 
-  // Load real full 15 worksheets into draftActualWb so Base Total / Ex-Works & Quick Parameters match authentic Excel
+  // Load real full 15 worksheets into draftActualWb & draftC2CWb so Actual & C2C previews match Excel
   useEffect(() => {
     if (!isAdminOrOwner) return
     let active = true
@@ -163,6 +165,9 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
         if (res.actual_workbook?.sheets) {
           draftActualWb.loadSheets(res.actual_workbook.sheets, res.named_constants)
         }
+        if (res.c2c_workbook?.sheets) {
+          draftC2CWb.loadSheets(res.c2c_workbook.sheets, res.named_constants)
+        }
         setWorksheetsReady(true)
       })
       .catch(() => {
@@ -171,7 +176,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     return () => {
       active = false
     }
-  }, [isAdminOrOwner, session.token, org.id, draftActualWb])
+  }, [isAdminOrOwner, session.token, org.id, draftActualWb, draftC2CWb])
 
   const loadTemplates = async () => {
     try {
@@ -241,6 +246,10 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     draftActualWb.setFormulaOverrides(initialFormulas)
     draftActualWb.setOverrides(initialInputs)
 
+    draftC2CWb.setTemplateDefaults({})
+    draftC2CWb.setFormulaOverrides(initialFormulas)
+    draftC2CWb.setOverrides(filterCutToCutOverrides(initialInputs))
+
     setStudioTab('forms')
     setEditorMode(true)
   }
@@ -269,6 +278,13 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     draftActualWb.setOverrides(draftOverrides)
     return summarize(draftActualWb)
   }, [draftOverrides, draftFormulaOverrides, draftActualWb, worksheetsReady])
+
+  const draftC2CSummary: Summary = useMemo(() => {
+    draftC2CWb.setTemplateDefaults({})
+    draftC2CWb.setFormulaOverrides(draftFormulaOverrides)
+    draftC2CWb.setOverrides(filterCutToCutOverrides(draftOverrides))
+    return summarize(draftC2CWb)
+  }, [draftOverrides, draftFormulaOverrides, draftC2CWb, worksheetsReady])
 
   const buildStudioDefinition = (targetVer: number, nm: string) => {
     draftActualWb.setTemplateDefaults({})
@@ -594,6 +610,10 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                 <strong className="mono">{worksheetsReady ? inr(draftSummary.subtotal) : '…'}</strong>
               </div>
               <div className="tpl-preview-item">
+                <span className="tiny muted">C2C Cost</span>
+                <strong className="mono">{worksheetsReady ? inr(draftC2CSummary.subtotal) : '…'}</strong>
+              </div>
+              <div className="tpl-preview-item">
                 <span className="tiny muted">Base Total</span>
                 <strong className="mono">{worksheetsReady ? inr(draftSummary.sales) : '…'}</strong>
               </div>
@@ -644,15 +664,21 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
           {studioTab === 'sheets' && (
             <CalculationDetails
               wb={draftActualWb}
+              c2cWb={draftC2CWb}
               overrides={draftOverrides}
               formulaOverrides={draftFormulaOverrides}
-              setInput={(k, v) => handleDraftSetInput(k, v)}
-              setFormulaOverride={(k, f) => handleDraftSetFormulaOverride(k, f)}
+              c2cOverrides={filterCutToCutOverrides(draftOverrides)}
+              c2cFormulaOverrides={draftFormulaOverrides}
+              setInput={(k, v, targetWb) => {
+                if (targetWb !== 'c2c') handleDraftSetInput(k, v)
+              }}
+              setFormulaOverride={(k, f, targetWb) => {
+                if (targetWb !== 'c2c') handleDraftSetFormulaOverride(k, f)
+              }}
               isAdminOrOwner={true}
               session={session}
               org={org}
               initialWorkbookType="actual"
-              hideWorkbookToggle={true}
               hideExcelDownload={true}
             />
           )}
