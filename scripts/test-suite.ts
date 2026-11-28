@@ -4482,8 +4482,12 @@ async function runAllTests() {
     if (!edgeSrc71.includes('extractTemplateDefaultsFromDef') || !edgeSrc71.includes('extractTemplateFormulasFromDef') || !edgeSrc71.includes('authTemplateDefaults')) {
       tplFailures.push('calculate Edge Function missing authoritative DB template sync for staff & admins')
     }
-    if (!schemaSrc71.includes('from public.templates where org_id = p_org;') || !schemaSrc71.includes('and template_id = t.id') || !schemaSrc71.includes('auto_promoted_after_delete')) {
-      tplFailures.push('schema.sql missing template_publish collision guard, template_update snapshot sync, or template_delete auto-promotion')
+    const apiSrc71 = fs.readFileSync('src/lib/api.ts', 'utf8')
+    if (!schemaSrc71.includes('from public.templates where org_id = p_org;') || !schemaSrc71.includes('and template_id = t.id') || !schemaSrc71.includes('auto_promoted_after_delete') || !schemaSrc71.includes('public.template_update(uuid, uuid, uuid, text, text, jsonb)')) {
+      tplFailures.push('schema.sql missing template_publish collision guard, template_update snapshot sync, template_delete auto-promotion, or RPC grants')
+    }
+    if (apiSrc71.includes("client.from('templates').delete()") || apiSrc71.includes("client.from('templates').update(")) {
+      tplFailures.push('api.ts still has broken RLS direct-table fallback for template_delete / template_update')
     }
 
     if (tplFailures.length === 0) {

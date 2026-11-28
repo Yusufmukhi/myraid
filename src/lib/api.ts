@@ -332,59 +332,28 @@ export const api = {
       p_org: org,
       p_template_id: templateId,
     }),
-  templateDelete: async (token: string, org: string, templateId: string) => {
-    try {
-      return await rpc<{ id: string; version_num: number; deleted: boolean }>('template_delete', {
-        p_token: token,
-        p_org: org,
-        p_template_id: templateId,
-      })
-    } catch (err) {
-      if (client) {
-        const { error } = await client.from('templates').delete().eq('id', templateId).eq('org_id', org)
-        if (error) throw error
-        return { id: templateId, version_num: 0, deleted: true }
-      }
-      throw err
-    }
-  },
-  templateUpdate: async (
+  templateDelete: (token: string, org: string, templateId: string) =>
+    rpc<{ id: string; version_num: number; deleted: boolean; promoted_version?: number | null }>('template_delete', {
+      p_token: token,
+      p_org: org,
+      p_template_id: templateId,
+    }),
+  templateUpdate: (
     token: string,
     org: string,
     templateId: string,
     name: string,
     description: string,
-    definition: any
-  ) => {
-    try {
-      return await rpc<{ id: string; version_num: number; status: string; is_default: boolean }>('template_update', {
-        p_token: token,
-        p_org: org,
-        p_template_id: templateId,
-        p_name: name,
-        p_description: description,
-        p_definition: definition,
-      })
-    } catch (err) {
-      if (client) {
-        const { data, error } = await client
-          .from('templates')
-          .update({
-            name,
-            description,
-            definition,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', templateId)
-          .eq('org_id', org)
-          .select('id, version_num, status, is_default')
-          .single()
-        if (error) throw error
-        return data as { id: string; version_num: number; status: string; is_default: boolean }
-      }
-      throw err
-    }
-  },
+    definition: any,
+  ) =>
+    rpc<{ id: string; version_num: number; status: string; is_default: boolean }>('template_update', {
+      p_token: token,
+      p_org: org,
+      p_template_id: templateId,
+      p_name: name,
+      p_description: description,
+      p_definition: definition,
+    }),
 
   // ---- Projects
   projectList: (token: string, org: string, includeArchived = false) =>
