@@ -25,6 +25,8 @@ interface Props {
   session?: Session
   org?: Org
   initialWorkbookType?: 'actual' | 'c2c'
+  hideWorkbookToggle?: boolean
+  hideExcelDownload?: boolean
   onSave?: () => void
   hasUnsavedChanges?: boolean
   isSavingProject?: boolean
@@ -63,6 +65,8 @@ export function CalculationDetails({
   session,
   org,
   initialWorkbookType,
+  hideWorkbookToggle,
+  hideExcelDownload,
   onSave,
   hasUnsavedChanges,
   isSavingProject,
@@ -494,7 +498,7 @@ export function CalculationDetails({
             </div>
           )}
 
-          {(c2cWb || serverWb) && (
+          {!hideWorkbookToggle && (c2cWb || serverWb) && (
             <div style={{ marginLeft: 8, display: 'inline-flex', gap: 4, background: '#f1f5f9', padding: '2px 4px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
               <button
                 type="button"
@@ -516,7 +520,7 @@ export function CalculationDetails({
               </button>
             </div>
           )}
-          {workbookType === 'c2c' && (
+          {!hideWorkbookToggle && workbookType === 'c2c' && (
             <span className="chip purple font-mono" style={{ fontSize: '10px' }}>
               Cut-to-Cut Cost Baseline
             </span>
@@ -528,15 +532,17 @@ export function CalculationDetails({
             <span className="legend-item"><span className="legend-dot chg" /> Changed</span>
             <span className="legend-item"><span className="legend-dot formula-ovr" /> Override</span>
           </div>
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={handleDownloadExcel}
-            style={{ height: 28, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8, borderColor: '#cbd5e1', background: '#fff', color: '#0f172a' }}
-            title={`Download ${workbookType === 'c2c' ? 'Cut-to-Cut' : 'Actual Quotation'} Excel spreadsheet (.xlsx)`}
-          >
-            📥 Download Excel ({workbookType === 'c2c' ? 'C2C' : 'Actual'})
-          </button>
+          {!hideExcelDownload && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={handleDownloadExcel}
+              style={{ height: 28, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8, borderColor: '#cbd5e1', background: '#fff', color: '#0f172a' }}
+              title={`Download ${workbookType === 'c2c' ? 'Cut-to-Cut' : 'Actual Quotation'} Excel spreadsheet (.xlsx)`}
+            >
+              📥 Download Excel ({workbookType === 'c2c' ? 'C2C' : 'Actual'})
+            </button>
+          )}
           {onSave && (
             <button
               type="button"

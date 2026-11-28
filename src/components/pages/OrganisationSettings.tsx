@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import data from '../../lib/clientWorkbook.json'
-import c2cData from '../../lib/clientWorkbook_c2c.json'
 import { api, Org, Session, Template } from '../../lib/api'
 import { deleteTemplate, publishTemplate, rollbackTemplateToVersion, updateTemplate } from '../../lib/permissions'
 import { Overrides, SheetData, Workbook } from '../../lib/engine'
@@ -135,6 +134,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
+  const [worksheetsReady, setWorksheetsReady] = useState(false)
 
   // Studio / Editor state
   const [editorMode, setEditorMode] = useState(false)
@@ -143,7 +143,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const [draftDesc, setDraftDesc] = useState('')
   const [draftOverrides, setDraftOverrides] = useState<Overrides>({})
   const [draftFormulaOverrides, setDraftFormulaOverrides] = useState<Record<string, string>>({})
-  const [templateBaseline, setTemplateBaseline] = useState<'actual' | 'c2c'>('actual')
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
 
   // Diff modal state
@@ -151,10 +150,28 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const [diffComparisonMode, setDiffComparisonMode] = useState<'prev' | 'initial'>('prev')
 
   const draftActualWb = useMemo(() => new Workbook(data as unknown as { sheets: SheetData[] }), [])
-  const draftC2CWb = useMemo(() => new Workbook(c2cData as unknown as { sheets: SheetData[] }), [])
-  const activeDraftWb = templateBaseline === 'c2c' ? draftC2CWb : draftActualWb
 
   const isAdminOrOwner = org.role === 'owner' || org.role === 'admin'
+
+  // Load real full 15 worksheets into draftActualWb so Base Total / Ex-Works & Quick Parameters match authentic Excel
+  useEffect(() => {
+    if (!isAdminOrOwner) return
+    let active = true
+    api.getFullWorksheets(session.token, org.id)
+      .then((res) => {
+        if (!active) return
+        if (res.actual_workbook?.sheets) {
+          draftActualWb.loadSheets(res.actual_workbook.sheets, res.named_constants)
+        }
+        setWorksheetsReady(true)
+      })
+      .catch(() => {
+        // Fallback silently if offline
+      })
+    return () => {
+      active = false
+    }
+  }, [isAdminOrOwner, session.token, org.id, draftActualWb])
 
   const loadTemplates = async () => {
     try {
@@ -198,15 +215,8 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     const tpl = baseTemplate || currentDefaultTemplate
     const initialInputs = cleanTemplateDefaultInputs(tpl?.definition?.default_inputs)
     const initialFormulas = { ...(tpl?.definition?.formula_overrides || {}) }
-    const baseline = getTemplateBaseline(tpl)
 
-    // Pre-populate rate inputs from definition.rates if not already in default_inputs (e.g. v1)
-    if (tpl && !createNewMode) {
-      const rates = readTemplateRates(tpl)
-      if (initialInputs['Total cal!H3'] === undefined) initialInputs['Total cal!H3'] = rates.steel
-      if (initialInputs['Total cal!M3'] === undefined) initialInputs['Total cal!M3'] = rates.trolley
-      if (initialInputs['Total cal!B49'] === undefined) initialInputs['Total cal!B49'] = rates.labour
-    } else if (tpl && createNewMode) {
+    if (tpl) {
       const rates = readTemplateRates(tpl)
       if (initialInputs['Total cal!H3'] === undefined) initialInputs['Total cal!H3'] = rates.steel
       if (initialInputs['Total cal!M3'] === undefined) initialInputs['Total cal!M3'] = rates.trolley
@@ -214,7 +224,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     }
 
     setEditingTemplate(createNewMode ? null : (tpl || null))
-    setTemplateBaseline(baseline)
 
     if (createNewMode) {
       const cleanBase = stripVersionSuffix(tpl?.name || 'Production Standards') || 'Production Standards'
@@ -232,30 +241,8 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     draftActualWb.setFormulaOverrides(initialFormulas)
     draftActualWb.setOverrides(initialInputs)
 
-    draftC2CWb.setTemplateDefaults({})
-    draftC2CWb.setFormulaOverrides(initialFormulas)
-    draftC2CWb.setOverrides(initialInputs)
-
     setStudioTab('forms')
     setEditorMode(true)
-  }
-
-  const handleSwitchBaseline = (next: 'actual' | 'c2c') => {
-    if (next === templateBaseline) return
-    setTemplateBaseline(next)
-    setDraftOverrides((prev) => {
-      const updated = { ...prev }
-      if (next === 'c2c') {
-        updated['Total cal!H3'] = 79
-        updated['Total cal!M3'] = 69
-        updated['Total cal!J3'] = 0
-      } else {
-        if (updated['Total cal!H3'] === 79) updated['Total cal!H3'] = 90
-        if (updated['Total cal!M3'] === 69) updated['Total cal!M3'] = 90
-        if (updated['Total cal!J3'] === 0) delete updated['Total cal!J3']
-      }
-      return updated
-    })
   }
 
   const handleDraftSetInput = (key: string, value: number | null | undefined) => {
@@ -277,27 +264,25 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   }
 
   const draftSummary: Summary = useMemo(() => {
-    activeDraftWb.setTemplateDefaults({})
-    activeDraftWb.setFormulaOverrides(draftFormulaOverrides)
-    activeDraftWb.setOverrides(draftOverrides)
-    return summarize(activeDraftWb)
-  }, [draftOverrides, draftFormulaOverrides, activeDraftWb])
+    draftActualWb.setTemplateDefaults({})
+    draftActualWb.setFormulaOverrides(draftFormulaOverrides)
+    draftActualWb.setOverrides(draftOverrides)
+    return summarize(draftActualWb)
+  }, [draftOverrides, draftFormulaOverrides, draftActualWb, worksheetsReady])
 
   const buildStudioDefinition = (targetVer: number, nm: string) => {
-    activeDraftWb.setTemplateDefaults({})
-    activeDraftWb.setFormulaOverrides(draftFormulaOverrides)
-    activeDraftWb.setOverrides(draftOverrides)
+    draftActualWb.setTemplateDefaults({})
+    draftActualWb.setFormulaOverrides(draftFormulaOverrides)
+    draftActualWb.setOverrides(draftOverrides)
 
     const steelRate = Number(
-      draftOverrides['Total cal!H3'] ??
-        (activeDraftWb.num('Total cal', 'H3') || (templateBaseline === 'c2c' ? 79 : 90)),
+      draftOverrides['Total cal!H3'] ?? (draftActualWb.num('Total cal', 'H3') || 90),
     )
     const trolleyRate = Number(
-      draftOverrides['Total cal!M3'] ??
-        (activeDraftWb.num('Total cal', 'M3') || (templateBaseline === 'c2c' ? 69 : 90)),
+      draftOverrides['Total cal!M3'] ?? (draftActualWb.num('Total cal', 'M3') || 90),
     )
     const bodyLabourRate = Number(
-      draftOverrides['Total cal!B49'] ?? (activeDraftWb.num('Total cal', 'B49') || 250),
+      draftOverrides['Total cal!B49'] ?? (draftActualWb.num('Total cal', 'B49') || 250),
     )
 
     const cleanedInputs = cleanTemplateDefaultInputs(draftOverrides)
@@ -310,7 +295,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
         version: targetVer,
         name: nm,
         description: draftDesc.trim(),
-        baseline: templateBaseline,
+        baseline: 'actual',
         rates: {
           steel: steelRate,
           trolleySteel: trolleyRate,
@@ -323,17 +308,24 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     }
   }
 
+  const canDeleteTemplate = (t: Template): boolean => {
+    if (t.status === 'draft') return true
+    if (!t.is_default) return true
+    // Active default can be deleted as long as at least one other published version remains
+    return publishedTemplates.some((other) => other.id !== t.id)
+  }
+
   const handleSetActiveDefault = async (t: Template) => {
     if (t.is_default) return
     const ok = await confirm({
       title: `Activate Template v${t.version_num}?`,
-      body: `New quotations will use "${t.name}" (v${t.version_num}) by default. Existing quotations retain their original version.`,
+      body: `New quotations will use "${t.name}" (v${t.version_num}) by default. Existing quotations keep their saved version.`,
       confirmLabel: `Set v${t.version_num} as Default`,
     })
     if (!ok) return
     try {
       await rollbackTemplateToVersion(session, org, t.id)
-      toast(`Template v${t.version_num} is now active for new quotations.`)
+      toast(`Template v${t.version_num} is now active.`)
       await loadTemplates()
       await onOrgUpdated()
     } catch (e) {
@@ -344,7 +336,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   const handlePublishDraftRow = async (t: Template) => {
     const ok = await confirm({
       title: `Publish Draft "${t.name}"?`,
-      body: `This will publish your draft as Template v${nextVersion} and set it as the active default.`,
+      body: `Publishes this draft as Template v${nextVersion} and makes it the active default.`,
       confirmLabel: `Publish v${nextVersion}`,
     })
     if (!ok) return
@@ -364,25 +356,33 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     }
   }
 
-  const handleDeleteTemplate = async (t: Template) => {
-    if (t.is_default) {
-      toast('Switch default to another version before deleting the active template.', 'err')
-      return
+  const handleDeleteTemplate = async (t: Template): Promise<boolean> => {
+    if (!canDeleteTemplate(t)) {
+      toast('Cannot delete the only published template version. Publish a new version first.', 'err')
+      return false
     }
+    const nextFallback = publishedTemplates.find((other) => other.id !== t.id)
+    const extraMsg = t.is_default && nextFallback
+      ? ` Active default will automatically switch to v${nextFallback.version_num} (${nextFallback.name}).`
+      : ''
     const ok = await confirm({
       title: `Delete Template v${t.version_num}?`,
-      body: `Remove "${t.name}" (v${t.version_num}) from template history? Historical quotations already referencing v${t.version_num} keep their saved snapshot.`,
+      body: `Delete "${t.name}" (v${t.version_num}) from template history? Past quotations using v${t.version_num} keep their saved snapshot.${extraMsg}`,
       confirmLabel: 'Delete Version',
       danger: true,
     })
-    if (!ok) return
+    if (!ok) return false
     try {
       await deleteTemplate(session, org, t.id)
       toast(`Deleted template v${t.version_num}.`)
+      setEditorMode(false)
+      setEditingTemplate(null)
       await loadTemplates()
       await onOrgUpdated()
+      return true
     } catch (e) {
       toast((e as Error).message, 'err')
+      return false
     }
   }
 
@@ -394,7 +394,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     if (mode === 'publish') {
       const ok = await confirm({
         title: `Publish Template v${targetVer}?`,
-        body: `Sets "${nm}" (Steel ₹${rates.steelRate}/kg · Trolley ₹${rates.trolleyRate}/kg) as the active default for new quotations. Past quotations stay on their own versions.`,
+        body: `Sets "${nm}" (Steel ₹${rates.steelRate}/kg · Trolley ₹${rates.trolleyRate}/kg) as active default for new quotations.`,
         confirmLabel: `Publish v${targetVer}`,
       })
       if (!ok) return
@@ -439,7 +439,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
       is_default: false,
       definition: {
         version: editingTemplate ? editingTemplate.version_num : nextVersion,
-        baseline: templateBaseline,
+        baseline: 'actual',
         default_inputs: cleanTemplateDefaultInputs(draftOverrides) as any,
         formula_overrides: draftFormulaOverrides,
       },
@@ -457,7 +457,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
     nextVersion,
     draftName,
     draftDesc,
-    templateBaseline,
     draftOverrides,
     draftFormulaOverrides,
   ])
@@ -498,13 +497,14 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
   }
 
   // =========================================================================
-  // MINIMAL TEMPLATE STUDIO VIEW
+  // ULTRA-CLEAN MINIMAL TEMPLATE STUDIO VIEW
   // =========================================================================
   if (editorMode) {
     const isEditingExisting = Boolean(editingTemplate && editingTemplate.status === 'published')
     return (
       <div className="template-studio">
-        <div className="card studio-header tpl-studio-card">
+        <div className="card tpl-studio-card">
+          {/* Compact Top Identity & Action Row */}
           <div className="tpl-studio-top">
             <div className="tpl-studio-identity">
               <button
@@ -516,96 +516,87 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
               >
                 ← Back
               </button>
+              <span className="version-pill">
+                {isEditingExisting ? `v${editingTemplate!.version_num}` : `New v${nextVersion}`}
+              </span>
               <div className="tpl-studio-meta">
-                <div className="tpl-studio-title-row">
-                  <span className="version-pill">
-                    {isEditingExisting ? `Editing v${editingTemplate!.version_num}` : `New v${nextVersion}`}
-                  </span>
-                  <input
-                    className="studio-title-input"
-                    value={draftName}
-                    onChange={(e) => setDraftName(e.target.value)}
-                    placeholder="Template name"
-                  />
-                </div>
                 <input
-                  className="studio-desc-input"
+                  className="tpl-title-input"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  placeholder="Template name"
+                />
+                <input
+                  className="tpl-desc-input"
                   value={draftDesc}
                   onChange={(e) => setDraftDesc(e.target.value)}
-                  placeholder="Optional release note (e.g. Q4 steel price revision)"
+                  placeholder="Optional release note"
                 />
               </div>
             </div>
 
             <div className="tpl-studio-actions">
-              <div className="studio-kpis">
-                <div className="studio-kpi">
-                  <span className="tiny muted">Base Total</span>
-                  <strong className="mono">{inr(draftSummary.sales)}</strong>
-                </div>
-                <div className="studio-kpi">
-                  <span className="tiny muted">Ex-Works</span>
-                  <strong className="mono">{inr(draftSummary.subtotal)}</strong>
-                </div>
-              </div>
-
+              {editingTemplate && canDeleteTemplate(editingTemplate) && (
+                <button
+                  className="btn ghost sm tpl-del-btn"
+                  disabled={publishing}
+                  onClick={() => handleDeleteTemplate(editingTemplate)}
+                  title={`Delete v${editingTemplate.version_num}`}
+                >
+                  {Icon.trash} Delete
+                </button>
+              )}
               {isEditingExisting && (
                 <button
-                  className="btn ghost"
+                  className="btn ghost sm"
                   disabled={publishing}
                   onClick={() => handleSaveTemplate('update')}
                 >
                   Save to v{editingTemplate!.version_num}
                 </button>
               )}
-
               <button
-                className="btn primary"
+                className="btn primary sm"
                 disabled={publishing}
                 onClick={() => handleSaveTemplate('publish')}
               >
-                {publishing ? 'Saving…' : `Publish v${nextVersion}`}
+                {publishing ? 'Publishing…' : `Publish v${nextVersion}`}
               </button>
             </div>
           </div>
 
+          {/* Single Clean Subbar: Tabs + Live Quote Preview */}
           <div className="tpl-studio-subbar">
-            <div className="studio-tabs" style={{ borderTop: 0, paddingTop: 0 }}>
+            <div className="tpl-tabs">
               <button
-                className={`studio-tab-btn ${studioTab === 'forms' ? 'active' : ''}`}
+                className={`tpl-tab-btn ${studioTab === 'forms' ? 'active' : ''}`}
                 onClick={() => setStudioTab('forms')}
               >
-                {Icon.settings} Quick Parameters
+                Quick Parameters
               </button>
               <button
-                className={`studio-tab-btn ${studioTab === 'sheets' ? 'active' : ''}`}
+                className={`tpl-tab-btn ${studioTab === 'sheets' ? 'active' : ''}`}
                 onClick={() => setStudioTab('sheets')}
               >
-                {Icon.grid} Workbook &amp; Formulas
+                Workbook &amp; Formulas
               </button>
               <button
-                className={`studio-tab-btn ${studioTab === 'diff' ? 'active' : ''}`}
+                className={`tpl-tab-btn ${studioTab === 'diff' ? 'active' : ''}`}
                 onClick={() => setStudioTab('diff')}
               >
-                {Icon.history} Changes ({previewDiffEntries.length})
+                Changes ({previewDiffEntries.length})
               </button>
             </div>
 
-            <div className="tpl-baseline-toggle" title="Select default sheet architecture for this template">
-              <button
-                type="button"
-                className={`tpl-seg-btn ${templateBaseline === 'actual' ? 'active' : ''}`}
-                onClick={() => handleSwitchBaseline('actual')}
-              >
-                Standard (Actual)
-              </button>
-              <button
-                type="button"
-                className={`tpl-seg-btn ${templateBaseline === 'c2c' ? 'active' : ''}`}
-                onClick={() => handleSwitchBaseline('c2c')}
-              >
-                Cut-to-Cut
-              </button>
+            <div className="tpl-preview-pills">
+              <div className="tpl-preview-item">
+                <span className="tiny muted">Ex-Works</span>
+                <strong className="mono">{worksheetsReady ? inr(draftSummary.subtotal) : '…'}</strong>
+              </div>
+              <div className="tpl-preview-item">
+                <span className="tiny muted">Base Total</span>
+                <strong className="mono">{worksheetsReady ? inr(draftSummary.sales) : '…'}</strong>
+              </div>
             </div>
           </div>
         </div>
@@ -626,7 +617,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                           ? draftOverrides[item.key]
                           : (() => {
                               const [sh, addr] = item.key.split('!')
-                              const numVal = activeDraftWb.num(sh, addr)
+                              const numVal = draftActualWb.num(sh, addr)
                               return isNaN(numVal) ? null : numVal
                             })()
                       return (
@@ -652,7 +643,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
 
           {studioTab === 'sheets' && (
             <CalculationDetails
-              wb={activeDraftWb}
+              wb={draftActualWb}
               overrides={draftOverrides}
               formulaOverrides={draftFormulaOverrides}
               setInput={(k, v) => handleDraftSetInput(k, v)}
@@ -660,7 +651,9 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
               isAdminOrOwner={true}
               session={session}
               org={org}
-              initialWorkbookType={templateBaseline}
+              initialWorkbookType="actual"
+              hideWorkbookToggle={true}
+              hideExcelDownload={true}
             />
           )}
 
@@ -759,9 +752,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
             <strong style={{ fontSize: 15 }}>
               {currentDefaultTemplate?.name || 'Default Production Template'}
             </strong>
-            {getTemplateBaseline(currentDefaultTemplate) === 'c2c' && (
-              <span className="tpl-tag">Cut-to-Cut</span>
-            )}
           </div>
           <span className="tiny muted">
             {currentDefaultTemplate?.published_at
@@ -798,7 +788,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
         </div>
 
         <div className="tpl-active-foot tiny muted">
-          Past quotations preserve their own template snapshot. Cut-to-Cut internal costing automatically locks steel at ₹79/kg and trolley at ₹69/kg.
+          Past quotations keep their original template snapshot. Internal Cut-to-Cut costing stays locked at ₹79/kg steel and ₹69/kg trolley.
         </div>
       </div>
 
@@ -806,7 +796,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
       <div className="card">
         <div className="card-head">
           <h3>Version History ({templates.length})</h3>
-          <span className="tiny muted">Switch default for future quotations anytime</span>
+          <span className="tiny muted">Switch default or manage published versions</span>
         </div>
 
         {loading ? (
@@ -825,7 +815,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                   <th>Version</th>
                   <th>Template</th>
                   <th>Default Rates</th>
-                  <th>Quotations</th>
+                  <th>Quotes</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -839,6 +829,7 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                   ).length
                   const extraRules = extraInputs + Object.keys(formulasMap).length
                   const hasPrev = Boolean(getPreviousTemplate(t))
+                  const deletable = canDeleteTemplate(t)
 
                   return (
                     <tr key={t.id} className={t.is_default ? 'tpl-row-active' : ''}>
@@ -853,11 +844,6 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                       <td>
                         <div className="font-semibold" style={{ color: 'var(--navy-950)' }}>
                           {t.name}
-                          {getTemplateBaseline(t) === 'c2c' && (
-                            <span className="tpl-tag" style={{ marginLeft: 6 }}>
-                              Cut-to-Cut
-                            </span>
-                          )}
                         </div>
                         {t.description ? (
                           <div className="tiny muted">{t.description}</div>
@@ -919,13 +905,13 @@ export function OrganisationSettings({ session, org, onOrgUpdated }: Props) {
                               Diff
                             </button>
                           )}
-                          {!t.is_default && (
+                          {deletable && (
                             <button
                               className="btn ghost sm tpl-del-btn"
                               onClick={() => handleDeleteTemplate(t)}
                               title={`Delete v${t.version_num}`}
                             >
-                              {Icon.trash}
+                              {Icon.trash} Delete
                             </button>
                           )}
                         </div>
